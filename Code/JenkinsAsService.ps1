@@ -1,6 +1,7 @@
 function Invoke-WriteLog {
     [CmdletBinding(ConfirmImpact = 'None',
         SupportsShouldProcess = $false)]
+        [OutputType([null])]
     param
     (
         [Parameter(Mandatory = $true)]
