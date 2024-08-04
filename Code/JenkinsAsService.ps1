@@ -217,7 +217,7 @@ if (-not (Test-TCPConnection -address $JenkinsDomain -port $JenkinsPort -Quite))
 
 
 ##Cleaning Junk Variables From Memory
-Remove-Variable -Name @('Content', '$Settings', 'XML', 'XMLPath', 'Jenkins', 'JenkinsDomain', 'JenkinsPort') -Force -ErrorAction 'SilentlyContinue'
+Remove-Variable -Name @('Content', 'Settings', 'XML', 'XMLPath', 'Jenkins', 'JenkinsDomain', 'JenkinsPort') -Force -ErrorAction 'SilentlyContinue'
 
 
 #Set TLS Security. TLS 1.2 and above. Higher to Lower TLS.
