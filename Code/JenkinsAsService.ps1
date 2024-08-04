@@ -1,7 +1,7 @@
 function Invoke-WriteLog {
     [CmdletBinding(ConfirmImpact = 'None',
         SupportsShouldProcess = $false)]
-        [OutputType([string])]
+    [OutputType([string])]
     param
     (
         [Parameter(Mandatory = $true)]
@@ -70,7 +70,29 @@ Function Convert-XMLtoPSObject {
     return $Object
 }
 
-Function Set-DeafultXML {
+Function Test-TCPConnection {
+    Param([string]$address, $port, [switch]$Quite , [int]$timeout = 2000)
+    $socket = New-Object System.Net.Sockets.TcpClient
+    try {
+        $result = $socket.BeginConnect($address, $port, $NULL, $NULL)
+        if (!$result.AsyncWaitHandle.WaitOne($timeout, $False)) {
+            if ($Quite -ne $true)
+            { throw [System.Exception]::new('Connection Timeout') }
+        }
+        $socket.EndConnect($result) | Out-Null
+        $Result = $socket.Connected
+    }
+    finally {
+        $socket.Close()
+        
+    }
+    if ($result -ne $true) { return $result.CompletedSynchronously }
+    else { return $result }
+    
+}
+
+
+Function Invoke-DeafultXML {
     Param (
         [string]
         $Path,
@@ -117,26 +139,7 @@ Function Set-DeafultXML {
     }
 }
 
-Function Test-TCPConnection {
-    Param($address, $port, [switch]$Quite , $timeout = 2000)
-    $socket = New-Object System.Net.Sockets.TcpClient
-    try {
-        $result = $socket.BeginConnect($address, $port, $NULL, $NULL)
-        if (!$result.AsyncWaitHandle.WaitOne($timeout, $False)) {
-            if ($Quite -ne $true)
-            { throw [System.Exception]::new('Connection Timeout') }
-        }
-        $socket.EndConnect($result) | Out-Null
-        $Result = $socket.Connected
-    }
-    finally {
-        $socket.Close()
-        
-    }
-    if ($result -ne $true) { return $result.CompletedSynchronously }
-    else { return $result }
-    
-}
+
 
 ##Check if Windows OS
 if (([System.Environment]::OSVersion.Platform) -ne 'Win32NT' ) { exit }
@@ -151,7 +154,7 @@ $AgentLog = "$JenkinsPath\agent.log"
 if (Test-Path -Path $XMLPath -PathType 'Leaf') {
     $Content = (Get-Content -Path $XMLPath -Force)
     if (($null, '') -contains $Content) {
-        Set-DeafultXML -Path $JenkinsPath  -LogPath $AgentLog
+        Invoke-DeafultXML -Path $JenkinsPath  -LogPath $AgentLog
         Invoke-WriteLog -LogPath $AgentLog -LogString 'Please Fill in the XML Values and re-run the Service' -LogType 'Warning'
         exit    
     }
@@ -163,7 +166,7 @@ if (Test-Path -Path $XMLPath -PathType 'Leaf') {
     }
 }
 else {
-    Set-DeafultXML -Path $JenkinsPath
+    Invoke-DeafultXML -Path $JenkinsPath
     Write-Warning -Message 'Please Fill in the XML Values and re-run the Service'
     exit
 }
@@ -211,7 +214,7 @@ $Jenkins = $jenkinsURL.TrimStart('http://').TrimStart('https://')
 $JenkinsDomain = $Jenkins.Substring(0, ($Jenkins.IndexOf(":")))
 $JenkinsPort = $Jenkins.Substring(( $Jenkins.IndexOf(":") + 1 ))
 
-if (-not (Test-TCPConnection -address $JenkinsDomain -port $JenkinsPort -Quite)) {
+if ((Test-TCPConnection -address $JenkinsDomain -port $JenkinsPort -Quite) -ne $true) {
     Invoke-WriteLog -LogPath $AgentLog -LogString  "Issue with 'jenkinsURL': Unable to communicate with '$JenkinsDomain' over Port '$JenkinsPort'" -LogType 'Error'
     exit
 }
