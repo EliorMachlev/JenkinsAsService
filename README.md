@@ -8,6 +8,6 @@
 
 # Todo List
 - [x] Create a working Powershell Script
-- [ ] Add Versioning for future updates 
+- [x] Add Versioning for future updates 
 - [ ] Convert Powershell Ps1 to EXE
 - [ ] Create installer, preferably using MSI
