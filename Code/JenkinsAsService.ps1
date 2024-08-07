@@ -1,254 +1,316 @@
-function Invoke-WriteLog {
-    [CmdletBinding(ConfirmImpact = 'None',
-        SupportsShouldProcess = $false)]
-    [OutputType([string])]
-    param
-    (
-        [Parameter(Mandatory = $true)]
-        [string]$LogString,
+TRY {
+    function Invoke-WriteLog {
+        param
+        (
+            [Parameter(Mandatory = $false)]
+            [string]$LogString = $null,
 
-        [Parameter(Mandatory = $true)]
-        [string]$LogType,
+            [Parameter(Mandatory = $false)]
+            [ValidateSet('0', '1', '2', '3')]
+            [int]$LogType = 0,
 
-        [Parameter(Mandatory = $true)]
-        [string]$LogPath
-    )
+            [Parameter(Mandatory = $false)]
+            [string]$LogPath = $global:AgentLog
+        )
+
+        enum LogType {
+            Information = 0
+            Warning = 1
+            Error = 2
+            Debug = 3
+        }
+
+        $ELogType = ([LogType]$LogType)
+
+        if ($LogString -match '^0$') { return $null } ## If empty message, skip.
+
+        if (($global:DebugMode -eq $false) -and ($LogType -eq 3)) {
+            ## If debug mode is false but message type is debug, skip   
+            return $null
+        }
+
 	
-    $UniqeProcessID = ([System.Diagnostics.Process]::GetCurrentProcess()).ID
-    $DateTime = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-    $Message = "$UniqeProcessID | $DateTime | $LogType | $LogString"
-    Write-Information -MessageData  $Message -Tags '1,2'
-    Add-Content -Path "$LogPath" -Value $Message -Force
-    return $null
-}
-
-function Get-ScriptPath() {
-    # If using PowerShell ISE
-    if ($psISE) {
-        $ScriptPath = Split-Path -Parent -Path $psISE.CurrentFile.FullPath
-    }
-    # If using PowerShell 3.0 or greater
-    elseif ($PSVersionTable.PSVersion.Major -gt 3) {
-        $ScriptPath = $PSScriptRoot
-    }
-    # If using PowerShell 2.0 or lower
-    else {
-        $ScriptPath = split-path -parent $MyInvocation.MyCommand.Path
-    }
-
-    # If still not found
-    # I found this can happen if running an exe created using PS2EXE module
-    if (-not $ScriptPath) {
-        $ScriptPath = [System.AppDomain]::CurrentDomain.BaseDirectory.TrimEnd('\')
-    }
-
-    # Return result
-    return $ScriptPath
-}
-
-Function Convert-XMLtoPSObject {
-    Param (
-        $XML
-    )
-    $Object = [System.Collections.ArrayList]@()
-    $xml | ForEach-Object {
-        $Name = $_.Name 
-        $Value = ($_.property | where-object 'Name' -eq 'Value').'#text'
-        $Deafult = ($_.property | where-object 'Name' -eq 'Deafult').'#text'
-        if ($Deafult -eq 'Mandatory Field. No Deafult') {
-            $Mandatory = $True
-        }
-        Else {
-            $Mandatory = $False
-        }
-        $null = $Object.Add([PSCustomObject]@{
-                'Name'      = $Name
-                'Value'     = $Value
-                'Mandatory' = $Mandatory
-            })
-    }
-    return $Object
-}
-
-Function Test-TCPConnection {
-    Param([string]$address, $port, [switch]$Quite , [int]$timeout = 2000)
-    $socket = New-Object System.Net.Sockets.TcpClient
-    try {
-        $result = $socket.BeginConnect($address, $port, $NULL, $NULL)
-        if (!$result.AsyncWaitHandle.WaitOne($timeout, $False)) {
-            if ($Quite -ne $true)
-            { throw [System.Exception]::new('Connection Timeout') }
-        }
-        $socket.EndConnect($result) | Out-Null
-        $Result = $socket.Connected
-    }
-    finally {
-        $socket.Close()
+        $UniqeProcessID = ([System.Diagnostics.Process]::GetCurrentProcess()).ID
+        $DateTime = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        $Message = "$UniqeProcessID | $DateTime | $ELogType | $LogString"
+        Write-Information -MessageData $Message
+        Add-Content -Path "$LogPath" -Value $Message -Force
         
+        return $null
     }
-    if ($result -ne $true) { return $result.CompletedSynchronously }
-    else { return $result }
-    
-}
 
-Function Invoke-DeafultXML {
-    Param (
-        [string]
-        $Path,
+    function Get-ScriptPath() {
+        # If using PowerShell ISE
+        if ($psISE) {
+            $ScriptPath = Split-Path -Parent -Path $psISE.CurrentFile.FullPath
+        }
+        # If using PowerShell 3.0 or greater
+        elseif ($PSVersionTable.PSVersion.Major -gt 3) {
+            $ScriptPath = $PSScriptRoot
+        }
+        # If using PowerShell 2.0 or lower
+        else {
+            $ScriptPath = split-path -parent $MyInvocation.MyCommand.Path
+        }
+	
+        # If still not found
+        # I found this can happen if running an exe created using PS2EXE module
+        if (-not $ScriptPath) {
+            $ScriptPath = [System.AppDomain]::CurrentDomain.BaseDirectory.TrimEnd('\')
+        }
+	
+        # Return result
+        return $ScriptPath
+    }
 
-        [string]
-        $LogPath
-    )
-    [string]$DeafultXML = '<?xml version="1.0" encoding="utf-8"?>
+    Function Convert-XMLtoPSObject {
+        Param (
+            $XML
+        )
+        $Object = [System.Collections.ArrayList]@()
+        $xml | ForEach-Object {
+            $Name = $_.Name
+            $Value = ($_.property | where-object 'Name' -eq 'Value').'#text'
+            $Default = ($_.property | where-object 'Name' -eq 'Default').'#text'
+            if ($Default -eq 'Mandatory Field. No Default') {
+                $Mandatory = $True
+            }
+            Else {
+                $Mandatory = $False
+            }
+            $null = $Object.Add([PSCustomObject]@{
+                    'Name'      = $Name
+                    'Value'     = $Value
+                    'Mandatory' = $Mandatory
+                })
+        }
+        return $Object
+    }
+
+    Function Test-TCPConnection {
+        Param ([string]$address,
+            $port,
+            [switch]$Quite,
+            [int]$timeout = 2000)
+        $socket = New-Object System.Net.Sockets.TcpClient
+        try {
+            $result = $socket.BeginConnect($address, $port, $NULL, $NULL)
+            if (!$result.AsyncWaitHandle.WaitOne($timeout, $False)) {
+                if ($Quite -ne $true)
+                { throw [System.Exception]::new('Connection Timeout') }
+            }
+            $socket.EndConnect($result) | Out-Null
+            $Result = $socket.Connected
+        }
+        finally {
+            $socket.Close()
+		
+        }
+        if ($result -ne $true) { return $result.CompletedSynchronously }
+        else { return $result }
+	
+    }
+
+
+    Function Invoke-DefaultXML {
+        Param (
+            [string]$Path,
+            [string]$LogPath
+        )
+        [string]$DefaultXML = '<?xml version="1.0" encoding="utf-8"?>
     <Objects>
       <Object>
         <Property Name="JenkinsURL">
           <Property Name="Value"></Property>
           <Property Name="Description">Jenkine Full URL including Port.</Property>
           <Property Name="Example">https://jenkins.mydomain.com:443</Property>
-          <Property Name="Deafult">Mandatory Field. No Deafult</Property>
+          <Property Name="Default">Mandatory Field. No Default</Property>
+          <Property Name="Type">String</Property>
         </Property>
         <Property Name="AgentName">
           <Property Name="Value"></Property>
           <Property Name="Description">Agent/Slave Name. Case-Sensative.</Property>
           <Property Name="Example">IISServer</Property>
-          <Property Name="Deafult">Machine Host Name</Property>
+          <Property Name="Default">Machine Host Name</Property>
+          <Property Name="Type">String</Property>
         </Property>
         <Property Name="AgentSecret">
           <Property Name="Value"></Property>
           <Property Name="Description">Agent/Slave secret autogenerated by Jenkins. Case-Sensative.</Property>
           <Property Name="Example">12345aBcD</Property>
-          <Property Name="Deafult">Mandatory Field. No Deafult</Property>
+          <Property Name="Default">Mandatory Field. No Default</Property>
+          <Property Name="Type">String</Property>
         </Property>
         <Property Name="JavaPath">
           <Property Name="Value"></Property>
           <Property Name="Description">Full path to the JDK/OpenJDK Bin Folder</Property>
           <Property Name="Example">C:\Program Files\Java\jdk-21.0.2\bin</Property>
-          <Property Name="Deafult">If JAVA_HOME Environemnt Variable is set, use it.</Property>
+          <Property Name="Default">If JAVA_HOME Environemnt Variable is set, use it.</Property>
+          <Property Name="Type">String</Property>
+        </Property>
+        <Property Name="DebugMode">
+          <Property Name="Value"></Property>
+          <Property Name="Description">1= Enable Debug Logs. 0= Disable Debug Logs</Property>
+          <Property Name="Example">0</Property>
+          <Property Name="Default">0</Property>
+          <Property Name="Type">Boolean</Property>
         </Property>
       </Object>
     </Objects>'
-
-    $Path = "$Path\JenkinsAsService.xml"
-    
-    $SaveResponse = Set-Content -Path $Path -Value $DeafultXML -Force -Encoding 'UTF8' -PassThru
-    if ((($null, '') -contains $SaveResponse) -or ($SaveResponse -ne $DeafultXML)) {
-        Invoke-WriteLog -LogPath "$LogPath" -LogString "Error Saving Deafult XML to Path: '$Path'" -LogType 'Error'
-        exit
+	
+        $Path = "$Path\JenkinsAsService.xml"
+	
+        $SaveResponse = Set-Content -Path $Path -Value $DefaultXML -Force -Encoding 'UTF8' -PassThru
+        if ((($null, '') -contains $SaveResponse) -or ($SaveResponse -ne $DefaultXML)) {
+            Invoke-WriteLog -LogPath "$LogPath" -LogString "Error Saving Default XML to Path: '$Path'" -LogType 2
+            exit
+        }
     }
-}
-
-$InformationPreference = 'Continue'
 
 
-TRY {
+
+    $InformationPreference = 'Continue'
+
+    
+
+
+
     ##Check if Windows OS
-    if (([System.Environment]::OSVersion.Platform) -ne 'Win32NT' ) { exit }
+    if (([System.Environment]::OSVersion.Platform) -ne 'Win32NT') { exit }
+	
 
+    ##Setting Defult Variables
     $JenkinsPath = Get-ScriptPath
     $XMLPath = "$JenkinsPath\JenkinsAsService.xml"
-    $AgentLog = "$JenkinsPath\agent.log"
-
-
-
+    $Global:AgentLog = "$JenkinsPath\agent.log"
+	
+	
+	
     #Read Settings File
     if (Test-Path -Path $XMLPath -PathType 'Leaf') {
         $Content = (Get-Content -Path $XMLPath -Force)
         if (($null, '') -contains $Content) {
-            Invoke-DeafultXML -Path $JenkinsPath  -LogPath $AgentLog
-            Invoke-WriteLog -LogPath $AgentLog -LogString 'Please Fill in the XML Values and re-run the Service' -LogType 'Warning'
-            exit    
+            Invoke-DefaultXML -Path $JenkinsPath -LogPath $AgentLog
+            Invoke-WriteLog -LogString "Setting file Created: '$XMLPath'. Fill the Values and re-run the Service" -LogType 2
+            exit
         }
         else {
             [xml]$XML = $Content
-
+			
             $Settings = Convert-XMLtoPSObject -XML ($XML.Objects.Object.property)
-
+			
         }
     }
     else {
-        Invoke-DeafultXML -Path $JenkinsPath
-        Write-Warning -Message 'Please Fill in the XML Values and re-run the Service'
+        Invoke-DefaultXML -Path $JenkinsPath
+        Invoke-WriteLog -LogString "Setting file Created: '$XMLPath'. Fill the Values and re-run the Service" -LogType 2
         exit
     }
-
-
-
+	
+	
+	
     #Set Settings as Variables
     foreach ($Setting in $Settings) {
         $Name = $Setting.Name
         $Value = $Setting.Value
         $Mandatory = $Setting.Mandatory
         if (($Setting.Mandatory -eq $true) -and (($null, '') -contains $Setting.Value)) {
-            Invoke-WriteLog -LogPath $AgentLog -LogString  "Jenkins Failed to run: '$Name' is a mandatory field." -LogType 'Error'
+            Invoke-WriteLog -LogString "Jenkins Failed to run: '$Name' is a mandatory field." -LogType 2
             Exit
         }
-        Set-Variable -Name $Setting.Name -Value $Setting.Value -Force
+        Set-Variable -Name $Setting.Name -Value $Setting.Value -Force -Scope 'Global'
+    }
+	
+    ##Checking Debug Mode
+    Switch -Regex ($DebugMode) {
+        '(^0$)|(^\s*$)' { $DebugMode = $false } ##if Empty or 0
+        '^1$' { $DebugMode = $true } 
+        Default { $DebugMode = $false } ##Any other value
     }
 
+    ##Checking Agent Name
     if (('', $null) -contains $AgentName) {
         $AgentName = [System.Net.Dns]::GetHostName()
-        Invoke-WriteLog -LogPath $AgentLog -LogString  "'AgentName' is empty. Using '$AgentName' for this session" -LogType 'Warning'
+        Invoke-WriteLog -LogString "'AgentName' is empty. Using '$AgentName' for this session" -LogType 3
     }
-
-    if ((('', $null) -contains $JavaPath) -or (-not (Test-Path -Path "$JavaPath\java.exe" -PathType 'Leaf'))) {
-        Invoke-WriteLog -LogPath $AgentLog -LogString  "'JavaPath' is empty. Looking for JAVA_HOME Environment Variable" -LogType 'Information'
+	
+    ##Checking Java Path
+    if (($JavaPath -match '^0$') -or (-not (Test-Path -Path "$JavaPath\java.exe" -PathType 'Leaf'))) {
+        Invoke-WriteLog -LogString "'JavaPath' is empty. Looking for JAVA_HOME Environment Variable" -LogType 3
         if (Test-Path -Path (${env:JAVA_HOME} + '\java.exe') -PathType 'Leaf') {
             $JavaPath = ${env:JAVA_HOME}
-            Invoke-WriteLog -LogPath $AgentLog -LogString  "JAVA_HOME Environment Variable Found. JavaPAth='$JavaPath' in this session" -LogType 'Information'
-
+            Invoke-WriteLog -LogString "JAVA_HOME Environment Variable Found. JavaPAth='$JavaPath' in this session"  -LogType 3
+			
         }
         else {
-            Invoke-WriteLog -LogPath $AgentLog -LogString  "'JavaPath' Value and 'JAVA_HOME' Environment Variable are empty or missing" -LogType 'Error'
+            Invoke-WriteLog -LogString "'JavaPath' Value and 'JAVA_HOME' Environment Variable are empty or missing" -LogType 2
             exit
         }
     }
     Else {
         if (-not (Test-Path -Path "$JavaPath\java.exe" -PathType Leaf)) {
-            Invoke-WriteLog -LogPath $AgentLog -LogString  "Issue with 'JavaPath': The Path provided ($JavaPath) Does not exist or it does not contain a java.exe executable" -LogType 'Error'
+            Invoke-WriteLog -LogString "Issue with 'JavaPath': The Path provided ($JavaPath) Does not exist or it does not contain a java.exe executable" -LogType 1
             exit
         }
     }
-
+	
     ##Check Jenkins URL and Port communication
     $Jenkins = $jenkinsURL.TrimStart('http://').TrimStart('https://')
     $JenkinsDomain = $Jenkins.Substring(0, ($Jenkins.IndexOf(":")))
-    $JenkinsPort = $Jenkins.Substring(( $Jenkins.IndexOf(":") + 1 ))
+    $JenkinsPort = $Jenkins.Substring(($Jenkins.IndexOf(":") + 1))
 
+    if ($JenkinsPort -notmatch "^\d+$") {
+      		Invoke-WriteLog -LogString "Issue with 'JenkinsPort': Port provided ($JenkinsPort) is not an Integer Value" -LogType 1
+        exit  
+    }
+	
     if ((Test-TCPConnection -address $JenkinsDomain -port $JenkinsPort -Quite) -ne $true) {
-        Invoke-WriteLog -LogPath $AgentLog -LogString  "Issue with 'jenkinsURL': Unable to communicate with '$JenkinsDomain' over Port '$JenkinsPort'" -LogType 'Error'
+        Invoke-WriteLog -LogString "Issue with 'jenkinsURL': Unable to communicate with '$JenkinsDomain' over Port '$JenkinsPort'" -LogType 1
         exit
     }
-
-
+	
+	
     ##Cleaning Junk Variables From Memory
     Remove-Variable -Name @('Content', 'Settings', 'XML', 'XMLPath', 'Jenkins', 'JenkinsDomain', 'JenkinsPort') -Force -ErrorAction 'SilentlyContinue'
-
-
+	
+	
     #Set TLS Security. TLS 1.2 and above. Higher to Lower TLS.
     [enum]::GetValues('Net.SecurityProtocolType') | Where-Object -FilterScript { $_ -ge 'Tls12' } | Sort-Object -Descending -Unique | ForEach-Object {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor $_
     }
-
-
+	
+	
     #Reciving Agent.Jar from Jenkins
-    Invoke-WriteLog -LogPath $AgentLog -LogString 'Attepting to establish connection with Jenkins' -LogType 'Information'
-    Invoke-WebRequest -Uri "$JenkinsURL/jnlpJars/agent.jar" -OutFile "$JenkinsPath\agent.jar" -UseBasicParsing -Method 'Get' *>>"$AgentLog"
-
+    Invoke-WriteLog -LogString 'Attepting to establish connection with Jenkins'
+    $null = Invoke-WebRequest -Uri "$JenkinsURL/jnlpJars/agent.jar" -OutFile "$JenkinsPath\agent.jar" -UseBasicParsing -Method 'Get' -PassThru -ErrorAction Stop
+	
     #Running The Agent
-    Invoke-WriteLog -LogPath $AgentLog -LogString 'Attepting to start Jenkins Agent' -LogType 'Information'
-    $AgentProcess = Start-Process -FilePath "`"$JavaPath\java.exe`" -jar `"$JenkinsPath\agent.jar`" -url `"$JenkinsURL/`" -secret `"$AgentSecret`" -name `"$AgentName`" -workDir `"$JenkinsPath`"" -WindowStyle 'Hidden' -RedirectStandardError "$AgentLog"  -PassThru
-    $null = Wait-Process -Id $AgentProcess.Id
+    Invoke-WriteLog -LogString 'Attepting to start Jenkins Agent'
+    & "$JavaPath\java.exe" -jar "$JenkinsPath\agent.jar" -url "$JenkinsURL/" -secret $AgentSecret -name $AgentName -workDir "$JenkinsPath" *>&1 | ForEach-Object { 
+        $Output = $_.tostring()
+
+        if ($Output -match '^INFO:.*') {
+            Invoke-WriteLog -LogString ($Output.TrimStart(' INFO: ')) 
+        }
+
+        elseif ([bool](($Output.Substring(0, 6)) -as [datetime])) {
+            $Output = $Output.Substring(6)
+            Invoke-WriteLog -LogString $Output -LogType 3
+        }
+            
+        else {
+            Invoke-WriteLog -LogString $Output
+        }
+    }
 }
 
 Catch {
-    Invoke-WriteLog -LogPath "$AgentLog" -LogString ($_ | Convert-String) -LogType 'Error'
+    ## Write Error log
+    Invoke-WriteLog -LogPath "$AgentLog" -LogString ($_ | Select-Object -Property '*' |  Out-String) -LogType 2
 }
 
 Finally {
-    $StopResponse = Stop-Process $AgentProcess.Id -Force -PassThru
-    if ($StopResponse.Id -eq $AgentProcess.Id) {
-        Invoke-WriteLog -LogPath $AgentLog -LogString ("Jenkins Agent (Process ID " + $AgentProcess.Id + ") Stopped.") -LogType 'Warning'
-        exit
-    }
+    ## Write exit to log
+    Invoke-WriteLog -LogString 'Jenkins Agent Stopped' -LogType 1
+    exit   
 }
