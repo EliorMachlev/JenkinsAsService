@@ -5,8 +5,8 @@
 
 | Version     | Supported          |
 | -------     | ------------------ |
-| 0.1-alpha   | :x:                |
+| 1.0.1   | ✅                |
 
 ## Reporting a Vulnerability
 
-Open a a BUG issue
+[Privately Report Vulnerabilities](https://github.com/EliorMachlev/JenkinsAsService/issues/new/choose)
