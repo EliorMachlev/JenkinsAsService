@@ -18,3 +18,8 @@ Mission: Run Jenkins Agent as a Windows Service utilizing PowerShell
 
 ## Documenation
 - [Configurations Overview](https://github.com/EliorMachlev/JenkinsAsService/wiki/Configurations)
+
+## Software Usage
+- [Microsfot Visual Studio Code](https://code.visualstudio.com/)
+- Microsoft Powershell
+- [SAPIEN PowerShell Studio](https://www.sapien.com/software/powershell_studio)
