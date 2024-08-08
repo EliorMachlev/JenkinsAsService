@@ -1,4 +1,4 @@
-# Jenkins As Service [WIP]
+# Jenkins As Service
 
 Mission: Run Jenkins Agent as a Windows Service utilizing PowerShell
 
