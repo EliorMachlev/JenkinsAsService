@@ -16,3 +16,5 @@ Mission: Run Jenkins Agent as a Windows Service utilizing PowerShell
 - [x] Convert Powershell Ps1 to EXE
 - [x] Create installer, preferably using MSI
 
+## Documenation
+- [Configurations Overview](https://github.com/EliorMachlev/JenkinsAsService/wiki/Configurations)
