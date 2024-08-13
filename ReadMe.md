@@ -7,10 +7,10 @@ Run Jenkins Agent as a Windows Service utilizing PowerShell
 - [x] Create a working Powershell Script
 - [x] Add Versioning for future updates 
 - [x] Convert Powershell Ps1 to EXE
-- [x] Create installer, preferably using MSI
+- [ ] Create installer, preferably using MSI
 ## Documenation
 - [Configurations Overview](https://github.com/EliorMachlev/JenkinsAsService/wiki/Configurations)
 ## Software Usage
 - [Microsfot Visual Studio Code](https://code.visualstudio.com/)
 - Microsoft Powershell
-- [SAPIEN PowerShell Studio](https://www.sapien.com/software/powershell_studio)
+- [PowerShell Pro Tools](https://docs.poshtools.com)
