@@ -15,21 +15,25 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private readonly ServiceSettings _settings;
     private readonly IJarDownloader _jarDownloader;
     private readonly IConnectivityChecker _connectivityChecker;
+    private readonly ISecretResolver _secretResolver;
     private readonly string _basePath;
     private string _javaExe = "";
     private string _agentName = "";
+    private string _resolvedSecret = "";
     private Process? _agentProcess;
 
     public JenkinsAgentWorker(
         ILogger<JenkinsAgentWorker> logger,
         IOptions<ServiceSettings> settings,
         IJarDownloader jarDownloader,
-        IConnectivityChecker connectivityChecker)
+        IConnectivityChecker connectivityChecker,
+        ISecretResolver secretResolver)
     {
         _logger = logger;
         _settings = settings.Value;
         _jarDownloader = jarDownloader;
         _connectivityChecker = connectivityChecker;
+        _secretResolver = secretResolver;
         _basePath = AppContext.BaseDirectory;
     }
 
@@ -102,6 +106,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
         {
             _agentName = _settings.AgentName;
         }
+
+        _resolvedSecret = _secretResolver.Resolve(_settings);
+        _logger.LogInformation("Secret resolved via {Mode} mode", _settings.SecretMode);
     }
 
     internal static string ResolveJavaPath(string? configuredPath, string? javaHome)
@@ -160,7 +167,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         psi.ArgumentList.Add("-url");
         psi.ArgumentList.Add($"{_settings.JenkinsURL.TrimEnd('/')}/");
         psi.ArgumentList.Add("-secret");
-        psi.ArgumentList.Add(_settings.AgentSecret);
+        psi.ArgumentList.Add(_resolvedSecret);
         psi.ArgumentList.Add("-name");
         psi.ArgumentList.Add(_agentName);
         psi.ArgumentList.Add("-workDir");

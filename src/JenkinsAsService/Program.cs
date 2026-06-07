@@ -63,6 +63,7 @@ try
         .AddStandardResilienceHandler();
     builder.Services.AddSingleton<IJarDownloader, HttpJarDownloader>();
     builder.Services.AddSingleton<IConnectivityChecker, TcpConnectivityChecker>();
+    builder.Services.AddSingleton<ISecretResolver, SecretResolver>();
     builder.Services.AddHostedService<JenkinsAgentWorker>();
 
     builder.Logging.ClearProviders();

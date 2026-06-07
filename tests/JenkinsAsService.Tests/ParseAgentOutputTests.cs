@@ -23,7 +23,8 @@ public class ParseAgentOutputTests
             _logger,
             Options.Create(settings),
             Substitute.For<IJarDownloader>(),
-            Substitute.For<IConnectivityChecker>());
+            Substitute.For<IConnectivityChecker>(),
+            Substitute.For<ISecretResolver>());
     }
 
     [Fact]
@@ -100,7 +101,8 @@ public class ParseAgentOutputTests
             logger,
             Options.Create(settings),
             Substitute.For<IJarDownloader>(),
-            Substitute.For<IConnectivityChecker>());
+            Substitute.For<IConnectivityChecker>(),
+            Substitute.For<ISecretResolver>());
 
         worker.ParseAgentOutput("some raw java output");
 

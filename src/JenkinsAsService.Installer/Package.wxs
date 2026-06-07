@@ -25,6 +25,20 @@
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)License.rtf" />
 
+    <!-- ─── Custom Action: write appsettings.json with protected secret ─── -->
+    <Binary Id="CustomActionDll" SourceFile="$(var.CustomActionDir)JenkinsAsService.CustomActions.dll" />
+
+    <CustomAction Id="SetWriteConfigData" Property="WriteConfig"
+                  Value="INSTALLFOLDER=[INSTALLFOLDER];JENKINS_URL=[JENKINS_URL];JENKINS_SECRET=[JENKINS_SECRET];JENKINS_AGENT_NAME=[JENKINS_AGENT_NAME];JENKINS_JAVA_PATH=[JENKINS_JAVA_PATH];JENKINS_SECRET_MODE=[JENKINS_SECRET_MODE]" />
+
+    <CustomAction Id="WriteConfig" DllEntry="WriteConfig" BinaryRef="CustomActionDll"
+                  Execute="deferred" Impersonate="no" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetWriteConfigData" Before="WriteConfig">NOT Installed</Custom>
+      <Custom Action="WriteConfig" Before="InstallFinalize">NOT Installed</Custom>
+    </InstallExecuteSequence>
+
   </Package>
 
 </Wix>
