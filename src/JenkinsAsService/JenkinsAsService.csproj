@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>JenkinsAsService</RootNamespace>
+    <AssemblyName>JenkinsAsService</AssemblyName>
+    <Description>Run Jenkins As Service</Description>
+    <Company>EliorMachlev</Company>
+    <Copyright>Copyright (c) 2024 All rights reserved</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="JenkinsAsService.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.*" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.6.0" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="9.*" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.*" />
+    <PackageReference Include="Serilog.Sinks.EventLog" Version="4.*" />
+  </ItemGroup>
+
+</Project>
