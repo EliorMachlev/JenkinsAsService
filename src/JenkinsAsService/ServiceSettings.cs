@@ -25,4 +25,7 @@ public sealed class ServiceSettings
 
     /// <summary>Use compact JSON format for log file (Serilog CompactJsonFormatter). Default: false.</summary>
     public bool CompactLog { get; set; }
+
+    /// <summary>Secret protection mode: Unprotected, Dpapi, EnvironmentVariable, CredentialManager.</summary>
+    public SecretMode SecretMode { get; set; } = SecretMode.Unprotected;
 }
