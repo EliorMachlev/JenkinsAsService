@@ -8,6 +8,9 @@ publish/
 *.rar
 *.zip
 
+# NuGet
+*.nupkg
+
 # IDE
 .vs/
 *.user
@@ -16,7 +19,27 @@ publish/
 # Rider
 .idea/
 
+# WiX
+*.wixobj
+*.wixpdb
+*.msi
+*.msm
+*.msp
+*.cab
+
+# Test results
+[Tt]est[Rr]esult*/
+TestResult.xml
+coverage*/
+
 # OS
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Jenkins runtime artifacts (local testing)
+agent.jar
+agent.log
+agent*.log
+agent.clef
+remoting/
