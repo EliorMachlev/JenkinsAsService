@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Test
+        run: dotnet test -c Release --verbosity normal
+
+      - name: Set version
+        id: version
+        run: echo "VERSION=$("${{ github.ref_name }}".TrimStart('v'))" >> $env:GITHUB_OUTPUT
+
+      - name: Publish x64
+        run: dotnet publish src/JenkinsAsService -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/x64/
+
+      - name: Publish x86
+        run: dotnet publish src/JenkinsAsService -c Release -r win-x86 --self-contained -p:PublishSingleFile=true -o publish/x86/
+
+      - name: Build MSI x64
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x64/
+
+      - name: Build MSI x86
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x86/
+
+      - name: Rename MSI files
+        run: |
+          $v = "${{ steps.version.outputs.VERSION }}"
+          Move-Item msi/x64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x64.msi"
+          Move-Item msi/x86/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x86.msi"
+
+      - name: Create 7z archives
+        run: |
+          7z a -t7z -mx=9 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z" ./publish/x64/JenkinsAsService.exe ./publish/x64/appsettings.json
+          7z a -t7z -mx=9 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.7z" ./publish/x86/JenkinsAsService.exe ./publish/x86/appsettings.json
+
+      - name: Install WinRAR
+        run: choco install winrar -y --no-progress
+
+      - name: Create RAR5 archives with recovery record
+        run: |
+          $rar = "C:\Program Files\WinRAR\rar.exe"
+          & $rar a -ma5 -rr5p -ep1 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.rar" ./publish/x64/JenkinsAsService.exe ./publish/x64/appsettings.json
+          & $rar a -ma5 -rr5p -ep1 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.rar" ./publish/x86/JenkinsAsService.exe ./publish/x86/appsettings.json
+
+      - name: Generate checksums
+        run: |
+          $v = "${{ steps.version.outputs.VERSION }}"
+          $files = [ordered]@{
+            "JenkinsAsService_${v}_x64.msi"  = "JenkinsAsService_${v}_x64.msi"
+            "JenkinsAsService_${v}_x86.msi"  = "JenkinsAsService_${v}_x86.msi"
+            "JenkinsAsService_${v}_x64.7z"   = "JenkinsAsService_${v}_x64.7z"
+            "JenkinsAsService_${v}_x64.rar"  = "JenkinsAsService_${v}_x64.rar"
+            "JenkinsAsService_${v}_x86.7z"   = "JenkinsAsService_${v}_x86.7z"
+            "JenkinsAsService_${v}_x86.rar"  = "JenkinsAsService_${v}_x86.rar"
+            "x64/JenkinsAsService.exe"       = "publish/x64/JenkinsAsService.exe"
+            "x64/appsettings.json"           = "publish/x64/appsettings.json"
+            "x86/JenkinsAsService.exe"       = "publish/x86/JenkinsAsService.exe"
+            "x86/appsettings.json"           = "publish/x86/appsettings.json"
+          }
+          $checksums = [ordered]@{ version = $v; algorithm = "SHA256"; files = [ordered]@{} }
+          foreach ($entry in $files.GetEnumerator()) {
+            $hash = (Get-FileHash -Algorithm SHA256 $entry.Value).Hash.ToLower()
+            $checksums.files[$entry.Key] = $hash
+          }
+          $checksums | ConvertTo-Json -Depth 3 | Set-Content "JenkinsAsService_${v}_checksums.json" -Encoding utf8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.msi
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.msi
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.rar
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.7z
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.rar
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_checksums.json

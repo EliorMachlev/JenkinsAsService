@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+publish/
+
+# Archives
+*.7z
+*.rar
+*.zip
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

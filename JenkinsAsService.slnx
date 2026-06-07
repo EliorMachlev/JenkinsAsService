@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/JenkinsAsService/JenkinsAsService.csproj" />
+    <Project Path="src/JenkinsAsService.Installer/JenkinsAsService.Installer.wixproj">
+      <Configuration Solution="Debug|*" Build="false" />
+      <Configuration Solution="Release|*" Build="false" />
+    </Project>
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/JenkinsAsService.Tests/JenkinsAsService.Tests.csproj" />
+  </Folder>
+</Solution>

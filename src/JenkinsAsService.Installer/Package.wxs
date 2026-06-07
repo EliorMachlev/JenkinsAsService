@@ -1,0 +1,30 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Jenkins Agent Service"
+           Manufacturer="EliorMachlev"
+           Version="$(var.Version)"
+           UpgradeCode="dbd9ef1c-d4f0-5809-a88c-de4dbbf85f29"
+           Scope="perMachine"
+           InstallerVersion="500">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="Logo.ico" SourceFile="$(var.ProjectDir)..\..\Resources\Logo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Logo.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/EliorMachlev/JenkinsAsService" />
+
+    <Feature Id="Main" Title="Jenkins Agent Service" Level="1">
+      <ComponentGroupRef Id="PublishOutput" />
+      <ComponentRef Id="ServiceComponent" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)License.rtf" />
+
+  </Package>
+
+</Wix>
