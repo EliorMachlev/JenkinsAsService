@@ -24,6 +24,8 @@
     <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.*" />
     <PackageReference Include="Serilog.Sinks.EventLog" Version="4.*" />
+    <PackageReference Include="AdysTech.CredentialManager" Version="2.6.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
   </ItemGroup>
 
 </Project>
