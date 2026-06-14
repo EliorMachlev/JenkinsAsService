@@ -5,11 +5,38 @@ namespace JenkinsAsService;
 
 public sealed class JenkinsAgentWorker : BackgroundService
 {
+    // ─── Watchdog / recovery timing ───────────────────────────────────────────
     private const int WatchdogPollMs = 5_000;
     private const int BackoffBaseSec = 10;
     private const int BackoffMaxSec = 300;
     private const int StabilityMs = 60_000;
+    private const int StabilitySeconds = StabilityMs / 1_000;
+    private const double BackoffMultiplier = 2;
+    private const int UnknownExitCode = -1;
+
+    // ─── Files / process ──────────────────────────────────────────────────────
     private const string JarFilename = "agent.jar";
+    private const string JavaExeFilename = "java.exe";
+    private const string JavaBinFolder = "bin";
+
+    // ─── Java agent CLI argument names ─────────────────────────────────────────
+    private const string ArgJar = "-jar";
+    private const string ArgUrl = "-url";
+    private const string ArgSecret = "-secret";
+    private const string ArgName = "-name";
+    private const string ArgWorkDir = "-workDir";
+
+    // ─── Agent stdout/stderr log-level prefixes ───────────────────────────────
+    private const string InfoPrefix = "INFO: ";
+    private const string WarningPrefix = "WARNING: ";
+    private const string SeverePrefix = "SEVERE: ";
+
+    // ─── Misc ─────────────────────────────────────────────────────────────────
+    private const string SecretRedaction = "*****";
+    private const string UrlPathSeparator = "/";
+    private const int ConnectivityTimeoutMs = 2_000;
+    private const int BannerWidth = 80;
+    private const char BannerChar = '=';
 
     private readonly ILogger<JenkinsAgentWorker> _logger;
     private readonly ServiceSettings _settings;
@@ -41,9 +68,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     {
         try
         {
-            _logger.LogInformation("{Sep}", new string('=', 80));
-            _logger.LogInformation("=== SERVICE STARTING (PID: {Pid}) ===", Environment.ProcessId);
-            _logger.LogInformation("{Sep}", new string('=', 80));
+            LogStartupBanner();
 
             ValidateSettings();
             ResolveJavaPath();
@@ -70,6 +95,15 @@ public sealed class JenkinsAgentWorker : BackgroundService
         KillAgent();
         _logger.LogWarning("Jenkins Agent stopped");
         await base.StopAsync(cancellationToken);
+    }
+
+    private void LogStartupBanner()
+    {
+        var banner = new string(BannerChar, BannerWidth);
+        _logger.LogInformation("{Sep}", banner);
+        _logger.LogInformation("=== SERVICE STARTING (PID: {Pid}) ===", Environment.ProcessId);
+        _logger.LogInformation("Base directory: {BasePath}", _basePath);
+        _logger.LogInformation("{Sep}", banner);
     }
 
     // ─── Validation ─────────────────────────────────────────────────────────
@@ -121,12 +155,12 @@ public sealed class JenkinsAgentWorker : BackgroundService
         if (!string.IsNullOrWhiteSpace(javaHome))
         {
             candidates.Add(javaHome);
-            candidates.Add(Path.Combine(javaHome, "bin"));
+            candidates.Add(Path.Combine(javaHome, JavaBinFolder));
         }
 
         foreach (var path in candidates)
         {
-            var exe = Path.Combine(path, "java.exe");
+            var exe = Path.Combine(path, JavaExeFilename);
             if (File.Exists(exe))
                 return exe;
         }
@@ -144,37 +178,14 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private async Task TestConnectivityAsync(CancellationToken ct)
     {
         var uri = new Uri(_settings.JenkinsURL);
-        await _connectivityChecker.TestAsync(uri.Host, uri.Port, 2_000, ct);
+        await _connectivityChecker.TestAsync(uri.Host, uri.Port, ConnectivityTimeoutMs, ct);
     }
 
     // ─── Agent Process ──────────────────────────────────────────────────────
 
     private Process StartAgentProcess()
     {
-        var jarPath = Path.Combine(_basePath, JarFilename);
-
-        var psi = new ProcessStartInfo(_javaExe)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            WorkingDirectory = _basePath
-        };
-
-        psi.ArgumentList.Add("-jar");
-        psi.ArgumentList.Add(jarPath);
-        psi.ArgumentList.Add("-url");
-        psi.ArgumentList.Add($"{_settings.JenkinsURL.TrimEnd('/')}/");
-        psi.ArgumentList.Add("-secret");
-        psi.ArgumentList.Add(_resolvedSecret);
-        psi.ArgumentList.Add("-name");
-        psi.ArgumentList.Add(_agentName);
-        psi.ArgumentList.Add("-workDir");
-        psi.ArgumentList.Add(_basePath);
-
-        foreach (var arg in ParseArguments(_settings.CustomArguments))
-            psi.ArgumentList.Add(arg);
+        var psi = BuildProcessStartInfo();
 
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) ParseAgentOutput(e.Data); };
@@ -186,6 +197,37 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         _logger.LogInformation("Jenkins Agent started (Java PID: {JavaPid})", process.Id);
         return process;
+    }
+
+    private ProcessStartInfo BuildProcessStartInfo()
+    {
+        var jarPath = Path.Combine(_basePath, JarFilename);
+        var normalizedUrl = $"{_settings.JenkinsURL.TrimEnd('/')}{UrlPathSeparator}";
+
+        var psi = new ProcessStartInfo(_javaExe)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = _basePath
+        };
+
+        psi.ArgumentList.Add(ArgJar);
+        psi.ArgumentList.Add(jarPath);
+        psi.ArgumentList.Add(ArgUrl);
+        psi.ArgumentList.Add(normalizedUrl);
+        psi.ArgumentList.Add(ArgSecret);
+        psi.ArgumentList.Add(_resolvedSecret);
+        psi.ArgumentList.Add(ArgName);
+        psi.ArgumentList.Add(_agentName);
+        psi.ArgumentList.Add(ArgWorkDir);
+        psi.ArgumentList.Add(_basePath);
+
+        foreach (var arg in ParseArguments(_settings.CustomArguments))
+            psi.ArgumentList.Add(arg);
+
+        return psi;
     }
 
     internal static List<string> ParseArguments(string? input)
@@ -245,14 +287,14 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         // Redact resolved secret in case Jenkins emits it on handshake failure
         if (!string.IsNullOrEmpty(_resolvedSecret))
-            line = line.Replace(_resolvedSecret, "*****", StringComparison.Ordinal);
+            line = line.Replace(_resolvedSecret, SecretRedaction, StringComparison.Ordinal);
 
-        if (line.StartsWith("INFO: ", StringComparison.Ordinal))
-            _logger.LogInformation("{Output}", line[6..]);
-        else if (line.StartsWith("WARNING: ", StringComparison.Ordinal))
-            _logger.LogWarning("{Output}", line[9..]);
-        else if (line.StartsWith("SEVERE: ", StringComparison.Ordinal))
-            _logger.LogError("{Output}", line[8..]);
+        if (line.StartsWith(InfoPrefix, StringComparison.Ordinal))
+            _logger.LogInformation("{Output}", line[InfoPrefix.Length..]);
+        else if (line.StartsWith(WarningPrefix, StringComparison.Ordinal))
+            _logger.LogWarning("{Output}", line[WarningPrefix.Length..]);
+        else if (line.StartsWith(SeverePrefix, StringComparison.Ordinal))
+            _logger.LogError("{Output}", line[SeverePrefix.Length..]);
         else if (_settings.DebugMode)
             _logger.LogDebug("{Output}", line);
         else
@@ -274,43 +316,62 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
             if (_agentProcess is { HasExited: false })
             {
-                if (retryCount > 0 && (DateTime.UtcNow - lastRestartTime).TotalMilliseconds >= StabilityMs)
+                if (IsAgentStable(retryCount, lastRestartTime))
                 {
                     retryCount = 0;
-                    _logger.LogInformation("Watchdog: Agent stable for 60s. Retry counter reset.");
+                    _logger.LogInformation("Watchdog: Agent stable for {Seconds}s. Retry counter reset.", StabilitySeconds);
                 }
                 continue;
             }
 
             // ── Agent died — begin recovery ──
-            var exitCode = _agentProcess?.HasExited == true ? _agentProcess.ExitCode : -1;
+            var exitCode = GetAgentExitCode();
             KillAgent();
 
             retryCount++;
             _logger.LogWarning("Watchdog: Agent exited (code: {Code}). Recovery attempt {Count}.",
                 exitCode, retryCount);
 
-            if (_settings.MaxRetries > 0 && retryCount > _settings.MaxRetries)
+            if (HasExceededMaxRetries(retryCount))
             {
                 _logger.LogError("Watchdog: Max retries ({Max}) exceeded. Giving up.", _settings.MaxRetries);
                 break;
             }
 
-            var delay = (int)Math.Min(BackoffBaseSec * Math.Pow(2, retryCount - 1), BackoffMaxSec);
-            _logger.LogInformation("Watchdog: Waiting {Delay}s before retry...", delay);
-            await Task.Delay(TimeSpan.FromSeconds(delay), ct);
-
-            try
-            {
-                await _jarDownloader.DownloadAsync(_settings.JenkinsURL, _basePath, ct);
-                _agentProcess = StartAgentProcess();
+            if (await RecoverAgentAsync(retryCount, ct))
                 lastRestartTime = DateTime.UtcNow;
-                _logger.LogInformation("Watchdog: Agent restarted (attempt {Count})", retryCount);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "Watchdog: Recovery failed");
-            }
+        }
+    }
+
+    private bool IsAgentStable(int retryCount, DateTime lastRestartTime) =>
+        retryCount > 0 && (DateTime.UtcNow - lastRestartTime).TotalMilliseconds >= StabilityMs;
+
+    private int GetAgentExitCode() =>
+        _agentProcess?.HasExited == true ? _agentProcess.ExitCode : UnknownExitCode;
+
+    private bool HasExceededMaxRetries(int retryCount) =>
+        _settings.MaxRetries > 0 && retryCount > _settings.MaxRetries;
+
+    private static int ComputeBackoffDelaySeconds(int retryCount) =>
+        (int)Math.Min(BackoffBaseSec * Math.Pow(BackoffMultiplier, retryCount - 1), BackoffMaxSec);
+
+    private async Task<bool> RecoverAgentAsync(int retryCount, CancellationToken ct)
+    {
+        var delay = ComputeBackoffDelaySeconds(retryCount);
+        _logger.LogInformation("Watchdog: Waiting {Delay}s before retry...", delay);
+        await Task.Delay(TimeSpan.FromSeconds(delay), ct);
+
+        try
+        {
+            await _jarDownloader.DownloadAsync(_settings.JenkinsURL, _basePath, ct);
+            _agentProcess = StartAgentProcess();
+            _logger.LogInformation("Watchdog: Agent restarted (attempt {Count})", retryCount);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Watchdog: Recovery failed");
+            return false;
         }
     }
 

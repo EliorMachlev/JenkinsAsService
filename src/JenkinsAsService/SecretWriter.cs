@@ -12,6 +12,9 @@ public static class SecretWriter
 {
     private const string EnvVarName = "JENKINS_AGENT_SECRET";
     private const string CredTargetName = "JenkinsAsService/AgentSecret";
+    private const string CredUserName = "JenkinsAgent";
+    private const string ConfigFileName = "appsettings.json";
+    private const string ConfigSectionName = "Jenkins";
 
     /// <summary>
     /// Processes the secret based on mode, then writes appsettings.json.
@@ -20,49 +23,57 @@ public static class SecretWriter
     public static void WriteConfig(string basePath, string secret, SecretMode mode,
         string url, string? agentName, string? javaPath)
     {
-        var configSecret = mode switch
-        {
-            SecretMode.Dpapi => ProtectDpapi(secret),
-            SecretMode.EnvironmentVariable => StoreEnvironmentVariable(secret),
-            SecretMode.CredentialManager => StoreCredentialManager(secret),
-            SecretMode.Unprotected => secret,
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown SecretMode.")
-        };
+        var configSecret = ProcessSecret(secret, mode);
+        var configPath = Path.Combine(basePath, ConfigFileName);
 
-        var configPath = Path.Combine(basePath, "appsettings.json");
+        var existingJenkins = ReadExistingJenkinsSection(configPath);
+        var jenkins = BuildJenkinsSection(configSecret, mode, url, agentName, javaPath, existingJenkins);
 
-        // Read existing config to preserve user-customized fields
-        JsonObject? existingJenkins = null;
-        if (File.Exists(configPath))
-        {
-            try
-            {
-                var existing = JsonNode.Parse(File.ReadAllText(configPath));
-                existingJenkins = existing?["Jenkins"]?.AsObject();
-            }
-            catch (JsonException)
-            {
-                // Corrupt file — overwrite entirely
-            }
-        }
-
-        var jenkins = new JsonObject
-        {
-            ["JenkinsURL"] = url,
-            ["AgentSecret"] = configSecret,
-            ["SecretMode"] = mode.ToString(),
-            ["AgentName"] = agentName ?? existingJenkins?["AgentName"]?.GetValue<string>() ?? "",
-            ["JavaPath"] = javaPath ?? existingJenkins?["JavaPath"]?.GetValue<string>() ?? "",
-            ["CustomArguments"] = existingJenkins?["CustomArguments"]?.GetValue<string>() ?? "",
-            ["DebugMode"] = existingJenkins?["DebugMode"]?.GetValue<bool>() ?? false,
-            ["CompactLog"] = existingJenkins?["CompactLog"]?.GetValue<bool>() ?? false,
-            ["MaxRetries"] = existingJenkins?["MaxRetries"]?.GetValue<int>() ?? 0
-        };
-
-        var root = new JsonObject { ["Jenkins"] = jenkins };
+        var root = new JsonObject { [ConfigSectionName] = jenkins };
         var options = new JsonSerializerOptions { WriteIndented = true };
         File.WriteAllText(configPath, root.ToJsonString(options), Encoding.UTF8);
     }
+
+    private static string ProcessSecret(string secret, SecretMode mode) => mode switch
+    {
+        SecretMode.Dpapi => ProtectDpapi(secret),
+        SecretMode.EnvironmentVariable => StoreEnvironmentVariable(secret),
+        SecretMode.CredentialManager => StoreCredentialManager(secret),
+        SecretMode.Unprotected => secret,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown SecretMode.")
+    };
+
+    // Read existing config to preserve user-customized fields.
+    private static JsonObject? ReadExistingJenkinsSection(string configPath)
+    {
+        if (!File.Exists(configPath))
+            return null;
+
+        try
+        {
+            var existing = JsonNode.Parse(File.ReadAllText(configPath));
+            return existing?[ConfigSectionName]?.AsObject();
+        }
+        catch (JsonException)
+        {
+            // Corrupt file — overwrite entirely
+            return null;
+        }
+    }
+
+    private static JsonObject BuildJenkinsSection(string configSecret, SecretMode mode,
+        string url, string? agentName, string? javaPath, JsonObject? existingJenkins) => new()
+    {
+        ["JenkinsURL"] = url,
+        ["AgentSecret"] = configSecret,
+        ["SecretMode"] = mode.ToString(),
+        ["AgentName"] = agentName ?? existingJenkins?["AgentName"]?.GetValue<string>() ?? "",
+        ["JavaPath"] = javaPath ?? existingJenkins?["JavaPath"]?.GetValue<string>() ?? "",
+        ["CustomArguments"] = existingJenkins?["CustomArguments"]?.GetValue<string>() ?? "",
+        ["DebugMode"] = existingJenkins?["DebugMode"]?.GetValue<bool>() ?? false,
+        ["CompactLog"] = existingJenkins?["CompactLog"]?.GetValue<bool>() ?? false,
+        ["MaxRetries"] = existingJenkins?["MaxRetries"]?.GetValue<int>() ?? 0
+    };
 
     private static string ProtectDpapi(string secret)
     {
@@ -89,7 +100,7 @@ public static class SecretWriter
     {
         try
         {
-            CredentialManager.SaveCredentials(CredTargetName, new NetworkCredential("JenkinsAgent", secret));
+            CredentialManager.SaveCredentials(CredTargetName, new NetworkCredential(CredUserName, secret));
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {

@@ -28,6 +28,15 @@ public static class UpdateSecretCommand
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
 
+    private const string ConfigFileName = "appsettings.json";
+    private const string ConfigSectionName = "Jenkins";
+    private const char DomainSeparator = '\\';
+    private const string LocalDomain = ".";
+
+    // LogonUser logon-type / provider constants (advapi32)
+    private const int Logon32LogonInteractive = 2;
+    private const int Logon32ProviderDefault = 0;
+
     public static int Run(string[] args, string? basePath = null)
     {
         basePath ??= AppContext.BaseDirectory;
@@ -125,6 +134,8 @@ public static class UpdateSecretCommand
             SecretWriter.WriteConfig(basePath, secret, mode.Value, url, agentName, javaPath);
         }
 
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        Console.WriteLine($"Configuration written to {configPath} (mode: {mode.Value})");
         return 0;
     }
 
@@ -136,27 +147,9 @@ public static class UpdateSecretCommand
         string? agentName, string? javaPath,
         bool impersonate, string? username)
     {
-        string existingUrl = "", existingAgentName = "", existingJavaPath = "";
-        SecretMode existingMode = SecretMode.Dpapi;
-
-        var configPath = Path.Combine(basePath, "appsettings.json");
-        if (File.Exists(configPath))
-        {
-            try
-            {
-                var config = new ConfigurationBuilder()
-                    .SetBasePath(basePath)
-                    .AddJsonFile("appsettings.json", optional: true)
-                    .Build();
-                var section = config.GetSection("Jenkins");
-                existingUrl = section["JenkinsURL"] ?? "";
-                existingAgentName = section["AgentName"] ?? "";
-                existingJavaPath = section["JavaPath"] ?? "";
-                if (Enum.TryParse<SecretMode>(section["SecretMode"], out var parsed))
-                    existingMode = parsed;
-            }
-            catch { /* Corrupt config — use defaults */ }
-        }
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        TryReadExistingConfig(basePath, configPath,
+            out var existingUrl, out var existingAgentName, out var existingJavaPath, out var existingMode);
 
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -272,6 +265,36 @@ public static class UpdateSecretCommand
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
+    // Reads the existing appsettings.json (if present) so interactive prompts can offer defaults.
+    // Falls back to empty strings / Dpapi on a missing or corrupt file.
+    private static void TryReadExistingConfig(string basePath, string configPath,
+        out string existingUrl, out string existingAgentName, out string existingJavaPath,
+        out SecretMode existingMode)
+    {
+        existingUrl = "";
+        existingAgentName = "";
+        existingJavaPath = "";
+        existingMode = SecretMode.Dpapi;
+
+        if (!File.Exists(configPath))
+            return;
+
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .SetBasePath(basePath)
+                .AddJsonFile(ConfigFileName, optional: true)
+                .Build();
+            var section = config.GetSection(ConfigSectionName);
+            existingUrl = section["JenkinsURL"] ?? "";
+            existingAgentName = section["AgentName"] ?? "";
+            existingJavaPath = section["JavaPath"] ?? "";
+            if (Enum.TryParse<SecretMode>(section["SecretMode"], out var parsed))
+                existingMode = parsed;
+        }
+        catch { /* Corrupt config — use defaults */ }
+    }
+
     private static string? ResolveSecretInput(string? secretArg, string? secretFile, string? secretEnv)
     {
         if (secretArg is not null) return secretArg;
@@ -349,18 +372,15 @@ public static class UpdateSecretCommand
     // Used for Credential Manager mode so secrets are stored in the service account's vault.
     private static void RunImpersonated(string username, string password, Action action)
     {
-        string domain = ".";
+        string domain = LocalDomain;
         string user = username;
 
-        if (username.Contains('\\'))
+        if (username.Contains(DomainSeparator))
         {
-            var parts = username.Split('\\', 2);
+            var parts = username.Split(DomainSeparator, 2);
             domain = parts[0];
             user = parts[1];
         }
-
-        const int Logon32LogonInteractive = 2;
-        const int Logon32ProviderDefault  = 0;
 
         if (!NativeMethods.LogonUser(user, domain, password,
                 Logon32LogonInteractive, Logon32ProviderDefault, out var token))
