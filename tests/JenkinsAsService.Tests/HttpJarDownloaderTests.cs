@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -25,7 +27,9 @@ public class HttpJarDownloaderTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_tempDir))
+        {
             Directory.Delete(_tempDir, recursive: true);
+        }
     }
 
     private string JarPath => Path.Combine(_tempDir, JarFilename);

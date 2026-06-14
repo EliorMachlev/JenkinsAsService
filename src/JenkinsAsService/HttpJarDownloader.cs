@@ -57,8 +57,8 @@ public sealed class HttpJarDownloader : IJarDownloader
         _logger.LogInformation("{Jar} downloaded successfully ({Bytes} bytes)", JarFilename, bytesWritten);
     }
 
-    private static string BuildJarUri(string jenkinsUrl) =>
-        $"{jenkinsUrl.TrimEnd(TrailingSlash)}{UrlSeparator}{JnlpJarsPath}{UrlSeparator}{JarFilename}";
+    private static Uri BuildJarUri(string jenkinsUrl) =>
+        new Uri($"{jenkinsUrl.TrimEnd(TrailingSlash)}{UrlSeparator}{JnlpJarsPath}{UrlSeparator}{JarFilename}");
 
     private static string? ReadStoredEtag(string etagPath)
     {

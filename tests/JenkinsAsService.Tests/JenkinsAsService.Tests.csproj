@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- AssemblyInfo.cs supplies these explicitly so Codacy source analysis can see them -->
+    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
+    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
+    <GenerateAssemblyCLSCompliantAttribute>false</GenerateAssemblyCLSCompliantAttribute>
+    <GenerateAssemblyComVisibleAttribute>false</GenerateAssemblyComVisibleAttribute>
   </PropertyGroup>
 
   <ItemGroup>

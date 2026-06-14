@@ -33,7 +33,7 @@ if (args.Length > 0 && args[0] == UpdateSecretCommandName)
     Environment.Exit(UpdateSecretCommand.Run(args));
 }
 
-// Service mode — existing code below
+// Service mode
 var basePath = AppContext.BaseDirectory;
 
 // Read config early to determine log level

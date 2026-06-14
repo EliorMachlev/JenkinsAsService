@@ -8,6 +8,7 @@ namespace JenkinsAsService;
 
 public static class UpdateSecretCommand
 {
+#pragma warning disable S100 // Names inside the usage-text string are CLI flags, not C# identifiers
     private const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
 
@@ -15,17 +16,18 @@ public static class UpdateSecretCommand
           --secret <value>        The Jenkins agent secret (plaintext)
           --secret-file <path>    Read secret from file (file is deleted after reading)
           --secret-env <var>      Read secret from named environment variable
-          --url <value>           Jenkins controller URL (with explicit port)
-          --mode <value>          Secret protection mode: Dpapi, EnvironmentVariable, CredentialManager, Unprotected
-          --agent-name <value>    Agent node name (default: hostname)
-          --java-path <value>     Path to Java bin folder (default: JAVA_HOME)
+          --url <value>           Jenkins controller address (include port)
+          --mode <value>          Protection mode: Dpapi, EnvironmentVariable, CredentialManager, Unprotected
+          --agent-name <value>    Agent node label (default: hostname)
+          --java-path <value>     Java installation directory (default: JAVA_HOME)
           --impersonate           Run Credential Manager write as a different user account.
                                   Interactive: prompts for username and password.
                                   Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
-          --username <value>      Service account for impersonation (e.g. DOMAIN\svc_jenkins)
+          --username <value>      Windows account for impersonation (DOMAIN\\account)
           --silent                Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
           --help                  Show this help
         """;
+#pragma warning restore S100
 
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
@@ -50,6 +52,21 @@ public static class UpdateSecretCommand
         bool Silent,
         bool Impersonate,
         string? Username);
+
+    // Mutable accumulator used only within ParseArgs — avoids a 10-parameter method.
+    private sealed class ParseState
+    {
+        public string? SecretArg;
+        public string? SecretFile;
+        public string? SecretEnv;
+        public string? Url;
+        public SecretMode? Mode;
+        public string? AgentName;
+        public string? JavaPath;
+        public string? Username;
+        public bool Silent;
+        public bool Impersonate;
+    }
 
     public static int Run(string[] args)
     {
@@ -81,36 +98,71 @@ public static class UpdateSecretCommand
 
     private static ParsedArgs? ParseArgs(string[] args)
     {
-        string? secretArg = null, secretFile = null, secretEnv = null;
-        string? url = null, agentName = null, javaPath = null, username = null;
-        SecretMode? mode = null;
-        bool silent = false, impersonate = false;
-
+        var state = new ParseState();
         for (int i = 1; i < args.Length; i++)
         {
-            switch (args[i])
+            if (!TryApplyValueArg(args, ref i, state) && !TryApplyFlagArg(args[i], state))
             {
-                case "--secret":      secretArg  = Next(args, ref i); break;
-                case "--secret-file": secretFile = Next(args, ref i); break;
-                case "--secret-env":  secretEnv  = Next(args, ref i); break;
-                case "--url":         url        = Next(args, ref i); break;
-                case "--mode":        mode       = ParseMode(Next(args, ref i)); break;
-                case "--agent-name":  agentName  = Next(args, ref i); break;
-                case "--java-path":   javaPath   = Next(args, ref i); break;
-                case "--username":    username   = Next(args, ref i); break;
-                case "--silent":      silent     = true; break;
-                case "--impersonate": impersonate = true; break;
-                default:
-                    Console.Error.WriteLine($"Unknown option: {args[i]}");
-                    Console.Error.WriteLine(UsageText);
-                    return null;
+                Console.Error.WriteLine($"Unknown option: {args[i]}");
+                Console.Error.WriteLine(UsageText);
+                return null;
             }
         }
 
-        return new ParsedArgs(secretArg, secretFile, secretEnv, url, mode, agentName, javaPath, silent, impersonate, username);
+        return new ParsedArgs(state.SecretArg, state.SecretFile, state.SecretEnv,
+            state.Url, state.Mode, state.AgentName, state.JavaPath,
+            state.Silent, state.Impersonate, state.Username);
     }
 
-    // ─── Silent mode ────────────────────────────────────────────────────────
+    private static bool TryApplyValueArg(string[] args, ref int i, ParseState state)
+    {
+        switch (args[i])
+        {
+            case "--secret":
+                state.SecretArg = Next(args, ref i);
+                return true;
+            case "--secret-file":
+                state.SecretFile = Next(args, ref i);
+                return true;
+            case "--secret-env":
+                state.SecretEnv = Next(args, ref i);
+                return true;
+            case "--url":
+                state.Url = Next(args, ref i);
+                return true;
+            case "--mode":
+                state.Mode = ParseMode(Next(args, ref i));
+                return true;
+            case "--agent-name":
+                state.AgentName = Next(args, ref i);
+                return true;
+            case "--java-path":
+                state.JavaPath = Next(args, ref i);
+                return true;
+            case "--username":
+                state.Username = Next(args, ref i);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryApplyFlagArg(string arg, ParseState state)
+    {
+        switch (arg)
+        {
+            case "--silent":
+                state.Silent = true;
+                return true;
+            case "--impersonate":
+                state.Impersonate = true;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // ─── Silent mode ─────────────────────────────────────────────────────────
 
     private static int RunSilent(string basePath, ParsedArgs args)
     {
@@ -165,7 +217,7 @@ public static class UpdateSecretCommand
             RunImpersonated(args.Username, password, () =>
                 SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath));
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
@@ -176,7 +228,7 @@ public static class UpdateSecretCommand
         return 0;
     }
 
-    // ─── Interactive mode ────────────────────────────────────────────────────
+    // ─── Interactive mode ─────────────────────────────────────────────────────
 
     private static int RunInteractive(string basePath, ParsedArgs args)
     {
@@ -196,17 +248,18 @@ public static class UpdateSecretCommand
             return 1;
         }
 
-        var mode = PromptMode(args.Mode, existingMode);
+        var selectedMode = PromptMode(args.Mode, existingMode);
         var agentName = PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
         var javaPath = PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
 
-        return WriteInteractiveConfig(basePath, configPath, secret, mode, url, agentName, javaPath, args);
+        return WriteInteractiveConfig(basePath, secret, selectedMode, url, agentName, javaPath, args);
     }
 
-    private static int WriteInteractiveConfig(string basePath, string configPath,
-        string secret, SecretMode mode, string url,
+    private static int WriteInteractiveConfig(string basePath,
+        string secret, SecretMode selectedMode, string url,
         string? agentName, string? javaPath, ParsedArgs args)
     {
+        var configPath = Path.Combine(basePath, ConfigFileName);
         try
         {
             if (args.Impersonate)
@@ -218,14 +271,14 @@ public static class UpdateSecretCommand
                 }
 
                 RunImpersonated(credentials.Value.Username, credentials.Value.Password, () =>
-                    SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath));
+                    SecretWriter.WriteConfig(basePath, secret, selectedMode, url, agentName, javaPath));
             }
             else
             {
-                SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath);
+                SecretWriter.WriteConfig(basePath, secret, selectedMode, url, agentName, javaPath);
             }
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
@@ -233,12 +286,12 @@ public static class UpdateSecretCommand
 
         Console.WriteLine();
         Console.WriteLine($"Configuration saved to {configPath}");
-        Console.WriteLine($"  Mode: {mode}");
+        Console.WriteLine($"  Mode: {selectedMode}");
         Console.WriteLine($"  URL:  {url}");
         return 0;
     }
 
-    // ─── Prompt helpers ──────────────────────────────────────────────────────
+    // ─── Prompt helpers ───────────────────────────────────────────────────────
 
     private static string? PromptUrl(string? argUrl, string? existingUrl)
     {
@@ -302,7 +355,7 @@ public static class UpdateSecretCommand
             "2" => SecretMode.EnvironmentVariable,
             "3" => SecretMode.CredentialManager,
             "4" => SecretMode.Unprotected,
-            _   => existingMode
+            _ => existingMode
         };
     }
 
@@ -346,9 +399,9 @@ public static class UpdateSecretCommand
         return (username, password);
     }
 
-    // ─── Shared helpers ──────────────────────────────────────────────────────
+    // ─── Shared helpers ───────────────────────────────────────────────────────
 
-    // Reads the existing appsettings.json (if present) so interactive prompts can offer defaults.
+    // Reads existing appsettings.json so interactive prompts can offer defaults.
     // Falls back to empty strings / Dpapi on a missing or corrupt file.
     private static void TryReadExistingConfig(string basePath, string configPath,
         out string existingUrl, out string existingAgentName, out string existingJavaPath,
@@ -379,7 +432,18 @@ public static class UpdateSecretCommand
                 existingMode = parsed;
             }
         }
-        catch { /* Corrupt config — use defaults */ }
+        catch (System.Text.Json.JsonException)
+        {
+            // Corrupt JSON in config — use defaults
+        }
+        catch (IOException)
+        {
+            // File I/O error reading config — use defaults
+        }
+        catch (InvalidOperationException)
+        {
+            // Invalid config structure — use defaults
+        }
     }
 
     private static string? ResolveSecretInput(string? secretArg, string? secretFile, string? secretEnv)
@@ -397,21 +461,29 @@ public static class UpdateSecretCommand
                 return null;
             }
 
-            var s = File.ReadAllText(secretFile, System.Text.Encoding.UTF8).Trim();
-            try { File.Delete(secretFile); } catch { /* best-effort delete */ }
-            return s;
+            var secret = File.ReadAllText(secretFile, System.Text.Encoding.UTF8).Trim();
+            try
+            {
+                File.Delete(secretFile);
+            }
+            catch (IOException)
+            {
+                // best-effort delete — if it fails the file remains but operation continues
+            }
+
+            return secret;
         }
 
         if (secretEnv is not null)
         {
-            var s = Environment.GetEnvironmentVariable(secretEnv);
-            if (string.IsNullOrWhiteSpace(s))
+            var secret = Environment.GetEnvironmentVariable(secretEnv);
+            if (string.IsNullOrWhiteSpace(secret))
             {
                 Console.Error.WriteLine($"Error: environment variable '{secretEnv}' is not set or empty.");
                 return null;
             }
 
-            return s;
+            return secret;
         }
 
         return null;
@@ -457,38 +529,39 @@ public static class UpdateSecretCommand
             }
             catch (InvalidOperationException)
             {
-                break; // stdin redirected
+                return sb.ToString(); // stdin redirected — return what was captured
             }
 
             if (key.Key == ConsoleKey.Enter)
             {
-                break;
+                return sb.ToString();
             }
 
-            if (key.Key == ConsoleKey.Backspace && sb.Length > 0)
+            if (key.Key == ConsoleKey.Backspace)
             {
-                sb.Length--;
-                Console.Write("\b \b");
+                if (sb.Length > 0)
+                {
+                    sb.Length--;
+                    Console.Write("\b \b");
+                }
             }
-            else if (key.Key != ConsoleKey.Backspace)
+            else
             {
                 sb.Append(key.KeyChar);
                 Console.Write('*');
             }
         }
-
-        return sb.ToString();
     }
 
-    // ─── Impersonation ───────────────────────────────────────────────────────
+    // ─── Impersonation ────────────────────────────────────────────────────────
 
     // Runs action under the identity of the given local/domain account.
     // The account must have "Log on locally" rights on this machine.
     // Used for Credential Manager mode so secrets are stored in the service account's vault.
     private static void RunImpersonated(string username, string password, Action action)
     {
-        string domain = LocalDomain;
-        string user = username;
+        var domain = LocalDomain;
+        var user = username;
 
         if (username.Contains(DomainSeparator))
         {
@@ -500,7 +573,7 @@ public static class UpdateSecretCommand
         if (!NativeMethods.LogonUser(user, domain, password,
                 Logon32LogonInteractive, Logon32ProviderDefault, out var token))
         {
-            int err = Marshal.GetLastWin32Error();
+            var err = Marshal.GetLastWin32Error();
             throw new InvalidOperationException(
                 $"LogonUser failed for '{username}' (Win32 error {err}). " +
                 "Verify the credentials and that the account has 'Log on locally' rights.");

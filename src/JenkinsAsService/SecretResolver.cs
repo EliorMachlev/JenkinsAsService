@@ -70,7 +70,7 @@ public sealed class SecretResolver : ISecretResolver
     private static string ResolveCredentialManager(string targetName)
     {
         var credential = CredentialManager.GetCredentials(targetName);
-        if (credential?.Password is null or "")
+        if (string.IsNullOrEmpty(credential?.Password))
         {
             throw new InvalidOperationException(
                 $"Windows Credential Manager entry '{targetName}' not found or has no password. " +

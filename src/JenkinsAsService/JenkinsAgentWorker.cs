@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace JenkinsAsService;
@@ -40,7 +41,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const int ConnectivityTimeoutMs = 2_000;
     private const int BannerWidth = 80;
     private const char BannerChar = '=';
-    private const string OutputKey = "{Output}";
+    private const string OutputMessageTemplate = "{Output}";
 
     private readonly ILogger<JenkinsAgentWorker> _logger;
     private readonly ServiceSettings _settings;
@@ -220,20 +221,16 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _agentExitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        process.OutputDataReceived += (_, e) =>
+        void OnDataReceived(object _, DataReceivedEventArgs e)
         {
             if (e.Data is not null)
             {
                 ParseAgentOutput(e.Data);
             }
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                ParseAgentOutput(e.Data);
-            }
-        };
+        }
+
+        process.OutputDataReceived += OnDataReceived;
+        process.ErrorDataReceived += OnDataReceived;
         // Subscribe before Start so a fast-exiting process doesn't miss the event.
         process.Exited += (_, _) => _agentExitTcs.TrySetResult();
 
@@ -293,7 +290,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             return result;
         }
 
-        int i = 0;
+        var i = 0;
 
         while (i < input.Length)
         {
@@ -311,7 +308,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             {
                 // Quoted argument — find closing quote, respecting \"
                 i++;
-                var buf = new System.Text.StringBuilder();
+                var buf = new StringBuilder();
                 while (i < input.Length && input[i] != '"')
                 {
                     if (input[i] == '\\' && i + 1 < input.Length && input[i + 1] == '"')
@@ -335,7 +332,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             else
             {
                 // Unquoted argument — find next whitespace
-                int start = i;
+                var start = i;
                 while (i < input.Length && !char.IsWhiteSpace(input[i]))
                 {
                     i++;
@@ -363,25 +360,25 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         if (line.StartsWith(InfoPrefix, StringComparison.Ordinal))
         {
-            _logger.LogInformation(OutputKey, line[InfoPrefix.Length..]);
+            _logger.LogInformation(OutputMessageTemplate, line[InfoPrefix.Length..]);
         }
         else if (line.StartsWith(WarningPrefix, StringComparison.Ordinal))
         {
-            _logger.LogWarning(OutputKey, line[WarningPrefix.Length..]);
+            _logger.LogWarning(OutputMessageTemplate, line[WarningPrefix.Length..]);
         }
         else if (line.StartsWith(SeverePrefix, StringComparison.Ordinal))
         {
             Interlocked.Increment(ref _severeCount);
             _severeEventCounter.Add(1);
-            _logger.LogError(OutputKey, line[SeverePrefix.Length..]);
+            _logger.LogError(OutputMessageTemplate, line[SeverePrefix.Length..]);
         }
         else if (_settings.DebugMode)
         {
-            _logger.LogDebug(OutputKey, line);
+            _logger.LogDebug(OutputMessageTemplate, line);
         }
         else
         {
-            _logger.LogInformation(OutputKey, line);
+            _logger.LogInformation(OutputMessageTemplate, line);
         }
     }
 
