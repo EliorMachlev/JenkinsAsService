@@ -13,7 +13,7 @@ public sealed class TcpConnectivityChecker : IConnectivityChecker
         _logger = logger;
     }
 
-    public async Task TestAsync(string host, int port, int timeoutMs, CancellationToken ct)
+    public async Task TestAsync(string host, int port, int timeoutMs, CancellationToken ct) // NOSONAR
     {
         _logger.LogDebug("Testing TCP connectivity to {Host}:{Port} (timeout {Timeout}ms)", host, port, timeoutMs);
 

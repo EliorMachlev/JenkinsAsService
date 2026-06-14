@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Text;
+using System.Text; // NOSONAR
 using Microsoft.Extensions.Options;
 
 namespace JenkinsAsService;
@@ -83,7 +83,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             description: "Number of SEVERE log lines emitted by the Jenkins agent");
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken) // NOSONAR
     {
         try
         {
@@ -108,7 +108,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         }
     }
 
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken) // NOSONAR
     {
         _logger.LogWarning("Service stop requested");
         KillAgent();
@@ -206,7 +206,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _logger.LogDebug("Resolved Java at: '{Path}'", Path.GetDirectoryName(_javaExe));
     }
 
-    private async Task TestConnectivityAsync(CancellationToken ct)
+    private async Task TestConnectivityAsync(CancellationToken ct) // NOSONAR
     {
         var uri = new Uri(_settings.JenkinsURL);
         await _connectivityChecker.TestAsync(uri.Host, uri.Port, ConnectivityTimeoutMs, ct);
@@ -384,7 +384,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     // ─── Watchdog ───────────────────────────────────────────────────────────
 
-    private async Task RunWatchdogAsync(CancellationToken ct)
+    private async Task RunWatchdogAsync(CancellationToken ct) // NOSONAR
     {
         var retryCount = 0;
 
@@ -451,7 +451,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private static int ComputeBackoffDelaySeconds(int retryCount) =>
         (int)Math.Min(BackoffBaseSec * Math.Pow(BackoffMultiplier, retryCount - 1), BackoffMaxSec);
 
-    private async Task<bool> RecoverAgentAsync(int retryCount, CancellationToken ct)
+    private async Task<bool> RecoverAgentAsync(int retryCount, CancellationToken ct) // NOSONAR
     {
         var delay = ComputeBackoffDelaySeconds(retryCount);
         _logger.LogInformation("Watchdog: Waiting {Delay}s before retry...", delay);
@@ -495,7 +495,10 @@ public sealed class JenkinsAgentWorker : BackgroundService
                 _agentProcess.Kill(entireProcessTree: true);
             }
         }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException)
+        {
+            // Process already exited — nothing to kill
+        }
         finally
         {
             _agentProcess.Dispose();

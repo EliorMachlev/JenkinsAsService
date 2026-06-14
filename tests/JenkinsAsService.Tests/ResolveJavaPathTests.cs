@@ -5,6 +5,7 @@ namespace JenkinsAsService.Tests;
 
 public class ResolveJavaPathTests
 {
+    private const string JavaExeFilename = "java.exe";
     [Fact]
     public void Throws_when_no_java_found()
     {
@@ -31,10 +32,10 @@ public class ResolveJavaPathTests
 
         try
         {
-            File.WriteAllBytes(Path.Combine(tempDir, "java.exe"), []);
+            File.WriteAllBytes(Path.Combine(tempDir, JavaExeFilename), []);
 
             JenkinsAgentWorker.ResolveJavaPath(tempDir, null)
-                .Should().Be(Path.Combine(tempDir, "java.exe"));
+                .Should().Be(Path.Combine(tempDir, JavaExeFilename));
         }
         finally
         {
@@ -51,10 +52,10 @@ public class ResolveJavaPathTests
 
         try
         {
-            File.WriteAllBytes(Path.Combine(binDir, "java.exe"), []);
+            File.WriteAllBytes(Path.Combine(binDir, JavaExeFilename), []);
 
             JenkinsAgentWorker.ResolveJavaPath(null, tempDir)
-                .Should().Be(Path.Combine(binDir, "java.exe"));
+                .Should().Be(Path.Combine(binDir, JavaExeFilename));
         }
         finally
         {
@@ -73,11 +74,11 @@ public class ResolveJavaPathTests
 
         try
         {
-            File.WriteAllBytes(Path.Combine(configDir, "java.exe"), []);
-            File.WriteAllBytes(Path.Combine(homeBin, "java.exe"), []);
+            File.WriteAllBytes(Path.Combine(configDir, JavaExeFilename), []);
+            File.WriteAllBytes(Path.Combine(homeBin, JavaExeFilename), []);
 
             JenkinsAgentWorker.ResolveJavaPath(configDir, homeDir)
-                .Should().Be(Path.Combine(configDir, "java.exe"));
+                .Should().Be(Path.Combine(configDir, JavaExeFilename));
         }
         finally
         {

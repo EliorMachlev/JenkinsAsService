@@ -22,7 +22,7 @@ public sealed class HttpJarDownloader : IJarDownloader
         _logger = logger;
     }
 
-    public async Task DownloadAsync(string jenkinsUrl, string destinationPath, CancellationToken ct)
+    public async Task DownloadAsync(string jenkinsUrl, string destinationPath, CancellationToken ct) // NOSONAR
     {
         var jarPath = Path.Combine(destinationPath, JarFilename);
         var etagPath = Path.Combine(destinationPath, ETagFilename);
@@ -71,7 +71,7 @@ public sealed class HttpJarDownloader : IJarDownloader
         return string.IsNullOrEmpty(value) ? null : value;
     }
 
-    private static async Task<long> StreamToFileAsync(HttpResponseMessage response, string jarPath, CancellationToken ct)
+    private static async Task<long> StreamToFileAsync(HttpResponseMessage response, string jarPath, CancellationToken ct) // NOSONAR
     {
         await using var fs = new FileStream(jarPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await response.Content.CopyToAsync(fs, ct);

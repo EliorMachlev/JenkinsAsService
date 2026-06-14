@@ -8,6 +8,8 @@ namespace JenkinsAsService.Tests;
 
 public class ParseAgentOutputTests
 {
+    private const string RawJavaOutput = "some raw java output";
+
     private readonly ILogger<JenkinsAgentWorker> _logger = Substitute.For<ILogger<JenkinsAgentWorker>>();
     private readonly JenkinsAgentWorker _worker;
 
@@ -78,12 +80,12 @@ public class ParseAgentOutputTests
     [Fact]
     public void Unprefixed_line_in_debug_mode_logs_as_Debug()
     {
-        _worker.ParseAgentOutput("some raw java output");
+        _worker.ParseAgentOutput(RawJavaOutput);
 
         _logger.Received().Log(
             LogLevel.Debug,
             Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("some raw java output")),
+            Arg.Is<object>(o => o.ToString()!.Contains(RawJavaOutput)),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
     }
@@ -105,12 +107,12 @@ public class ParseAgentOutputTests
             Substitute.For<IConnectivityChecker>(),
             Substitute.For<ISecretResolver>());
 
-        worker.ParseAgentOutput("some raw java output");
+        worker.ParseAgentOutput(RawJavaOutput);
 
         logger.Received().Log(
             LogLevel.Information,
             Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("some raw java output")),
+            Arg.Is<object>(o => o.ToString()!.Contains(RawJavaOutput)),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
     }
