@@ -4,6 +4,15 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 
+// CLI mode — if args contain a known command, handle it and exit.
+// IMPORTANT: this dispatch must stay before Serilog init — Environment.Exit skips the
+// finally { Log.CloseAndFlushAsync() } block below, which is correct (no logger to flush).
+if (args.Length > 0 && args[0] == "update-secret")
+{
+    Environment.Exit(UpdateSecretCommand.Run(args));
+}
+
+// Service mode — existing code below
 var basePath = AppContext.BaseDirectory;
 
 // Read config early to determine log level

@@ -243,6 +243,10 @@ public sealed class JenkinsAgentWorker : BackgroundService
         if (string.IsNullOrWhiteSpace(line))
             return;
 
+        // Redact resolved secret in case Jenkins emits it on handshake failure
+        if (!string.IsNullOrEmpty(_resolvedSecret))
+            line = line.Replace(_resolvedSecret, "*****", StringComparison.Ordinal);
+
         if (line.StartsWith("INFO: ", StringComparison.Ordinal))
             _logger.LogInformation("{Output}", line[6..]);
         else if (line.StartsWith("WARNING: ", StringComparison.Ordinal))

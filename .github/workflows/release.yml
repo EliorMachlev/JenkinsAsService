@@ -35,14 +35,11 @@ jobs:
       - name: Publish x86
         run: dotnet publish src/JenkinsAsService -c Release -r win-x86 --self-contained -p:PublishSingleFile=true -o publish/x86/
 
-      - name: Build Custom Actions
-        run: dotnet build src/JenkinsAsService.CustomActions -c Release
-
       - name: Build MSI x64
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -p:CustomActionDir=../../src/JenkinsAsService.CustomActions/bin/Release/net48/ -o msi/x64/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x64/
 
       - name: Build MSI x86
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -p:CustomActionDir=../../src/JenkinsAsService.CustomActions/bin/Release/net48/ -o msi/x86/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x86/
 
       - name: Rename MSI files
         run: |

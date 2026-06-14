@@ -6,7 +6,7 @@ namespace JenkinsAsService;
 
 public sealed class SecretResolver : ISecretResolver
 {
-    // Shared entropy for DPAPI — must match the value in JenkinsAsService.CustomActions.SecretActions
+    // Shared entropy for DPAPI — must match SecretWriter.ProtectDpapi (write side, same assembly)
     internal static readonly byte[] DpapiEntropy =
         [0x4A, 0x65, 0x6E, 0x6B, 0x69, 0x6E, 0x73, 0x41, 0x73, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65];
 

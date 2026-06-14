@@ -68,4 +68,20 @@ public class ValidateSettingsTests
 
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public void SecretMode_defaults_to_Unprotected_when_not_in_config()
+    {
+        // Existing installs have no SecretMode field — binding should fall back to enum default
+        var settings = new ServiceSettings
+        {
+            JenkinsURL = "https://jenkins.example.com:8443",
+            AgentSecret = "plaintext-secret"
+            // SecretMode intentionally not set (simulates old appsettings.json)
+        };
+
+        settings.SecretMode.Should().Be(SecretMode.Unprotected);
+        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        act.Should().NotThrow();
+    }
 }
