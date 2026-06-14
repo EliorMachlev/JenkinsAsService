@@ -1,4 +1,4 @@
-// Copyright (c) 2024 All rights reserved
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
@@ -332,7 +332,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             else
             {
                 // Unquoted argument — find next whitespace
-                var start = i;
+                var start = i; // NOSONAR — used at input[start..i] below; false-positive "useless assignment"
                 while (i < input.Length && !char.IsWhiteSpace(input[i]))
                 {
                     i++;

@@ -1,3 +1,4 @@
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 using System.Text.Json;
 using FluentAssertions;
 

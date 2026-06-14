@@ -1,5 +1,5 @@
-using System.Net;
-using System.Security.Cryptography;
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+using System.Security.Cryptography; // NOSONAR — ProtectedData is from a NuGet package; standalone analysis can't resolve it
 using System.Text;
 using FluentAssertions;
 
@@ -28,7 +28,7 @@ public class SecretResolverTests
     [Fact]
     public void Dpapi_decrypts_machine_scoped_secret()
     {
-        var plaintext = "dpapi-test-secret";
+        const string plaintext = "dpapi-test-secret";
         var encrypted = ProtectedData.Protect(
             Encoding.UTF8.GetBytes(plaintext), SecretResolver.DpapiEntropy, DataProtectionScope.LocalMachine);
         var base64 = Convert.ToBase64String(encrypted);

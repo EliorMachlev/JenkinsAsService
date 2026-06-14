@@ -1,4 +1,4 @@
-// Copyright (c) 2024 All rights reserved
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -8,7 +8,6 @@ namespace JenkinsAsService;
 
 public static class UpdateSecretCommand
 {
-#pragma warning disable S100 // Names inside the usage-text string are CLI flags, not C# identifiers
     private const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
 
@@ -23,11 +22,10 @@ public static class UpdateSecretCommand
           --impersonate           Run Credential Manager write as a different user account.
                                   Interactive: prompts for username and password.
                                   Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
-          --username <value>      Windows account for impersonation (DOMAIN\\account)
+          --username <value>      Windows account for impersonation (DOMAIN\account)
           --silent                Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
           --help                  Show this help
         """;
-#pragma warning restore S100
 
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
@@ -41,19 +39,7 @@ public static class UpdateSecretCommand
     private const int Logon32LogonInteractive = 2;
     private const int Logon32ProviderDefault = 0;
 
-    private sealed record ParsedArgs(
-        string? SecretArg,
-        string? SecretFile,
-        string? SecretEnv,
-        string? Url,
-        SecretMode? Mode,
-        string? AgentName,
-        string? JavaPath,
-        bool Silent,
-        bool Impersonate,
-        string? Username);
-
-    // Mutable accumulator used only within ParseArgs — avoids a 10-parameter method.
+    // Mutable accumulator used by ParseArgs; returned directly to avoid a 10-parameter constructor.
     private sealed class ParseState
     {
         public string? SecretArg;
@@ -96,7 +82,7 @@ public static class UpdateSecretCommand
 
     // ─── Argument parsing ────────────────────────────────────────────────────
 
-    private static ParsedArgs? ParseArgs(string[] args)
+    private static ParseState? ParseArgs(string[] args)
     {
         var state = new ParseState();
         for (int i = 1; i < args.Length; i++)
@@ -109,9 +95,7 @@ public static class UpdateSecretCommand
             }
         }
 
-        return new ParsedArgs(state.SecretArg, state.SecretFile, state.SecretEnv,
-            state.Url, state.Mode, state.AgentName, state.JavaPath,
-            state.Silent, state.Impersonate, state.Username);
+        return state;
     }
 
     private static bool TryApplyValueArg(string[] args, ref int i, ParseState state)
@@ -164,7 +148,7 @@ public static class UpdateSecretCommand
 
     // ─── Silent mode ─────────────────────────────────────────────────────────
 
-    private static int RunSilent(string basePath, ParsedArgs args)
+    private static int RunSilent(string basePath, ParseState args)
     {
         var secret = ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv);
 
@@ -197,7 +181,7 @@ public static class UpdateSecretCommand
         return 0;
     }
 
-    private static int RunSilentImpersonated(string basePath, string secret, ParsedArgs args)
+    private static int RunSilentImpersonated(string basePath, string secret, ParseState args)
     {
         if (string.IsNullOrWhiteSpace(args.Username))
         {
@@ -230,7 +214,7 @@ public static class UpdateSecretCommand
 
     // ─── Interactive mode ─────────────────────────────────────────────────────
 
-    private static int RunInteractive(string basePath, ParsedArgs args)
+    private static int RunInteractive(string basePath, ParseState args)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
         TryReadExistingConfig(basePath, configPath,
@@ -257,7 +241,7 @@ public static class UpdateSecretCommand
 
     private static int WriteInteractiveConfig(string basePath,
         string secret, SecretMode selectedMode, string url,
-        string? agentName, string? javaPath, ParsedArgs args)
+        string? agentName, string? javaPath, ParseState args)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
         try

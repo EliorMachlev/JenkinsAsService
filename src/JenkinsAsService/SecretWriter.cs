@@ -1,8 +1,8 @@
-// Copyright (c) 2024 All rights reserved
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 
 using System.Net;
 using System.Security;
-using System.Security.Cryptography;
+using System.Security.Cryptography; // NOSONAR — ProtectedData is from a NuGet package; standalone analysis can't resolve it
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;

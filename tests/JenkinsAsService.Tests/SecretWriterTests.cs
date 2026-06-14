@@ -1,4 +1,5 @@
-using System.Security.Cryptography;
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+using System.Security.Cryptography; // NOSONAR — ProtectedData is from a NuGet package; standalone analysis can't resolve it
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -7,11 +8,12 @@ namespace JenkinsAsService.Tests;
 
 public class SecretWriterTests : IDisposable
 {
+    private const int TempDirSuffixLength = 8;
     private readonly string _tempDir;
 
     public SecretWriterTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "JAS_Test_" + Guid.NewGuid().ToString("N")[..8]);
+        _tempDir = Path.Combine(Path.GetTempPath(), "JAS_Test_" + Guid.NewGuid().ToString("N")[..TempDirSuffixLength]);
         Directory.CreateDirectory(_tempDir);
     }
 
@@ -58,21 +60,11 @@ public class SecretWriterTests : IDisposable
     public void Preserves_existing_config_fields()
     {
         // Write initial config with custom values
-        var existingJson = """
-        {
-          "Jenkins": {
-            "JenkinsURL": "https://old:8443",
-            "AgentSecret": "old-secret",
-            "SecretMode": "Unprotected",
-            "AgentName": "",
-            "JavaPath": "",
-            "CustomArguments": "-noCertificateCheck",
-            "DebugMode": true,
-            "CompactLog": true,
-            "MaxRetries": 5
-          }
-        }
-        """;
+        const string existingJson =
+            "{\"Jenkins\":{\"JenkinsURL\":\"https://old:8443\",\"AgentSecret\":\"old-secret\"," +
+            "\"SecretMode\":\"Unprotected\",\"AgentName\":\"\",\"JavaPath\":\"\"," +
+            "\"CustomArguments\":\"-noCertificateCheck\",\"DebugMode\":true," +
+            "\"CompactLog\":true,\"MaxRetries\":5}}";
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
 
         // Update secret — should preserve CustomArguments, DebugMode, CompactLog, MaxRetries

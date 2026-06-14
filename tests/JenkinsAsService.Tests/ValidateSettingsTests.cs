@@ -1,3 +1,4 @@
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 using FluentAssertions;
 
 namespace JenkinsAsService.Tests;

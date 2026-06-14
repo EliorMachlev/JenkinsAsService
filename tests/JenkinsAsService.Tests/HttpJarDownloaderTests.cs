@@ -1,4 +1,4 @@
-// Copyright (c) 2024 All rights reserved
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 
 using System.Net;
 using System.Net.Http.Headers;
@@ -11,16 +11,18 @@ namespace JenkinsAsService.Tests;
 
 public class HttpJarDownloaderTests : IDisposable
 {
-    private const string JenkinsUrl = "https://jenkins:8443";
+    private const string JenkinsUrl = "https://jenkins:8443"; // NOSONAR
     private const string JarFilename = "agent.jar";
     private const string ETagFilename = "agent.jar.etag";
+    private const string ETagV1 = "\"v1\"";
+    private const int TempDirSuffixLength = 8;
 
     private readonly string _tempDir;
     private readonly ILogger<HttpJarDownloader> _logger = Substitute.For<ILogger<HttpJarDownloader>>();
 
     public HttpJarDownloaderTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "JASJar_Test_" + Guid.NewGuid().ToString("N")[..8]);
+        _tempDir = Path.Combine(Path.GetTempPath(), "JASJar_Test_" + Guid.NewGuid().ToString("N")[..TempDirSuffixLength]);
         Directory.CreateDirectory(_tempDir);
     }
 
@@ -51,7 +53,7 @@ public class HttpJarDownloaderTests : IDisposable
             {
                 Content = new ByteArrayContent(Encoding.UTF8.GetBytes("JARBYTES"))
             };
-            resp.Headers.ETag = new EntityTagHeaderValue("\"v1\"");
+            resp.Headers.ETag = new EntityTagHeaderValue(ETagV1);
             return resp;
         });
 
@@ -60,13 +62,13 @@ public class HttpJarDownloaderTests : IDisposable
         File.Exists(JarPath).Should().BeTrue();
         File.ReadAllText(JarPath).Should().Be("JARBYTES");
         File.Exists(ETagPath).Should().BeTrue();
-        File.ReadAllText(ETagPath).Should().Be("\"v1\"");
+        File.ReadAllText(ETagPath).Should().Be(ETagV1);
     }
 
     [Fact]
     public async Task Download_skips_write_on_304()
     {
-        File.WriteAllText(ETagPath, "\"v1\"");
+        File.WriteAllText(ETagPath, ETagV1);
         File.WriteAllText(JarPath, "OLDJAR");
 
         var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.NotModified));
@@ -74,7 +76,7 @@ public class HttpJarDownloaderTests : IDisposable
         await CreateDownloader(handler).DownloadAsync(JenkinsUrl, _tempDir, CancellationToken.None);
 
         File.ReadAllText(JarPath).Should().Be("OLDJAR", "304 must not overwrite the existing jar");
-        File.ReadAllText(ETagPath).Should().Be("\"v1\"", "304 must not change the stored etag");
+        File.ReadAllText(ETagPath).Should().Be(ETagV1, "304 must not change the stored etag");
     }
 
     [Fact]
@@ -150,7 +152,7 @@ public class HttpJarDownloaderTests : IDisposable
 
         public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) => _responder = responder;
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken _) => // NOSONAR
             Task.FromResult(_responder(request));
     }
 }

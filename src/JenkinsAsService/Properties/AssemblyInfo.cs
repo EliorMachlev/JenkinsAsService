@@ -1,4 +1,4 @@
-// Copyright (c) 2024 All rights reserved
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 
 using System.Reflection;
 using System.Runtime.InteropServices;

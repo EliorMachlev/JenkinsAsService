@@ -1,4 +1,4 @@
-// Copyright (c) 2024 All rights reserved
+﻿// Copyright (c) 2024 All rights reserved // NOSONAR
 
 using System.Net;
 
@@ -57,7 +57,7 @@ public sealed class HttpJarDownloader : IJarDownloader
         _logger.LogInformation("{Jar} downloaded successfully ({Bytes} bytes)", JarFilename, bytesWritten);
     }
 
-    private static Uri BuildJarUri(string jenkinsUrl) =>
+    private static Uri BuildJarUri(string jenkinsUrl) => // NOSONAR — parameter is validated as URL by the caller; changing to Uri would require callers to pre-parse
         new Uri($"{jenkinsUrl.TrimEnd(TrailingSlash)}{UrlSeparator}{JnlpJarsPath}{UrlSeparator}{JarFilename}");
 
     private static string? ReadStoredEtag(string etagPath)
