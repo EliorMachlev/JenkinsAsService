@@ -68,10 +68,6 @@ public static class SecretWriter
         }
     }
 
-    // Read just the existing Jenkins section (preserves user-customized fields).
-    private static JsonObject? ReadExistingJenkinsSection(string configPath) =>
-        ReadExistingRoot(configPath)?[ConfigSectionName]?.AsObject();
-
     private static JsonObject BuildJenkinsSection(string configSecret, SecretMode mode,
         string url, string? agentName, string? javaPath, JsonObject? existingJenkins) => new()
     {

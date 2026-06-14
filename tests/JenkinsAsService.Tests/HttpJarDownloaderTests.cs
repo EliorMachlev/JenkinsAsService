@@ -76,6 +76,8 @@ public class HttpJarDownloaderTests : IDisposable
     [Fact]
     public async Task Download_sends_if_none_match_when_etag_exists()
     {
+        // Both jar and etag must exist — etag alone is treated as an orphaned state and ignored.
+        File.WriteAllText(JarPath, "EXISTINGJAR");
         File.WriteAllText(ETagPath, "\"abc\"");
 
         string? sentIfNoneMatch = null;

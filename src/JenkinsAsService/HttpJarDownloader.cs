@@ -31,7 +31,9 @@ public sealed class HttpJarDownloader : IJarDownloader
         using var client = _httpFactory.CreateClient(HttpClientName);
         using var request = new HttpRequestMessage(HttpMethod.Get, jarUri);
 
-        var storedEtag = ReadStoredEtag(etagPath);
+        // Only send If-None-Match when the jar file itself exists — an orphaned .etag with no jar
+        // would cause a 304 and leave the caller with a missing agent.jar.
+        var storedEtag = File.Exists(jarPath) ? ReadStoredEtag(etagPath) : null;
         if (storedEtag is not null)
             request.Headers.TryAddWithoutValidation("If-None-Match", storedEtag);
 

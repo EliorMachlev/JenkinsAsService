@@ -207,9 +207,14 @@ public sealed class JenkinsAgentWorker : BackgroundService
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) ParseAgentOutput(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) ParseAgentOutput(e.Data); };
+        // Subscribe before Start so a fast-exiting process doesn't miss the event.
+        process.Exited += (_, _) => _agentExitTcs.TrySetResult();
 
         process.Start();
-        process.Exited += (_, _) => _agentExitTcs.TrySetResult();
+        // Defensive: if the process already exited in the window between Start() and the
+        // subscription above (extremely rare), fire the signal now so the watchdog doesn't wait.
+        if (process.HasExited)
+            _agentExitTcs.TrySetResult();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
@@ -358,7 +363,6 @@ public sealed class JenkinsAgentWorker : BackgroundService
             KillAgent();
 
             retryCount++;
-            _restartCounter.Add(1);
             _logger.LogWarning("Watchdog: Agent exited (code: {Code}). Recovery attempt {Count}.",
                 exitCode, retryCount);
 
@@ -368,7 +372,16 @@ public sealed class JenkinsAgentWorker : BackgroundService
                 break;
             }
 
-            await RecoverAgentAsync(retryCount, ct);
+            if (await RecoverAgentAsync(retryCount, ct))
+            {
+                _restartCounter.Add(1);
+            }
+            else
+            {
+                // No new process was started. Reset the exit signal so the next iteration
+                // waits on the stability timer instead of re-entering recovery immediately.
+                _agentExitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
         }
     }
 
