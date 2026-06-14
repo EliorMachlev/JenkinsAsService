@@ -42,7 +42,6 @@ var debugMode = jenkinsSection.GetValue<bool>(DebugModeKey);
 var compactLog = jenkinsSection.GetValue<bool>(CompactLogKey);
 
 Log.Logger = BuildLogger(debugMode, compactLog, basePath);
-Log.Information("Resolved base directory: {BasePath}", basePath);
 
 try
 {

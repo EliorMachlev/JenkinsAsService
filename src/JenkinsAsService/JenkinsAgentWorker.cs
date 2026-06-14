@@ -34,6 +34,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     // ─── Misc ─────────────────────────────────────────────────────────────────
     private const string SecretRedaction = "*****";
     private const string UrlPathSeparator = "/";
+    private const char TrailingSlash = '/';
     private const int ConnectivityTimeoutMs = 2_000;
     private const int BannerWidth = 80;
     private const char BannerChar = '=';
@@ -202,7 +203,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private ProcessStartInfo BuildProcessStartInfo()
     {
         var jarPath = Path.Combine(_basePath, JarFilename);
-        var normalizedUrl = $"{_settings.JenkinsURL.TrimEnd('/')}{UrlPathSeparator}";
+        var normalizedUrl = $"{_settings.JenkinsURL.TrimEnd(TrailingSlash)}{UrlPathSeparator}";
 
         var psi = new ProcessStartInfo(_javaExe)
         {
