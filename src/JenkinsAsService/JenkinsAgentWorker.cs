@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Options;
@@ -38,6 +40,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const int ConnectivityTimeoutMs = 2_000;
     private const int BannerWidth = 80;
     private const char BannerChar = '=';
+    private const string OutputKey = "{Output}";
 
     private readonly ILogger<JenkinsAgentWorker> _logger;
     private readonly ServiceSettings _settings;
@@ -126,16 +129,22 @@ public sealed class JenkinsAgentWorker : BackgroundService
     internal static void ValidateSettings(ServiceSettings settings)
     {
         if (string.IsNullOrWhiteSpace(settings.JenkinsURL))
+        {
             throw new InvalidOperationException("'JenkinsURL' is a mandatory field.");
+        }
 
         if (string.IsNullOrWhiteSpace(settings.AgentSecret))
+        {
             throw new InvalidOperationException("'AgentSecret' is a mandatory field.");
+        }
 
         var uri = new Uri(settings.JenkinsURL);
         if (uri.IsDefaultPort)
+        {
             throw new InvalidOperationException(
                 $"JenkinsURL must include an explicit port: '{settings.JenkinsURL}'. " +
                 "Example: https://jenkins.example.com:8443");
+        }
     }
 
     private void ValidateSettings()
@@ -144,7 +153,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         var uri = new Uri(_settings.JenkinsURL);
         if (uri.Scheme != Uri.UriSchemeHttps)
+        {
             _logger.LogWarning("JenkinsURL uses {Scheme} — agent secret will be sent unencrypted. Consider HTTPS.", uri.Scheme);
+        }
 
         if (string.IsNullOrWhiteSpace(_settings.AgentName))
         {
@@ -165,7 +176,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
         var candidates = new List<string>(3);
 
         if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
             candidates.Add(configuredPath);
+        }
 
         if (!string.IsNullOrWhiteSpace(javaHome))
         {
@@ -177,7 +190,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
         {
             var exe = Path.Combine(path, JavaExeFilename);
             if (File.Exists(exe))
+            {
                 return exe;
+            }
         }
 
         throw new InvalidOperationException(
@@ -205,8 +220,20 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _agentExitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) ParseAgentOutput(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) ParseAgentOutput(e.Data); };
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                ParseAgentOutput(e.Data);
+            }
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                ParseAgentOutput(e.Data);
+            }
+        };
         // Subscribe before Start so a fast-exiting process doesn't miss the event.
         process.Exited += (_, _) => _agentExitTcs.TrySetResult();
 
@@ -214,7 +241,10 @@ public sealed class JenkinsAgentWorker : BackgroundService
         // Defensive: if the process already exited in the window between Start() and the
         // subscription above (extremely rare), fire the signal now so the watchdog doesn't wait.
         if (process.HasExited)
+        {
             _agentExitTcs.TrySetResult();
+        }
+
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
@@ -248,7 +278,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
         psi.ArgumentList.Add(_basePath);
 
         foreach (var arg in ParseArguments(_settings.CustomArguments))
+        {
             psi.ArgumentList.Add(arg);
+        }
 
         return psi;
     }
@@ -257,17 +289,23 @@ public sealed class JenkinsAgentWorker : BackgroundService
     {
         var result = new List<string>();
         if (string.IsNullOrWhiteSpace(input))
+        {
             return result;
+        }
 
         int i = 0;
 
         while (i < input.Length)
         {
             while (i < input.Length && char.IsWhiteSpace(input[i]))
+            {
                 i++;
+            }
 
             if (i >= input.Length)
+            {
                 break;
+            }
 
             if (input[i] == '"')
             {
@@ -287,15 +325,22 @@ public sealed class JenkinsAgentWorker : BackgroundService
                         i++;
                     }
                 }
+
                 result.Add(buf.ToString());
-                if (i < input.Length) i++; // skip closing quote
+                if (i < input.Length)
+                {
+                    i++; // skip closing quote
+                }
             }
             else
             {
                 // Unquoted argument — find next whitespace
                 int start = i;
                 while (i < input.Length && !char.IsWhiteSpace(input[i]))
+                {
                     i++;
+                }
+
                 result.Add(input[start..i]);
             }
         }
@@ -306,26 +351,38 @@ public sealed class JenkinsAgentWorker : BackgroundService
     internal void ParseAgentOutput(string line)
     {
         if (string.IsNullOrWhiteSpace(line))
+        {
             return;
+        }
 
         // Redact resolved secret in case Jenkins emits it on handshake failure
         if (!string.IsNullOrEmpty(_resolvedSecret))
+        {
             line = line.Replace(_resolvedSecret, SecretRedaction, StringComparison.Ordinal);
+        }
 
         if (line.StartsWith(InfoPrefix, StringComparison.Ordinal))
-            _logger.LogInformation("{Output}", line[InfoPrefix.Length..]);
+        {
+            _logger.LogInformation(OutputKey, line[InfoPrefix.Length..]);
+        }
         else if (line.StartsWith(WarningPrefix, StringComparison.Ordinal))
-            _logger.LogWarning("{Output}", line[WarningPrefix.Length..]);
+        {
+            _logger.LogWarning(OutputKey, line[WarningPrefix.Length..]);
+        }
         else if (line.StartsWith(SeverePrefix, StringComparison.Ordinal))
         {
             Interlocked.Increment(ref _severeCount);
             _severeEventCounter.Add(1);
-            _logger.LogError("{Output}", line[SeverePrefix.Length..]);
+            _logger.LogError(OutputKey, line[SeverePrefix.Length..]);
         }
         else if (_settings.DebugMode)
-            _logger.LogDebug("{Output}", line);
+        {
+            _logger.LogDebug(OutputKey, line);
+        }
         else
-            _logger.LogInformation("{Output}", line);
+        {
+            _logger.LogInformation(OutputKey, line);
+        }
     }
 
     // ─── Watchdog ───────────────────────────────────────────────────────────
@@ -341,7 +398,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             var exitTask = _agentExitTcs!.Task;
             await Task.WhenAny(exitTask, Task.Delay(StabilityMs, ct));
 
-            if (ct.IsCancellationRequested) break;
+            ct.ThrowIfCancellationRequested();
 
             if (!exitTask.IsCompleted && _agentProcess is { HasExited: false })
             {
@@ -351,13 +408,16 @@ public sealed class JenkinsAgentWorker : BackgroundService
                     retryCount = 0;
                     _logger.LogInformation("Watchdog: Agent stable for {Seconds}s. Retry counter reset.", StabilitySeconds);
                 }
+
                 continue;
             }
 
             // ── Agent died — begin recovery ──
             var severeCount = Interlocked.Exchange(ref _severeCount, 0);
             if (severeCount > 0)
+            {
                 _logger.LogWarning("Watchdog: Agent emitted {Count} SEVERE event(s) before exiting.", severeCount);
+            }
 
             var exitCode = GetAgentExitCode();
             KillAgent();
@@ -369,7 +429,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             if (HasExceededMaxRetries(retryCount))
             {
                 _logger.LogError("Watchdog: Max retries ({Max}) exceeded. Giving up.", _settings.MaxRetries);
-                break;
+                return;
             }
 
             if (await RecoverAgentAsync(retryCount, ct))
@@ -386,7 +446,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     }
 
     private int GetAgentExitCode() =>
-        _agentProcess?.HasExited == true ? _agentProcess.ExitCode : UnknownExitCode;
+        _agentProcess is { HasExited: true } ? _agentProcess.ExitCode : UnknownExitCode;
 
     private bool HasExceededMaxRetries(int retryCount) =>
         _settings.MaxRetries > 0 && retryCount > _settings.MaxRetries;
@@ -426,12 +486,17 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     private void KillAgent()
     {
-        if (_agentProcess is null) return;
+        if (_agentProcess is null)
+        {
+            return;
+        }
 
         try
         {
             if (!_agentProcess.HasExited)
+            {
                 _agentProcess.Kill(entireProcessTree: true);
+            }
         }
         catch (InvalidOperationException) { }
         finally

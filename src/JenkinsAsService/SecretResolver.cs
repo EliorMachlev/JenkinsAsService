@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using System.Security.Cryptography;
 using System.Text;
 using AdysTech.CredentialManager;
@@ -13,7 +15,9 @@ public sealed class SecretResolver : ISecretResolver
     public string Resolve(ServiceSettings settings)
     {
         if (string.IsNullOrWhiteSpace(settings.AgentSecret))
+        {
             throw new InvalidOperationException("'AgentSecret' is empty — nothing to resolve.");
+        }
 
         return settings.SecretMode switch
         {
@@ -54,9 +58,12 @@ public sealed class SecretResolver : ISecretResolver
     {
         var value = Environment.GetEnvironmentVariable(variableName, EnvironmentVariableTarget.Machine);
         if (string.IsNullOrWhiteSpace(value))
+        {
             throw new InvalidOperationException(
                 $"System environment variable '{variableName}' not found or empty. " +
                 "Create it with the agent secret value, or change SecretMode.");
+        }
+
         return value;
     }
 
@@ -64,9 +71,12 @@ public sealed class SecretResolver : ISecretResolver
     {
         var credential = CredentialManager.GetCredentials(targetName);
         if (credential?.Password is null or "")
+        {
             throw new InvalidOperationException(
                 $"Windows Credential Manager entry '{targetName}' not found or has no password. " +
                 "Re-run the installer with Credential Manager mode, or add it manually via cmdkey.");
+        }
+
         return credential.Password;
     }
 }

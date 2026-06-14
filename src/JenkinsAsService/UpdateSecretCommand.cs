@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using Microsoft.Win32.SafeHandles;
@@ -6,7 +8,7 @@ namespace JenkinsAsService;
 
 public static class UpdateSecretCommand
 {
-    private const string Usage = """
+    private const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
 
         Options:
@@ -37,16 +39,48 @@ public static class UpdateSecretCommand
     private const int Logon32LogonInteractive = 2;
     private const int Logon32ProviderDefault = 0;
 
-    public static int Run(string[] args, string? basePath = null)
+    private sealed record ParsedArgs(
+        string? SecretArg,
+        string? SecretFile,
+        string? SecretEnv,
+        string? Url,
+        SecretMode? Mode,
+        string? AgentName,
+        string? JavaPath,
+        bool Silent,
+        bool Impersonate,
+        string? Username);
+
+    public static int Run(string[] args)
+    {
+        return Run(args, null);
+    }
+
+    public static int Run(string[] args, string? basePath)
     {
         basePath ??= AppContext.BaseDirectory;
 
         if (Array.Exists(args, a => a is "--help" or "-h"))
         {
-            Console.WriteLine(Usage);
+            Console.WriteLine(UsageText);
             return 0;
         }
 
+        var parsed = ParseArgs(args);
+        if (parsed is null)
+        {
+            return 1;
+        }
+
+        return parsed.Silent
+            ? RunSilent(basePath, parsed)
+            : RunInteractive(basePath, parsed);
+    }
+
+    // ─── Argument parsing ────────────────────────────────────────────────────
+
+    private static ParsedArgs? ParseArgs(string[] args)
+    {
         string? secretArg = null, secretFile = null, secretEnv = null;
         string? url = null, agentName = null, javaPath = null, username = null;
         SecretMode? mode = null;
@@ -68,186 +102,127 @@ public static class UpdateSecretCommand
                 case "--impersonate": impersonate = true; break;
                 default:
                     Console.Error.WriteLine($"Unknown option: {args[i]}");
-                    Console.Error.WriteLine(Usage);
-                    return 1;
+                    Console.Error.WriteLine(UsageText);
+                    return null;
             }
         }
 
-        if (silent)
-            return RunSilent(basePath, secretArg, secretFile, secretEnv, url, mode, agentName, javaPath, impersonate, username);
-
-        return RunInteractive(basePath, secretArg, secretFile, secretEnv, url, mode, agentName, javaPath, impersonate, username);
+        return new ParsedArgs(secretArg, secretFile, secretEnv, url, mode, agentName, javaPath, silent, impersonate, username);
     }
 
     // ─── Silent mode ────────────────────────────────────────────────────────
 
-    private static int RunSilent(string basePath,
-        string? secretArg, string? secretFile, string? secretEnv,
-        string? url, SecretMode? mode,
-        string? agentName, string? javaPath,
-        bool impersonate, string? username)
+    private static int RunSilent(string basePath, ParsedArgs args)
     {
-        var secret = ResolveSecretInput(secretArg, secretFile, secretEnv);
+        var secret = ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv);
 
         if (string.IsNullOrWhiteSpace(secret))
         {
             Console.Error.WriteLine("Error: --secret, --secret-file, or --secret-env is required in --silent mode.");
             return 1;
         }
-        if (string.IsNullOrWhiteSpace(url))
+
+        if (string.IsNullOrWhiteSpace(args.Url))
         {
             Console.Error.WriteLine("Error: --url is required in --silent mode.");
             return 1;
         }
-        if (mode is null)
+
+        if (args.Mode is null)
         {
             Console.Error.WriteLine("Error: --mode is required in --silent mode.");
             return 1;
         }
 
-        if (impersonate)
+        if (args.Impersonate)
         {
-            if (string.IsNullOrWhiteSpace(username))
-            {
-                Console.Error.WriteLine("Error: --username is required with --impersonate in --silent mode.");
-                return 1;
-            }
-            var password = Environment.GetEnvironmentVariable(ImpersonatePasswordEnv);
-            if (string.IsNullOrWhiteSpace(password))
-            {
-                Console.Error.WriteLine($"Error: env var {ImpersonatePasswordEnv} must be set with --impersonate in --silent mode.");
-                return 1;
-            }
-            try
-            {
-                RunImpersonated(username, password, () =>
-                    SecretWriter.WriteConfig(basePath, secret, mode.Value, url, agentName, javaPath));
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Error: {ex.Message}");
-                return 1;
-            }
+            return RunSilentImpersonated(basePath, secret, args);
         }
-        else
+
+        SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath);
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode.Value})");
+        return 0;
+    }
+
+    private static int RunSilentImpersonated(string basePath, string secret, ParsedArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(args.Username))
         {
-            SecretWriter.WriteConfig(basePath, secret, mode.Value, url, agentName, javaPath);
+            Console.Error.WriteLine("Error: --username is required with --impersonate in --silent mode.");
+            return 1;
+        }
+
+        var password = Environment.GetEnvironmentVariable(ImpersonatePasswordEnv);
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            Console.Error.WriteLine($"Error: env var {ImpersonatePasswordEnv} must be set with --impersonate in --silent mode.");
+            return 1;
+        }
+
+        try
+        {
+            RunImpersonated(args.Username, password, () =>
+                SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath));
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            return 1;
         }
 
         var configPath = Path.Combine(basePath, ConfigFileName);
-        Console.WriteLine($"Configuration written to {configPath} (mode: {mode.Value})");
+        Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode!.Value})");
         return 0;
     }
 
     // ─── Interactive mode ────────────────────────────────────────────────────
 
-    private static int RunInteractive(string basePath,
-        string? secretArg, string? secretFile, string? secretEnv,
-        string? url, SecretMode? mode,
-        string? agentName, string? javaPath,
-        bool impersonate, string? username)
+    private static int RunInteractive(string basePath, ParsedArgs args)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
         TryReadExistingConfig(basePath, configPath,
             out var existingUrl, out var existingAgentName, out var existingJavaPath, out var existingMode);
 
-        if (string.IsNullOrWhiteSpace(url))
+        var url = PromptUrl(args.Url, existingUrl);
+        if (url is null)
         {
-            var def = string.IsNullOrWhiteSpace(existingUrl) ? "" : $" [{existingUrl}]";
-            Console.Write($"Jenkins URL (with port){def}: ");
-            var input = Console.ReadLine()?.Trim();
-            url = string.IsNullOrWhiteSpace(input) ? existingUrl : input;
-        }
-
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            Console.Error.WriteLine("Error: Jenkins URL is required.");
             return 1;
         }
 
-        var secret = ResolveSecretInput(secretArg, secretFile, secretEnv);
-        if (string.IsNullOrWhiteSpace(secret))
+        var secret = PromptSecret(args.SecretArg, args.SecretFile, args.SecretEnv);
+        if (secret is null)
         {
-            Console.Write("Agent secret: ");
-            secret = ReadMaskedInput();
-            Console.WriteLine();
-        }
-
-        if (string.IsNullOrWhiteSpace(secret))
-        {
-            Console.Error.WriteLine("Error: Agent secret is required.");
             return 1;
         }
 
-        if (mode is null)
-        {
-            Console.WriteLine();
-            Console.WriteLine("Secret protection mode:");
-            Console.WriteLine("  1. DPAPI — machine-scoped encryption (recommended)");
-            Console.WriteLine("  2. Environment Variable — system env var");
-            Console.WriteLine("  3. Credential Manager — Windows credential vault");
-            Console.WriteLine("  4. Unprotected — plaintext (dev only)");
-            Console.Write($"Select [1-4] (default: {(int)existingMode + 1}): ");
-            mode = Console.ReadLine()?.Trim() switch
-            {
-                "1" => SecretMode.Dpapi,
-                "2" => SecretMode.EnvironmentVariable,
-                "3" => SecretMode.CredentialManager,
-                "4" => SecretMode.Unprotected,
-                _   => existingMode
-            };
-        }
+        var mode = PromptMode(args.Mode, existingMode);
+        var agentName = PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
+        var javaPath = PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
 
-        if (agentName is null)
-        {
-            var def = string.IsNullOrWhiteSpace(existingAgentName) ? "hostname" : existingAgentName;
-            Console.Write($"Agent name (default: {def}): ");
-            var input = Console.ReadLine()?.Trim();
-            agentName = string.IsNullOrWhiteSpace(input) ? existingAgentName : input;
-        }
+        return WriteInteractiveConfig(basePath, configPath, secret, mode, url, agentName, javaPath, args);
+    }
 
-        if (javaPath is null)
-        {
-            var def = string.IsNullOrWhiteSpace(existingJavaPath) ? "JAVA_HOME" : existingJavaPath;
-            Console.Write($"Java path (default: {def}): ");
-            var input = Console.ReadLine()?.Trim();
-            javaPath = string.IsNullOrWhiteSpace(input) ? existingJavaPath : input;
-        }
-
-        // Impersonation: prompt for credentials if --impersonate and not already provided
-        string? impersonatePassword = null;
-        if (impersonate)
-        {
-            if (string.IsNullOrWhiteSpace(username))
-            {
-                Console.Write("Impersonate as (e.g. DOMAIN\\ServiceAccount): ");
-                username = Console.ReadLine()?.Trim();
-            }
-            if (string.IsNullOrWhiteSpace(username))
-            {
-                Console.Error.WriteLine("Error: username is required for impersonation.");
-                return 1;
-            }
-            Console.Write($"Password for {username}: ");
-            impersonatePassword = ReadMaskedInput();
-            Console.WriteLine();
-            if (string.IsNullOrWhiteSpace(impersonatePassword))
-            {
-                Console.Error.WriteLine("Error: password is required for impersonation.");
-                return 1;
-            }
-        }
-
+    private static int WriteInteractiveConfig(string basePath, string configPath,
+        string secret, SecretMode mode, string url,
+        string? agentName, string? javaPath, ParsedArgs args)
+    {
         try
         {
-            if (impersonate && impersonatePassword is not null)
+            if (args.Impersonate)
             {
-                RunImpersonated(username!, impersonatePassword, () =>
-                    SecretWriter.WriteConfig(basePath, secret, mode.Value, url, agentName, javaPath));
+                var credentials = PromptImpersonationCredentials(args.Username);
+                if (credentials is null)
+                {
+                    return 1;
+                }
+
+                RunImpersonated(credentials.Value.Username, credentials.Value.Password, () =>
+                    SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath));
             }
             else
             {
-                SecretWriter.WriteConfig(basePath, secret, mode.Value, url, agentName, javaPath);
+                SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath);
             }
         }
         catch (Exception ex)
@@ -263,7 +238,115 @@ public static class UpdateSecretCommand
         return 0;
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // ─── Prompt helpers ──────────────────────────────────────────────────────
+
+    private static string? PromptUrl(string? argUrl, string? existingUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(argUrl))
+        {
+            return argUrl;
+        }
+
+        var def = string.IsNullOrWhiteSpace(existingUrl) ? "" : $" [{existingUrl}]";
+        Console.Write($"Jenkins URL (with port){def}: ");
+        var input = Console.ReadLine()?.Trim();
+        var url = string.IsNullOrWhiteSpace(input) ? existingUrl : input;
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            Console.Error.WriteLine("Error: Jenkins URL is required.");
+            return null;
+        }
+
+        return url;
+    }
+
+    private static string? PromptSecret(string? secretArg, string? secretFile, string? secretEnv)
+    {
+        var secret = ResolveSecretInput(secretArg, secretFile, secretEnv);
+        if (!string.IsNullOrWhiteSpace(secret))
+        {
+            return secret;
+        }
+
+        Console.Write("Agent secret: ");
+        secret = ReadMaskedInput();
+        Console.WriteLine();
+
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            Console.Error.WriteLine("Error: Agent secret is required.");
+            return null;
+        }
+
+        return secret;
+    }
+
+    private static SecretMode PromptMode(SecretMode? modeArg, SecretMode existingMode)
+    {
+        if (modeArg.HasValue)
+        {
+            return modeArg.Value;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Secret protection mode:");
+        Console.WriteLine("  1. DPAPI — machine-scoped encryption (recommended)");
+        Console.WriteLine("  2. Environment Variable — system env var");
+        Console.WriteLine("  3. Credential Manager — Windows credential vault");
+        Console.WriteLine("  4. Unprotected — plaintext (dev only)");
+        Console.Write($"Select [1-4] (default: {(int)existingMode + 1}): ");
+        return Console.ReadLine()?.Trim() switch
+        {
+            "1" => SecretMode.Dpapi,
+            "2" => SecretMode.EnvironmentVariable,
+            "3" => SecretMode.CredentialManager,
+            "4" => SecretMode.Unprotected,
+            _   => existingMode
+        };
+    }
+
+    private static string? PromptText(string label, string? argValue, string? existing, string fallbackLabel)
+    {
+        if (argValue is not null)
+        {
+            return argValue;
+        }
+
+        var def = string.IsNullOrWhiteSpace(existing) ? fallbackLabel : existing;
+        Console.Write($"{label} (default: {def}): ");
+        var input = Console.ReadLine()?.Trim();
+        return string.IsNullOrWhiteSpace(input) ? existing : input;
+    }
+
+    private static (string Username, string Password)? PromptImpersonationCredentials(string? username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            Console.Write("Impersonate as (e.g. DOMAIN\\ServiceAccount): ");
+            username = Console.ReadLine()?.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            Console.Error.WriteLine("Error: username is required for impersonation.");
+            return null;
+        }
+
+        Console.Write($"Password for {username}: ");
+        var password = ReadMaskedInput();
+        Console.WriteLine();
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            Console.Error.WriteLine("Error: password is required for impersonation.");
+            return null;
+        }
+
+        return (username, password);
+    }
+
+    // ─── Shared helpers ──────────────────────────────────────────────────────
 
     // Reads the existing appsettings.json (if present) so interactive prompts can offer defaults.
     // Falls back to empty strings / Dpapi on a missing or corrupt file.
@@ -277,7 +360,9 @@ public static class UpdateSecretCommand
         existingMode = SecretMode.Dpapi;
 
         if (!File.Exists(configPath))
+        {
             return;
+        }
 
         try
         {
@@ -290,14 +375,19 @@ public static class UpdateSecretCommand
             existingAgentName = section["AgentName"] ?? "";
             existingJavaPath = section["JavaPath"] ?? "";
             if (Enum.TryParse<SecretMode>(section["SecretMode"], out var parsed))
+            {
                 existingMode = parsed;
+            }
         }
         catch { /* Corrupt config — use defaults */ }
     }
 
     private static string? ResolveSecretInput(string? secretArg, string? secretFile, string? secretEnv)
     {
-        if (secretArg is not null) return secretArg;
+        if (secretArg is not null)
+        {
+            return secretArg;
+        }
 
         if (secretFile is not null)
         {
@@ -306,6 +396,7 @@ public static class UpdateSecretCommand
                 Console.Error.WriteLine($"Error: secret file not found: {secretFile}");
                 return null;
             }
+
             var s = File.ReadAllText(secretFile, System.Text.Encoding.UTF8).Trim();
             try { File.Delete(secretFile); } catch { /* best-effort delete */ }
             return s;
@@ -319,6 +410,7 @@ public static class UpdateSecretCommand
                 Console.Error.WriteLine($"Error: environment variable '{secretEnv}' is not set or empty.");
                 return null;
             }
+
             return s;
         }
 
@@ -327,7 +419,11 @@ public static class UpdateSecretCommand
 
     private static string? Next(string[] args, ref int i)
     {
-        if (++i < args.Length) return args[i];
+        if (++i < args.Length)
+        {
+            return args[i];
+        }
+
         Console.Error.WriteLine($"Error: {args[i - 1]} requires a value.");
         return null;
     }
@@ -335,9 +431,16 @@ public static class UpdateSecretCommand
     // Returns null (instead of defaulting to Dpapi) so callers can fail explicitly on invalid input.
     internal static SecretMode? ParseMode(string? value)
     {
-        if (value is null) return null;
+        if (value is null)
+        {
+            return null;
+        }
+
         if (Enum.TryParse<SecretMode>(value, ignoreCase: true, out var mode))
+        {
             return mode;
+        }
+
         Console.Error.WriteLine($"Error: unknown mode '{value}'. Valid: Dpapi, EnvironmentVariable, CredentialManager, Unprotected");
         return null;
     }
@@ -348,9 +451,20 @@ public static class UpdateSecretCommand
         while (true)
         {
             ConsoleKeyInfo key;
-            try { key = Console.ReadKey(intercept: true); }
-            catch (InvalidOperationException) { break; } // stdin redirected
-            if (key.Key == ConsoleKey.Enter) break;
+            try
+            {
+                key = Console.ReadKey(intercept: true);
+            }
+            catch (InvalidOperationException)
+            {
+                break; // stdin redirected
+            }
+
+            if (key.Key == ConsoleKey.Enter)
+            {
+                break;
+            }
+
             if (key.Key == ConsoleKey.Backspace && sb.Length > 0)
             {
                 sb.Length--;
@@ -362,6 +476,7 @@ public static class UpdateSecretCommand
                 Console.Write('*');
             }
         }
+
         return sb.ToString();
     }
 
@@ -392,7 +507,9 @@ public static class UpdateSecretCommand
         }
 
         using (token)
+        {
             WindowsIdentity.RunImpersonated(token, action);
+        }
     }
 
     private static class NativeMethods

@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using System.Net;
 using System.Security;
 using System.Security.Cryptography;
@@ -32,9 +34,16 @@ public static class SecretWriter
 
         var root = new JsonObject();
         if (existingRoot != null)
+        {
             foreach (var kvp in existingRoot)
+            {
                 if (kvp.Key != ConfigSectionName)
+                {
                     root[kvp.Key] = kvp.Value?.DeepClone();
+                }
+            }
+        }
+
         root[ConfigSectionName] = jenkins;
 
         var options = new JsonSerializerOptions { WriteIndented = true };
@@ -55,7 +64,9 @@ public static class SecretWriter
     private static JsonObject? ReadExistingRoot(string configPath)
     {
         if (!File.Exists(configPath))
+        {
             return null;
+        }
 
         try
         {
@@ -74,13 +85,19 @@ public static class SecretWriter
         ["JenkinsURL"] = url,
         ["AgentSecret"] = configSecret,
         ["SecretMode"] = mode.ToString(),
-        ["AgentName"] = agentName ?? existingJenkins?["AgentName"]?.GetValue<string>() ?? "",
-        ["JavaPath"] = javaPath ?? existingJenkins?["JavaPath"]?.GetValue<string>() ?? "",
-        ["CustomArguments"] = existingJenkins?["CustomArguments"]?.GetValue<string>() ?? "",
-        ["DebugMode"] = existingJenkins?["DebugMode"]?.GetValue<bool>() ?? false,
-        ["CompactLog"] = existingJenkins?["CompactLog"]?.GetValue<bool>() ?? false,
-        ["MaxRetries"] = existingJenkins?["MaxRetries"]?.GetValue<int>() ?? 0
+        ["AgentName"] = agentName ?? ExistingString(existingJenkins, "AgentName"),
+        ["JavaPath"] = javaPath ?? ExistingString(existingJenkins, "JavaPath"),
+        ["CustomArguments"] = ExistingString(existingJenkins, "CustomArguments"),
+        ["DebugMode"] = ExistingValue(existingJenkins, "DebugMode", false),
+        ["CompactLog"] = ExistingValue(existingJenkins, "CompactLog", false),
+        ["MaxRetries"] = ExistingValue(existingJenkins, "MaxRetries", 0)
     };
+
+    private static string ExistingString(JsonObject? existing, string key) =>
+        existing?[key]?.GetValue<string>() ?? "";
+
+    private static T ExistingValue<T>(JsonObject? existing, string key, T fallback) where T : struct =>
+        existing?[key]?.GetValue<T>() ?? fallback;
 
     private static string ProtectDpapi(string secret)
     {
@@ -100,6 +117,7 @@ public static class SecretWriter
             throw new InvalidOperationException(
                 "Setting a machine-level environment variable requires administrator privileges.", ex);
         }
+
         return EnvVarName;
     }
 
@@ -115,6 +133,7 @@ public static class SecretWriter
                 $"Failed to save credential to Windows Credential Manager target '{CredTargetName}'. " +
                 "Ensure the process has sufficient privileges.", ex);
         }
+
         return CredTargetName;
     }
 }

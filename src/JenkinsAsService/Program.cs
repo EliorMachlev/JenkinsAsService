@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using JenkinsAsService;
 using Microsoft.Extensions.Options;
 using OpenTelemetry.Metrics;
@@ -51,7 +53,9 @@ try
     var host = BuildHost(args);
 
     if (!ValidateBoundSettings(host, basePath))
+    {
         return;
+    }
 
     await host.RunAsync();
 }
@@ -89,6 +93,7 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, string b
 static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, string basePath)
 {
     if (compactLog)
+    {
         logConfig.WriteTo.File(
             formatter: new CompactJsonFormatter(),
             path: Path.Combine(basePath, CompactLogFileName),
@@ -96,7 +101,9 @@ static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, st
             rollOnFileSizeLimit: true,
             fileSizeLimitBytes: FileSizeLimitBytes,
             retainedFileCountLimit: RetainedFileCount);
+    }
     else
+    {
         logConfig.WriteTo.File(
             path: Path.Combine(basePath, TextLogFileName),
             rollingInterval: RollingInterval.Infinite,
@@ -104,6 +111,7 @@ static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, st
             fileSizeLimitBytes: FileSizeLimitBytes,
             retainedFileCountLimit: RetainedFileCount,
             outputTemplate: LogOutputTemplate);
+    }
 }
 
 static IHost BuildHost(string[] args)
@@ -125,14 +133,21 @@ static IHost BuildHost(string[] args)
     var telemetry = builder.Configuration.GetSection(TelemetrySectionName).Get<TelemetrySettings>() ?? new TelemetrySettings();
     if (telemetry.Enabled)
     {
-        builder.Services.AddOpenTelemetry()
-            .ConfigureResource(r => r.AddService(telemetry.ServiceName))
-            .WithMetrics(metrics =>
-            {
-                metrics.AddMeter("JenkinsAsService");
-                metrics.AddRuntimeInstrumentation();
-                metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetry.OtlpEndpoint));
-            });
+        if (string.IsNullOrWhiteSpace(telemetry.OtlpEndpoint))
+        {
+            Log.Warning("Telemetry is enabled but OtlpEndpoint is not configured — metrics will not be exported.");
+        }
+        else
+        {
+            builder.Services.AddOpenTelemetry()
+                .ConfigureResource(r => r.AddService(telemetry.ServiceName))
+                .WithMetrics(metrics =>
+                {
+                    metrics.AddMeter("JenkinsAsService");
+                    metrics.AddRuntimeInstrumentation();
+                    metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetry.OtlpEndpoint));
+                });
+        }
     }
 
     return builder.Build();

@@ -1,4 +1,5 @@
-using System.Diagnostics;
+// Copyright (c) 2024 All rights reserved
+
 using System.Net.Sockets;
 
 namespace JenkinsAsService;
@@ -20,7 +21,7 @@ public sealed class TcpConnectivityChecker : IConnectivityChecker
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeoutMs);
 
-        var stopwatch = Stopwatch.StartNew();
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             await tcp.ConnectAsync(host, port, cts.Token);

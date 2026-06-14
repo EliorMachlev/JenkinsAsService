@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 namespace JenkinsAsService;
 
 public sealed class ServiceSettings

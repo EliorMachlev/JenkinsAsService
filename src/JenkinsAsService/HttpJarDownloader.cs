@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using System.Net;
 
 namespace JenkinsAsService;
@@ -35,7 +37,9 @@ public sealed class HttpJarDownloader : IJarDownloader
         // would cause a 304 and leave the caller with a missing agent.jar.
         var storedEtag = File.Exists(jarPath) ? ReadStoredEtag(etagPath) : null;
         if (storedEtag is not null)
+        {
             request.Headers.TryAddWithoutValidation("If-None-Match", storedEtag);
+        }
 
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 
@@ -59,7 +63,9 @@ public sealed class HttpJarDownloader : IJarDownloader
     private static string? ReadStoredEtag(string etagPath)
     {
         if (!File.Exists(etagPath))
+        {
             return null;
+        }
 
         var value = File.ReadAllText(etagPath).Trim();
         return string.IsNullOrEmpty(value) ? null : value;
@@ -79,7 +85,10 @@ public sealed class HttpJarDownloader : IJarDownloader
         {
             // No ETag from server — drop any stale etag file so next call is an unconditional GET.
             if (File.Exists(etagPath))
+            {
                 File.Delete(etagPath);
+            }
+
             return;
         }
 
