@@ -26,10 +26,17 @@ public static class SecretWriter
         var configSecret = ProcessSecret(secret, mode);
         var configPath = Path.Combine(basePath, ConfigFileName);
 
-        var existingJenkins = ReadExistingJenkinsSection(configPath);
+        var existingRoot = ReadExistingRoot(configPath);
+        var existingJenkins = existingRoot?[ConfigSectionName]?.AsObject();
         var jenkins = BuildJenkinsSection(configSecret, mode, url, agentName, javaPath, existingJenkins);
 
-        var root = new JsonObject { [ConfigSectionName] = jenkins };
+        var root = new JsonObject();
+        if (existingRoot != null)
+            foreach (var kvp in existingRoot)
+                if (kvp.Key != ConfigSectionName)
+                    root[kvp.Key] = kvp.Value?.DeepClone();
+        root[ConfigSectionName] = jenkins;
+
         var options = new JsonSerializerOptions { WriteIndented = true };
         File.WriteAllText(configPath, root.ToJsonString(options), Encoding.UTF8);
     }
@@ -43,16 +50,16 @@ public static class SecretWriter
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown SecretMode.")
     };
 
-    // Read existing config to preserve user-customized fields.
-    private static JsonObject? ReadExistingJenkinsSection(string configPath)
+    // Read the full existing config root to preserve user-customized fields
+    // and any non-Jenkins top-level sections (e.g. Telemetry, Logging).
+    private static JsonObject? ReadExistingRoot(string configPath)
     {
         if (!File.Exists(configPath))
             return null;
 
         try
         {
-            var existing = JsonNode.Parse(File.ReadAllText(configPath));
-            return existing?[ConfigSectionName]?.AsObject();
+            return JsonNode.Parse(File.ReadAllText(configPath))?.AsObject();
         }
         catch (JsonException)
         {
@@ -60,6 +67,10 @@ public static class SecretWriter
             return null;
         }
     }
+
+    // Read just the existing Jenkins section (preserves user-customized fields).
+    private static JsonObject? ReadExistingJenkinsSection(string configPath) =>
+        ReadExistingRoot(configPath)?[ConfigSectionName]?.AsObject();
 
     private static JsonObject BuildJenkinsSection(string configSecret, SecretMode mode,
         string url, string? agentName, string? javaPath, JsonObject? existingJenkins) => new()

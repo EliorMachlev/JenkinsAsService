@@ -1,5 +1,7 @@
 using JenkinsAsService;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
@@ -17,8 +19,9 @@ const string TextLogFileName = "agent.log";
 const string CompactLogFileName = "agent.clef";
 const long FileSizeLimitBytes = 10 * 1024 * 1024;
 const int RetainedFileCount = 3;
+const string TelemetrySectionName = "Telemetry";
 const string LogOutputTemplate =
-    "{Pid} | {Timestamp:yyyy-MM-dd HH:mm:ss} | {Level} | {Message:lj}{NewLine}{Exception}";
+    "{ProcessId} | {Timestamp:yyyy-MM-dd HH:mm:ss} | {Level} | {Message:lj}{NewLine}{Exception}";
 
 // CLI mode — if args contain a known command, handle it and exit.
 // IMPORTANT: this dispatch must stay before Serilog init — Environment.Exit skips the
@@ -68,7 +71,7 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, string b
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
         .MinimumLevel.Override("System.Net.Http", LogEventLevel.Warning)
         .MinimumLevel.Override("Polly", LogEventLevel.Warning)
-        .Enrich.WithProperty("Pid", Environment.ProcessId)
+        .Enrich.WithProcessId()
         .Enrich.WithMachineName()
         .Enrich.WithEnvironmentName();
 
@@ -118,6 +121,19 @@ static IHost BuildHost(string[] args)
 
     builder.Logging.ClearProviders();
     builder.Services.AddSerilog();
+
+    var telemetry = builder.Configuration.GetSection(TelemetrySectionName).Get<TelemetrySettings>() ?? new TelemetrySettings();
+    if (telemetry.Enabled)
+    {
+        builder.Services.AddOpenTelemetry()
+            .ConfigureResource(r => r.AddService(telemetry.ServiceName))
+            .WithMetrics(metrics =>
+            {
+                metrics.AddMeter("JenkinsAsService");
+                metrics.AddRuntimeInstrumentation();
+                metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetry.OtlpEndpoint));
+            });
+    }
 
     return builder.Build();
 }

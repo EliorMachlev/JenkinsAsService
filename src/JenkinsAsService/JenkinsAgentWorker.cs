@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Options;
 
 namespace JenkinsAsService;
@@ -6,7 +7,6 @@ namespace JenkinsAsService;
 public sealed class JenkinsAgentWorker : BackgroundService
 {
     // ─── Watchdog / recovery timing ───────────────────────────────────────────
-    private const int WatchdogPollMs = 5_000;
     private const int BackoffBaseSec = 10;
     private const int BackoffMaxSec = 300;
     private const int StabilityMs = 60_000;
@@ -49,6 +49,12 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private string _agentName = "";
     private string _resolvedSecret = "";
     private Process? _agentProcess;
+    private TaskCompletionSource? _agentExitTcs;
+    private int _severeCount;
+
+    private readonly Meter _meter;
+    private readonly Counter<long> _restartCounter;
+    private readonly Counter<long> _severeEventCounter;
 
     public JenkinsAgentWorker(
         ILogger<JenkinsAgentWorker> logger,
@@ -63,6 +69,14 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _connectivityChecker = connectivityChecker;
         _secretResolver = secretResolver;
         _basePath = AppContext.BaseDirectory;
+
+        _meter = new Meter("JenkinsAsService", "1.0.0");
+        _restartCounter = _meter.CreateCounter<long>(
+            "jenkins_agent_restarts_total",
+            description: "Number of agent restart attempts since service start");
+        _severeEventCounter = _meter.CreateCounter<long>(
+            "jenkins_agent_severe_events_total",
+            description: "Number of SEVERE log lines emitted by the Jenkins agent");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -188,11 +202,14 @@ public sealed class JenkinsAgentWorker : BackgroundService
     {
         var psi = BuildProcessStartInfo();
 
+        _agentExitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) ParseAgentOutput(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) ParseAgentOutput(e.Data); };
 
         process.Start();
+        process.Exited += (_, _) => _agentExitTcs.TrySetResult();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
@@ -295,7 +312,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
         else if (line.StartsWith(WarningPrefix, StringComparison.Ordinal))
             _logger.LogWarning("{Output}", line[WarningPrefix.Length..]);
         else if (line.StartsWith(SeverePrefix, StringComparison.Ordinal))
+        {
+            Interlocked.Increment(ref _severeCount);
+            _severeEventCounter.Add(1);
             _logger.LogError("{Output}", line[SeverePrefix.Length..]);
+        }
         else if (_settings.DebugMode)
             _logger.LogDebug("{Output}", line);
         else
@@ -307,17 +328,20 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private async Task RunWatchdogAsync(CancellationToken ct)
     {
         var retryCount = 0;
-        var lastRestartTime = DateTime.UtcNow;
 
         _logger.LogInformation("Watchdog started");
 
         while (!ct.IsCancellationRequested)
         {
-            await Task.Delay(WatchdogPollMs, ct);
+            var exitTask = _agentExitTcs!.Task;
+            await Task.WhenAny(exitTask, Task.Delay(StabilityMs, ct));
 
-            if (_agentProcess is { HasExited: false })
+            if (ct.IsCancellationRequested) break;
+
+            if (!exitTask.IsCompleted && _agentProcess is { HasExited: false })
             {
-                if (IsAgentStable(retryCount, lastRestartTime))
+                // Stability window elapsed, agent still running
+                if (retryCount > 0)
                 {
                     retryCount = 0;
                     _logger.LogInformation("Watchdog: Agent stable for {Seconds}s. Retry counter reset.", StabilitySeconds);
@@ -326,10 +350,15 @@ public sealed class JenkinsAgentWorker : BackgroundService
             }
 
             // ── Agent died — begin recovery ──
+            var severeCount = Interlocked.Exchange(ref _severeCount, 0);
+            if (severeCount > 0)
+                _logger.LogWarning("Watchdog: Agent emitted {Count} SEVERE event(s) before exiting.", severeCount);
+
             var exitCode = GetAgentExitCode();
             KillAgent();
 
             retryCount++;
+            _restartCounter.Add(1);
             _logger.LogWarning("Watchdog: Agent exited (code: {Code}). Recovery attempt {Count}.",
                 exitCode, retryCount);
 
@@ -339,13 +368,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
                 break;
             }
 
-            if (await RecoverAgentAsync(retryCount, ct))
-                lastRestartTime = DateTime.UtcNow;
+            await RecoverAgentAsync(retryCount, ct);
         }
     }
-
-    private bool IsAgentStable(int retryCount, DateTime lastRestartTime) =>
-        retryCount > 0 && (DateTime.UtcNow - lastRestartTime).TotalMilliseconds >= StabilityMs;
 
     private int GetAgentExitCode() =>
         _agentProcess?.HasExited == true ? _agentProcess.ExitCode : UnknownExitCode;
@@ -361,6 +386,16 @@ public sealed class JenkinsAgentWorker : BackgroundService
         var delay = ComputeBackoffDelaySeconds(retryCount);
         _logger.LogInformation("Watchdog: Waiting {Delay}s before retry...", delay);
         await Task.Delay(TimeSpan.FromSeconds(delay), ct);
+
+        try
+        {
+            await TestConnectivityAsync(ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Watchdog: Jenkins unreachable — skipping restart attempt. {Reason}", ex.Message);
+            return false;
+        }
 
         try
         {
@@ -391,5 +426,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
             _agentProcess.Dispose();
             _agentProcess = null;
         }
+    }
+
+    public override void Dispose()
+    {
+        _meter.Dispose();
+        base.Dispose();
     }
 }

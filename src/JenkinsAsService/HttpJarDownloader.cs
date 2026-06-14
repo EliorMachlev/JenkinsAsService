@@ -1,8 +1,11 @@
+using System.Net;
+
 namespace JenkinsAsService;
 
 public sealed class HttpJarDownloader : IJarDownloader
 {
     private const string JarFilename = "agent.jar"; // intentional: decoupled from JenkinsAgentWorker
+    private const string ETagFilename = "agent.jar.etag";
     private const string JnlpJarsPath = "jnlpJars";
     private const string UrlSeparator = "/";
     private const char TrailingSlash = '/';
@@ -20,11 +23,30 @@ public sealed class HttpJarDownloader : IJarDownloader
     public async Task DownloadAsync(string jenkinsUrl, string destinationPath, CancellationToken ct)
     {
         var jarPath = Path.Combine(destinationPath, JarFilename);
+        var etagPath = Path.Combine(destinationPath, ETagFilename);
         var jarUri = BuildJarUri(jenkinsUrl);
 
         _logger.LogInformation("Downloading {Jar} from {Uri}", JarFilename, jarUri);
 
-        var bytesWritten = await DownloadToFileAsync(jarUri, jarPath, ct);
+        using var client = _httpFactory.CreateClient(HttpClientName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, jarUri);
+
+        var storedEtag = ReadStoredEtag(etagPath);
+        if (storedEtag is not null)
+            request.Headers.TryAddWithoutValidation("If-None-Match", storedEtag);
+
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        if (response.StatusCode == HttpStatusCode.NotModified)
+        {
+            _logger.LogInformation("{Jar} is up to date (ETag match) — skipping download", JarFilename);
+            return;
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        var bytesWritten = await StreamToFileAsync(response, jarPath, ct);
+        SaveEtag(response, etagPath);
 
         _logger.LogInformation("{Jar} downloaded successfully ({Bytes} bytes)", JarFilename, bytesWritten);
     }
@@ -32,14 +54,34 @@ public sealed class HttpJarDownloader : IJarDownloader
     private static string BuildJarUri(string jenkinsUrl) =>
         $"{jenkinsUrl.TrimEnd(TrailingSlash)}{UrlSeparator}{JnlpJarsPath}{UrlSeparator}{JarFilename}";
 
-    private async Task<long> DownloadToFileAsync(string jarUri, string jarPath, CancellationToken ct)
+    private static string? ReadStoredEtag(string etagPath)
     {
-        using var client = _httpFactory.CreateClient(HttpClientName);
-        using var response = await client.GetAsync(jarUri, ct);
-        response.EnsureSuccessStatusCode();
+        if (!File.Exists(etagPath))
+            return null;
 
+        var value = File.ReadAllText(etagPath).Trim();
+        return string.IsNullOrEmpty(value) ? null : value;
+    }
+
+    private static async Task<long> StreamToFileAsync(HttpResponseMessage response, string jarPath, CancellationToken ct)
+    {
         await using var fs = new FileStream(jarPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await response.Content.CopyToAsync(fs, ct);
         return fs.Length;
+    }
+
+    private void SaveEtag(HttpResponseMessage response, string etagPath)
+    {
+        var etag = response.Headers.ETag?.ToString();
+        if (string.IsNullOrEmpty(etag))
+        {
+            // No ETag from server — drop any stale etag file so next call is an unconditional GET.
+            if (File.Exists(etagPath))
+                File.Delete(etagPath);
+            return;
+        }
+
+        _logger.LogDebug("Saving ETag {ETag} for {Jar}", etag, JarFilename);
+        File.WriteAllText(etagPath, etag);
     }
 }
