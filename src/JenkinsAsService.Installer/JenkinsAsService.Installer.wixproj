@@ -6,7 +6,7 @@
     <!-- Set via -p:PublishDir=... from the build script after dotnet publish -->
     <PublishDir Condition="'$(PublishDir)' == ''">..\..\publish\x64\</PublishDir>
     <!-- Custom action DLL location -->
-    <CustomActionDir Condition="'$(CustomActionDir)' == ''">..\..\src\JenkinsAsService.CustomActions\bin\Release\net472\</CustomActionDir>
+    <CustomActionDir Condition="'$(CustomActionDir)' == ''">..\..\src\JenkinsAsService.CustomActions\bin\Release\net48\</CustomActionDir>
   </PropertyGroup>
 
   <PropertyGroup>

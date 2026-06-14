@@ -30,7 +30,7 @@ public class SecretResolverTests
     {
         var plaintext = "dpapi-test-secret";
         var encrypted = ProtectedData.Protect(
-            Encoding.UTF8.GetBytes(plaintext), null, DataProtectionScope.LocalMachine);
+            Encoding.UTF8.GetBytes(plaintext), SecretResolver.DpapiEntropy, DataProtectionScope.LocalMachine);
         var base64 = Convert.ToBase64String(encrypted);
 
         var settings = new ServiceSettings
