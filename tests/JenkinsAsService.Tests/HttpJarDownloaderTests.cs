@@ -98,6 +98,33 @@ public class HttpJarDownloaderTests : IDisposable
     }
 
     [Fact]
+    public async Task Download_does_not_send_if_none_match_when_etag_exists_but_jar_is_missing()
+    {
+        // Orphan state: stale etag left on disk but the jar was deleted.
+        // Without this guard, an If-None-Match would be sent → server returns 304 → no jar downloaded → agent can't start.
+        File.WriteAllText(ETagPath, "\"orphan\"");
+
+        string? sentIfNoneMatch = null;
+        var handler = new FakeHandler(req =>
+        {
+            sentIfNoneMatch = req.Headers.TryGetValues("If-None-Match", out var vals)
+                ? string.Join(",", vals)
+                : null;
+            var resp = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("FRESHJAR"))
+            };
+            resp.Headers.ETag = new EntityTagHeaderValue("\"orphan\"");
+            return resp;
+        });
+
+        await CreateDownloader(handler).DownloadAsync(JenkinsUrl, _tempDir, CancellationToken.None);
+
+        sentIfNoneMatch.Should().BeNull("orphaned etag without jar must not send If-None-Match");
+        File.Exists(JarPath).Should().BeTrue("jar must be downloaded when it was missing");
+    }
+
+    [Fact]
     public async Task Download_deletes_etag_file_on_200_without_etag_header()
     {
         File.WriteAllText(ETagPath, "\"stale\"");
