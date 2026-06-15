@@ -1,0 +1,39 @@
+name: Trivy (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      scan-type:
+        description: 'Trivy scan type: fs, image, repo'
+        required: false
+        type: string
+        default: 'fs'
+      scan-ref:
+        description: 'Path or image ref to scan'
+        required: false
+        type: string
+        default: '.'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: ${{ inputs.scan-type }}
+          scan-ref: ${{ inputs.scan-ref }}
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
