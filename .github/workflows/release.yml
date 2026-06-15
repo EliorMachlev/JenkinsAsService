@@ -84,7 +84,7 @@ jobs:
           $checksums | ConvertTo-Json -Depth 3 | Set-Content "JenkinsAsService_${v}_checksums.json" -Encoding utf8
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
