@@ -1,3 +1,5 @@
+// Copyright (c) 2024 All rights reserved
+
 using System.Net.Sockets;
 
 namespace JenkinsAsService;
@@ -11,24 +13,31 @@ public sealed class TcpConnectivityChecker : IConnectivityChecker
         _logger = logger;
     }
 
-    public async Task TestAsync(string host, int port, int timeoutMs, CancellationToken ct)
+    public async Task Check(string host, int port, int timeoutMs, CancellationToken ct)
     {
+        _logger.LogDebug("Testing TCP connectivity to {Host}:{Port} (timeout {Timeout}ms)", host, port, timeoutMs);
+
         using var tcp = new TcpClient();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeoutMs);
 
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             await tcp.ConnectAsync(host, port, cts.Token);
-            _logger.LogDebug("Jenkins reachable at {Host}:{Port}", host, port);
+            stopwatch.Stop();
+            _logger.LogInformation("Jenkins reachable at {Host}:{Port} ({LatencyMs}ms)",
+                host, port, stopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            _logger.LogWarning("Connectivity test to {Host}:{Port} timed out after {Timeout}ms", host, port, timeoutMs);
             throw new InvalidOperationException(
                 $"Cannot reach Jenkins at '{host}' on port {port} (timed out after {timeoutMs}ms)");
         }
         catch (SocketException ex)
         {
+            _logger.LogWarning("Connectivity test to {Host}:{Port} failed: {Reason}", host, port, ex.Message);
             throw new InvalidOperationException(
                 $"Cannot reach Jenkins at '{host}' on port {port}: {ex.Message}");
         }

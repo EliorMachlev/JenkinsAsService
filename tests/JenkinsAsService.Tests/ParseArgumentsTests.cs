@@ -1,3 +1,4 @@
+// Copyright (c) 2024 All rights reserved
 using FluentAssertions;
 
 namespace JenkinsAsService.Tests;

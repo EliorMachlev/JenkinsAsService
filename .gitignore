@@ -43,3 +43,9 @@ agent.log
 agent*.log
 agent.clef
 remoting/
+
+#AI
+.claude/
+
+#Documentaion
+docs/

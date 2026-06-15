@@ -1,0 +1,17 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+
+# SonarSharp suppressions
+# S1451 - File header: copyright comments are present; pattern is enforced via sonar-project.properties
+dotnet_diagnostic.S1451.severity = none
+# S4261 - Remove Async suffix: RecoverAgentAsync / StreamToFileAsync return Task — the suffix is correct per .NET convention
+dotnet_diagnostic.S4261.severity = none

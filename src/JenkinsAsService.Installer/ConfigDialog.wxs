@@ -1,0 +1,131 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- ─── Public properties (persisted for custom action) ─── -->
+  <Package>
+    <Property Id="JENKINS_URL" Value="" />
+    <Property Id="JENKINS_SECRET" Value="" Hidden="yes" />
+    <Property Id="JENKINS_AGENT_NAME" Value="" />
+    <Property Id="JENKINS_JAVA_PATH" Value="" />
+    <Property Id="JENKINS_SECRET_MODE" Value="Dpapi" />
+  </Package>
+
+  <Fragment>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         Page 1: Jenkins Configuration
+         ════════════════════════════════════════════════════════════════════ -->
+    <UI>
+      <Dialog Id="JenkinsConfigDlg" Width="370" Height="270" Title="[ProductName] Setup">
+
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15"
+                 Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Jenkins Configuration" />
+
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="Enter the Jenkins controller connection details." />
+
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="WixUI_Bmp_Banner" />
+
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+        <!-- Jenkins URL -->
+        <Control Id="UrlLabel" Type="Text" X="20" Y="60" Width="120" Height="13"
+                 NoPrefix="yes" Text="Jenkins URL (with port):" />
+        <Control Id="UrlEdit" Type="Edit" X="20" Y="74" Width="330" Height="18"
+                 Property="JENKINS_URL" />
+
+        <!-- Agent Secret -->
+        <Control Id="SecretLabel" Type="Text" X="20" Y="100" Width="120" Height="13"
+                 NoPrefix="yes" Text="Agent Secret:" />
+        <Control Id="SecretEdit" Type="MaskedEdit" X="20" Y="114" Width="330" Height="18"
+                 Property="JENKINS_SECRET" />
+
+        <!-- Agent Name -->
+        <Control Id="NameLabel" Type="Text" X="20" Y="140" Width="200" Height="13"
+                 NoPrefix="yes" Text="Agent Name (blank = hostname):" />
+        <Control Id="NameEdit" Type="Edit" X="20" Y="154" Width="330" Height="18"
+                 Property="JENKINS_AGENT_NAME" />
+
+        <!-- Java Path -->
+        <Control Id="JavaLabel" Type="Text" X="20" Y="180" Width="250" Height="13"
+                 NoPrefix="yes" Text="Java Path (blank = JAVA_HOME):" />
+        <Control Id="JavaEdit" Type="Edit" X="20" Y="194" Width="330" Height="18"
+                 Property="JENKINS_JAVA_PATH" />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+          <Publish Event="NewDialog" Value="LicenseAgreementDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+          <Publish Event="NewDialog" Value="SecurityOptionsDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+      </Dialog>
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           Page 2: Security Options
+           ════════════════════════════════════════════════════════════════════ -->
+      <Dialog Id="SecurityOptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
+
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15"
+                 Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Security Options" />
+
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="Choose how to protect the agent secret at rest." />
+
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="WixUI_Bmp_Banner" />
+
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+        <!-- Radio button group -->
+        <Control Id="SecretModeGroup" Type="RadioButtonGroup" X="20" Y="60" Width="330" Height="140"
+                 Property="JENKINS_SECRET_MODE">
+          <RadioButtonGroup Property="JENKINS_SECRET_MODE">
+            <RadioButton Value="Dpapi" X="0" Y="0" Width="330" Height="18"
+                         Text="DPAPI — machine-scoped encryption (recommended)" />
+            <RadioButton Value="EnvironmentVariable" X="0" Y="28" Width="330" Height="18"
+                         Text="Environment Variable — store in JENKINS_AGENT_SECRET system variable" />
+            <RadioButton Value="CredentialManager" X="0" Y="56" Width="330" Height="18"
+                         Text="Windows Credential Manager — store in OS credential vault" />
+            <RadioButton Value="Unprotected" X="0" Y="84" Width="330" Height="18"
+                         Text="Unprotected — plaintext in config file (development only)" />
+          </RadioButtonGroup>
+        </Control>
+
+        <!-- Warning label for Unprotected mode -->
+        <Control Id="WarningText" Type="Text" X="20" Y="205" Width="330" Height="26"
+                 NoPrefix="yes"
+                 Text="WARNING: Unprotected mode stores the secret in plaintext in appsettings.json. Use only for development.">
+          <Condition Action="show">JENKINS_SECRET_MODE = "Unprotected"</Condition>
+          <Condition Action="hide">NOT (JENKINS_SECRET_MODE = "Unprotected")</Condition>
+        </Control>
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+          <Publish Event="NewDialog" Value="JenkinsConfigDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+      </Dialog>
+
+      <!-- ─── Wire into WixUI_InstallDir sequence ─── -->
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="JenkinsConfigDlg" Order="2" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="SecurityOptionsDlg" Order="2" />
+
+    </UI>
+  </Fragment>
+
+</Wix>

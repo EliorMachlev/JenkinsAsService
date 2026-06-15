@@ -1,9 +1,11 @@
+// Copyright (c) 2024 All rights reserved
+
 namespace JenkinsAsService;
 
 public sealed class ServiceSettings
 {
     /// <summary>Full Jenkins URL including port. Example: https://jenkins.example.com:8443</summary>
-    public string JenkinsURL { get; set; } = "";
+    public string JenkinsUrl { get; set; } = "";
 
     /// <summary>Agent/node name in Jenkins (case-sensitive). Defaults to machine hostname.</summary>
     public string AgentName { get; set; } = "";
@@ -25,4 +27,7 @@ public sealed class ServiceSettings
 
     /// <summary>Use compact JSON format for log file (Serilog CompactJsonFormatter). Default: false.</summary>
     public bool CompactLog { get; set; }
+
+    /// <summary>Secret protection mode: Unprotected, Dpapi, EnvironmentVariable, CredentialManager.</summary>
+    public SecretMode SecretMode { get; set; } = SecretMode.Unprotected;
 }

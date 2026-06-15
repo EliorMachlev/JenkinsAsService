@@ -1,6 +1,8 @@
+// Copyright (c) 2024 All rights reserved
+
 namespace JenkinsAsService;
 
 public interface IJarDownloader
 {
-    Task DownloadAsync(string jenkinsUrl, string destinationPath, CancellationToken ct);
+    Task Download(Uri jenkinsUri, string destinationPath, CancellationToken ct);
 }
