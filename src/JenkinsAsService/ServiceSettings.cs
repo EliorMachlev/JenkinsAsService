@@ -1,11 +1,11 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 namespace JenkinsAsService;
 
 public sealed class ServiceSettings
 {
     /// <summary>Full Jenkins URL including port. Example: https://jenkins.example.com:8443</summary>
-    public string JenkinsURL { get; set; } = ""; // NOSONAR — existing JSON config key; renaming would break all deployed appsettings.json files
+    public string JenkinsUrl { get; set; } = "";
 
     /// <summary>Agent/node name in Jenkins (case-sensitive). Defaults to machine hostname.</summary>
     public string AgentName { get; set; } = "";

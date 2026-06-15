@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 using System.Net;
 using System.Net.Http.Headers;
@@ -57,7 +57,7 @@ public class HttpJarDownloaderTests : IDisposable
             return resp;
         });
 
-        await CreateDownloader(handler).DownloadAsync(JenkinsUrl, _tempDir, CancellationToken.None);
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
 
         File.Exists(JarPath).Should().BeTrue();
         File.ReadAllText(JarPath).Should().Be("JARBYTES");
@@ -73,7 +73,7 @@ public class HttpJarDownloaderTests : IDisposable
 
         var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.NotModified));
 
-        await CreateDownloader(handler).DownloadAsync(JenkinsUrl, _tempDir, CancellationToken.None);
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
 
         File.ReadAllText(JarPath).Should().Be("OLDJAR", "304 must not overwrite the existing jar");
         File.ReadAllText(ETagPath).Should().Be(ETagV1, "304 must not change the stored etag");
@@ -98,7 +98,7 @@ public class HttpJarDownloaderTests : IDisposable
             };
         });
 
-        await CreateDownloader(handler).DownloadAsync(JenkinsUrl, _tempDir, CancellationToken.None);
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
 
         sentIfNoneMatch.Should().Be("\"abc\"");
     }
@@ -124,7 +124,7 @@ public class HttpJarDownloaderTests : IDisposable
             return resp;
         });
 
-        await CreateDownloader(handler).DownloadAsync(JenkinsUrl, _tempDir, CancellationToken.None);
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
 
         sentIfNoneMatch.Should().BeNull("orphaned etag without jar must not send If-None-Match");
         File.Exists(JarPath).Should().BeTrue("jar must be downloaded when it was missing");
@@ -140,7 +140,7 @@ public class HttpJarDownloaderTests : IDisposable
             Content = new ByteArrayContent(Encoding.UTF8.GetBytes("X"))
         });
 
-        await CreateDownloader(handler).DownloadAsync(JenkinsUrl, _tempDir, CancellationToken.None);
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
 
         File.Exists(ETagPath).Should().BeFalse("a 200 without an ETag header must drop the stale etag file");
         File.Exists(JarPath).Should().BeTrue();

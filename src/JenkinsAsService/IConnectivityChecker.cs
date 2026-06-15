@@ -1,8 +1,8 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 namespace JenkinsAsService;
 
 public interface IConnectivityChecker
 {
-    Task TestAsync(string host, int port, int timeoutMs, CancellationToken ct); // NOSONAR
+    Task Check(string host, int port, int timeoutMs, CancellationToken ct);
 }

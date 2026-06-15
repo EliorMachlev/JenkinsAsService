@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,7 +17,7 @@ public class ParseAgentOutputTests
     {
         var settings = new ServiceSettings
         {
-            JenkinsURL = "https://jenkins:8443",
+            JenkinsUrl = "https://jenkins:8443",
             AgentSecret = "secret",
             DebugMode = true
         };
@@ -96,7 +96,7 @@ public class ParseAgentOutputTests
         var logger = Substitute.For<ILogger<JenkinsAgentWorker>>();
         var settings = new ServiceSettings
         {
-            JenkinsURL = "https://jenkins:8443",
+            JenkinsUrl = "https://jenkins:8443",
             AgentSecret = "secret",
             DebugMode = false
         };

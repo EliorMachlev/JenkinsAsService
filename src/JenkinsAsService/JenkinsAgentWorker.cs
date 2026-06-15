@@ -1,8 +1,8 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Text; // NOSONAR
+using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace JenkinsAsService;
@@ -38,6 +38,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const string SecretRedaction = "*****";
     private const string UrlPathSeparator = "/";
     private const char TrailingSlash = '/';
+    private const int MaxJavaCandidates = 3;
     private const int ConnectivityTimeoutMs = 2_000;
     private const int BannerWidth = 80;
     private const char BannerChar = '=';
@@ -83,7 +84,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
             description: "Number of SEVERE log lines emitted by the Jenkins agent");
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken) // NOSONAR
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "S4261", Justification = "Override of BackgroundService.ExecuteAsync — name is fixed by the framework")]
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
         {
@@ -91,11 +93,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
             ValidateSettings();
             ResolveJavaPath();
-            await TestConnectivityAsync(stoppingToken);
-            await _jarDownloader.DownloadAsync(_settings.JenkinsURL, _basePath, stoppingToken);
+            await TestConnectivity(stoppingToken);
+            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _basePath, stoppingToken);
 
             _agentProcess = StartAgentProcess();
-            await RunWatchdogAsync(stoppingToken);
+            await RunWatchdog(stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -108,7 +110,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
         }
     }
 
-    public override async Task StopAsync(CancellationToken cancellationToken) // NOSONAR
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "S4261", Justification = "Override of IHostedService.StopAsync — name is fixed by the framework")]
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogWarning("Service stop requested");
         KillAgent();
@@ -129,9 +132,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     internal static void ValidateSettings(ServiceSettings settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.JenkinsURL))
+        if (string.IsNullOrWhiteSpace(settings.JenkinsUrl))
         {
-            throw new InvalidOperationException("'JenkinsURL' is a mandatory field.");
+            throw new InvalidOperationException("'JenkinsUrl' is a mandatory field.");
         }
 
         if (string.IsNullOrWhiteSpace(settings.AgentSecret))
@@ -139,11 +142,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
             throw new InvalidOperationException("'AgentSecret' is a mandatory field.");
         }
 
-        var uri = new Uri(settings.JenkinsURL);
+        var uri = new Uri(settings.JenkinsUrl);
         if (uri.IsDefaultPort)
         {
             throw new InvalidOperationException(
-                $"JenkinsURL must include an explicit port: '{settings.JenkinsURL}'. " +
+                $"JenkinsUrl must include an explicit port: '{settings.JenkinsUrl}'. " +
                 "Example: https://jenkins.example.com:8443");
         }
     }
@@ -152,10 +155,10 @@ public sealed class JenkinsAgentWorker : BackgroundService
     {
         ValidateSettings(_settings);
 
-        var uri = new Uri(_settings.JenkinsURL);
+        var uri = new Uri(_settings.JenkinsUrl);
         if (uri.Scheme != Uri.UriSchemeHttps)
         {
-            _logger.LogWarning("JenkinsURL uses {Scheme} — agent secret will be sent unencrypted. Consider HTTPS.", uri.Scheme);
+            _logger.LogWarning("JenkinsUrl uses {Scheme} — agent secret will be sent unencrypted. Consider HTTPS.", uri.Scheme);
         }
 
         if (string.IsNullOrWhiteSpace(_settings.AgentName))
@@ -174,7 +177,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     internal static string ResolveJavaPath(string? configuredPath, string? javaHome)
     {
-        var candidates = new List<string>(3);
+        var candidates = new List<string>(MaxJavaCandidates);
 
         if (!string.IsNullOrWhiteSpace(configuredPath))
         {
@@ -206,10 +209,10 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _logger.LogDebug("Resolved Java at: '{Path}'", Path.GetDirectoryName(_javaExe));
     }
 
-    private async Task TestConnectivityAsync(CancellationToken ct) // NOSONAR
+    private async Task TestConnectivity(CancellationToken ct)
     {
-        var uri = new Uri(_settings.JenkinsURL);
-        await _connectivityChecker.TestAsync(uri.Host, uri.Port, ConnectivityTimeoutMs, ct);
+        var uri = new Uri(_settings.JenkinsUrl);
+        await _connectivityChecker.Check(uri.Host, uri.Port, ConnectivityTimeoutMs, ct);
     }
 
     // ─── Agent Process ──────────────────────────────────────────────────────
@@ -252,7 +255,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private ProcessStartInfo BuildProcessStartInfo()
     {
         var jarPath = Path.Combine(_basePath, JarFilename);
-        var normalizedUrl = $"{_settings.JenkinsURL.TrimEnd(TrailingSlash)}{UrlPathSeparator}";
+        var normalizedUrl = $"{_settings.JenkinsUrl.TrimEnd(TrailingSlash)}{UrlPathSeparator}";
 
         var psi = new ProcessStartInfo(_javaExe)
         {
@@ -299,46 +302,45 @@ public sealed class JenkinsAgentWorker : BackgroundService
                 i++;
             }
 
-            if (i >= input.Length)
+            if (i < input.Length)
             {
-                break;
-            }
-
-            if (input[i] == '"')
-            {
-                // Quoted argument — find closing quote, respecting \"
-                i++;
-                var buf = new StringBuilder();
-                while (i < input.Length && input[i] != '"')
+                if (input[i] == '"')
                 {
-                    if (input[i] == '\\' && i + 1 < input.Length && input[i + 1] == '"')
-                    {
-                        buf.Append('"');
-                        i += 2;
-                    }
-                    else
-                    {
-                        buf.Append(input[i]);
-                        i++;
-                    }
-                }
-
-                result.Add(buf.ToString());
-                if (i < input.Length)
-                {
-                    i++; // skip closing quote
-                }
-            }
-            else
-            {
-                // Unquoted argument — find next whitespace
-                var start = i; // NOSONAR — used at input[start..i] below; false-positive "useless assignment"
-                while (i < input.Length && !char.IsWhiteSpace(input[i]))
-                {
+                    // Quoted argument — find closing quote, respecting \"
                     i++;
-                }
+                    var buf = new StringBuilder();
+                    while (i < input.Length && input[i] != '"')
+                    {
+                        if (input[i] == '\\' && i + 1 < input.Length && input[i + 1] == '"')
+                        {
+                            buf.Append('"');
+                            i += 2;
+                        }
+                        else
+                        {
+                            buf.Append(input[i]);
+                            i++;
+                        }
+                    }
 
-                result.Add(input[start..i]);
+                    result.Add(buf.ToString());
+                    if (i < input.Length)
+                    {
+                        i++; // skip closing quote
+                    }
+                }
+                else
+                {
+                    // Unquoted argument — find next whitespace
+                    var tokenEnd = i;
+                    while (tokenEnd < input.Length && !char.IsWhiteSpace(input[tokenEnd]))
+                    {
+                        tokenEnd++;
+                    }
+
+                    result.Add(input[i..tokenEnd]);
+                    i = tokenEnd;
+                }
             }
         }
 
@@ -384,7 +386,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     // ─── Watchdog ───────────────────────────────────────────────────────────
 
-    private async Task RunWatchdogAsync(CancellationToken ct) // NOSONAR
+    private async Task RunWatchdog(CancellationToken ct)
     {
         var retryCount = 0;
 
@@ -429,7 +431,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
                 return;
             }
 
-            if (await RecoverAgentAsync(retryCount, ct))
+            if (await RecoverAgent(retryCount, ct))
             {
                 _restartCounter.Add(1);
             }
@@ -451,7 +453,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private static int ComputeBackoffDelaySeconds(int retryCount) =>
         (int)Math.Min(BackoffBaseSec * Math.Pow(BackoffMultiplier, retryCount - 1), BackoffMaxSec);
 
-    private async Task<bool> RecoverAgentAsync(int retryCount, CancellationToken ct) // NOSONAR
+    private async Task<bool> RecoverAgent(int retryCount, CancellationToken ct)
     {
         var delay = ComputeBackoffDelaySeconds(retryCount);
         _logger.LogInformation("Watchdog: Waiting {Delay}s before retry...", delay);
@@ -459,7 +461,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         try
         {
-            await TestConnectivityAsync(ct);
+            await TestConnectivity(ct);
         }
         catch (InvalidOperationException ex)
         {
@@ -469,7 +471,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         try
         {
-            await _jarDownloader.DownloadAsync(_settings.JenkinsURL, _basePath, ct);
+            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _basePath, ct);
             _agentProcess = StartAgentProcess();
             _logger.LogInformation("Watchdog: Agent restarted (attempt {Count})", retryCount);
             return true;

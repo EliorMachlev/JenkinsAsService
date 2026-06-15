@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 using System.Net;
 using System.Security;

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 using JenkinsAsService;
 using Microsoft.Extensions.Options;
@@ -156,10 +156,10 @@ static IHost BuildHost(string[] args)
 static bool ValidateBoundSettings(IHost host, string basePath)
 {
     var settings = host.Services.GetRequiredService<IOptions<ServiceSettings>>().Value;
-    if (string.IsNullOrWhiteSpace(settings.JenkinsURL) || string.IsNullOrWhiteSpace(settings.AgentSecret))
+    if (string.IsNullOrWhiteSpace(settings.JenkinsUrl) || string.IsNullOrWhiteSpace(settings.AgentSecret))
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
-        Log.Error("Mandatory fields (JenkinsURL, AgentSecret) are empty. Fill in: {Path}", configPath);
+        Log.Error("Mandatory fields (JenkinsUrl, AgentSecret) are empty. Fill in: {Path}", configPath);
         return false;
     }
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 using System.Net;
 
@@ -9,8 +9,6 @@ public sealed class HttpJarDownloader : IJarDownloader
     private const string JarFilename = "agent.jar"; // intentional: decoupled from JenkinsAgentWorker
     private const string ETagFilename = "agent.jar.etag";
     private const string JnlpJarsPath = "jnlpJars";
-    private const string UrlSeparator = "/";
-    private const char TrailingSlash = '/';
     private const string HttpClientName = "JarDownloader";
 
     private readonly IHttpClientFactory _httpFactory;
@@ -22,11 +20,11 @@ public sealed class HttpJarDownloader : IJarDownloader
         _logger = logger;
     }
 
-    public async Task DownloadAsync(string jenkinsUrl, string destinationPath, CancellationToken ct) // NOSONAR
+    public async Task Download(Uri jenkinsUri, string destinationPath, CancellationToken ct)
     {
         var jarPath = Path.Combine(destinationPath, JarFilename);
         var etagPath = Path.Combine(destinationPath, ETagFilename);
-        var jarUri = BuildJarUri(jenkinsUrl);
+        var jarUri = BuildJarUri(jenkinsUri);
 
         _logger.LogInformation("Downloading {Jar} from {Uri}", JarFilename, jarUri);
 
@@ -51,14 +49,14 @@ public sealed class HttpJarDownloader : IJarDownloader
 
         response.EnsureSuccessStatusCode();
 
-        var bytesWritten = await StreamToFileAsync(response, jarPath, ct);
+        var bytesWritten = await StreamToFile(response, jarPath, ct);
         SaveEtag(response, etagPath);
 
         _logger.LogInformation("{Jar} downloaded successfully ({Bytes} bytes)", JarFilename, bytesWritten);
     }
 
-    private static Uri BuildJarUri(string jenkinsUrl) => // NOSONAR — parameter is validated as URL by the caller; changing to Uri would require callers to pre-parse
-        new Uri($"{jenkinsUrl.TrimEnd(TrailingSlash)}{UrlSeparator}{JnlpJarsPath}{UrlSeparator}{JarFilename}");
+    private static Uri BuildJarUri(Uri jenkinsUri) =>
+        new Uri(jenkinsUri, $"{JnlpJarsPath}/{JarFilename}");
 
     private static string? ReadStoredEtag(string etagPath)
     {
@@ -71,7 +69,7 @@ public sealed class HttpJarDownloader : IJarDownloader
         return string.IsNullOrEmpty(value) ? null : value;
     }
 
-    private static async Task<long> StreamToFileAsync(HttpResponseMessage response, string jarPath, CancellationToken ct) // NOSONAR
+    private static async Task<long> StreamToFile(HttpResponseMessage response, string jarPath, CancellationToken ct)
     {
         await using var fs = new FileStream(jarPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await response.Content.CopyToAsync(fs, ct);

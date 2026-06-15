@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2024 All rights reserved // NOSONAR
+// Copyright (c) 2024 All rights reserved
 
 using System.Net.Sockets;
 
@@ -13,7 +13,7 @@ public sealed class TcpConnectivityChecker : IConnectivityChecker
         _logger = logger;
     }
 
-    public async Task TestAsync(string host, int port, int timeoutMs, CancellationToken ct) // NOSONAR
+    public async Task Check(string host, int port, int timeoutMs, CancellationToken ct)
     {
         _logger.LogDebug("Testing TCP connectivity to {Host}:{Port} (timeout {Timeout}ms)", host, port, timeoutMs);
 
