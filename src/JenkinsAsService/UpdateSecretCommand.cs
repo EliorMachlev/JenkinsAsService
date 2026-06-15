@@ -218,10 +218,10 @@ public static class UpdateSecretCommand
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
         TryReadExistingConfig(basePath, configPath,
-            out var existingUrl, out var existingAgentName, out var existingJavaPath, out var existingMode);
+            out var existingServer, out var existingAgentName, out var existingJavaPath, out var existingMode);
 
-        var url = PromptUrl(args.Url, existingUrl);
-        if (url is null)
+        var server = PromptServer(args.Url, existingServer);
+        if (server is null)
         {
             return 1;
         }
@@ -236,11 +236,11 @@ public static class UpdateSecretCommand
         var agentName = PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
         var javaPath = PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
 
-        return WriteInteractiveConfig(basePath, secret, selectedMode, url, agentName, javaPath, args);
+        return WriteInteractiveConfig(basePath, secret, selectedMode, server, agentName, javaPath, args);
     }
 
     private static int WriteInteractiveConfig(string basePath,
-        string secret, SecretMode selectedMode, string url,
+        string secret, SecretMode selectedMode, string server,
         string? agentName, string? javaPath, ParseState args)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
@@ -255,11 +255,11 @@ public static class UpdateSecretCommand
                 }
 
                 RunImpersonated(credentials.Value.Username, credentials.Value.Password, () =>
-                    SecretWriter.WriteConfig(basePath, secret, selectedMode, url, agentName, javaPath));
+                    SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath));
             }
             else
             {
-                SecretWriter.WriteConfig(basePath, secret, selectedMode, url, agentName, javaPath);
+                SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath);
             }
         }
         catch (InvalidOperationException ex)
@@ -271,31 +271,31 @@ public static class UpdateSecretCommand
         Console.WriteLine();
         Console.WriteLine($"Configuration saved to {configPath}");
         Console.WriteLine($"  Mode: {selectedMode}");
-        Console.WriteLine($"  URL:  {url}");
+        Console.WriteLine($"  URL:  {server}");
         return 0;
     }
 
     // ─── Prompt helpers ───────────────────────────────────────────────────────
 
-    private static string? PromptUrl(string? argUrl, string? existingUrl)
+    private static string? PromptServer(string? argServer, string? existingServer)
     {
-        if (!string.IsNullOrWhiteSpace(argUrl))
+        if (!string.IsNullOrWhiteSpace(argServer))
         {
-            return argUrl;
+            return argServer;
         }
 
-        var def = string.IsNullOrWhiteSpace(existingUrl) ? "" : $" [{existingUrl}]";
+        var def = string.IsNullOrWhiteSpace(existingServer) ? "" : $" [{existingServer}]";
         Console.Write($"Jenkins URL (with port){def}: ");
         var input = Console.ReadLine()?.Trim();
-        var url = string.IsNullOrWhiteSpace(input) ? existingUrl : input;
+        var server = string.IsNullOrWhiteSpace(input) ? existingServer : input;
 
-        if (string.IsNullOrWhiteSpace(url))
+        if (string.IsNullOrWhiteSpace(server))
         {
             Console.Error.WriteLine("Error: Jenkins URL is required.");
             return null;
         }
 
-        return url;
+        return server;
     }
 
     private static string? PromptSecret(string? secretArg, string? secretFile, string? secretEnv)
@@ -388,10 +388,10 @@ public static class UpdateSecretCommand
     // Reads existing appsettings.json so interactive prompts can offer defaults.
     // Falls back to empty strings / Dpapi on a missing or corrupt file.
     private static void TryReadExistingConfig(string basePath, string configPath,
-        out string existingUrl, out string existingAgentName, out string existingJavaPath,
+        out string existingServer, out string existingAgentName, out string existingJavaPath,
         out SecretMode existingMode)
     {
-        existingUrl = "";
+        existingServer = "";
         existingAgentName = "";
         existingJavaPath = "";
         existingMode = SecretMode.Dpapi;
@@ -408,7 +408,7 @@ public static class UpdateSecretCommand
                 .AddJsonFile(ConfigFileName, optional: true)
                 .Build();
             var section = config.GetSection(ConfigSectionName);
-            existingUrl = section["JenkinsURL"] ?? "";
+            existingServer = section["JenkinsURL"] ?? "";
             existingAgentName = section["AgentName"] ?? "";
             existingJavaPath = section["JavaPath"] ?? "";
             if (Enum.TryParse<SecretMode>(section["SecretMode"], out var parsed))

@@ -16,6 +16,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const int StabilitySeconds = StabilityMs / 1_000;
     private const double BackoffMultiplier = 2;
     private const int UnknownExitCode = -1;
+    private const int EscapedQuoteWidth = 2;
 
     // ─── Files / process ──────────────────────────────────────────────────────
     private const string JarFilename = "agent.jar";
@@ -84,7 +85,6 @@ public sealed class JenkinsAgentWorker : BackgroundService
             description: "Number of SEVERE log lines emitted by the Jenkins agent");
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "S4261", Justification = "Override of BackgroundService.ExecuteAsync — name is fixed by the framework")]
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
@@ -110,7 +110,6 @@ public sealed class JenkinsAgentWorker : BackgroundService
         }
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "S4261", Justification = "Override of IHostedService.StopAsync — name is fixed by the framework")]
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogWarning("Service stop requested");
@@ -306,45 +305,55 @@ public sealed class JenkinsAgentWorker : BackgroundService
             {
                 if (input[i] == '"')
                 {
-                    // Quoted argument — find closing quote, respecting \"
-                    i++;
-                    var buf = new StringBuilder();
-                    while (i < input.Length && input[i] != '"')
-                    {
-                        if (input[i] == '\\' && i + 1 < input.Length && input[i + 1] == '"')
-                        {
-                            buf.Append('"');
-                            i += 2;
-                        }
-                        else
-                        {
-                            buf.Append(input[i]);
-                            i++;
-                        }
-                    }
-
-                    result.Add(buf.ToString());
-                    if (i < input.Length)
-                    {
-                        i++; // skip closing quote
-                    }
+                    i++; // skip opening quote
+                    result.Add(ParseQuotedArg(input, ref i));
                 }
                 else
                 {
-                    // Unquoted argument — find next whitespace
-                    var tokenEnd = i;
-                    while (tokenEnd < input.Length && !char.IsWhiteSpace(input[tokenEnd]))
-                    {
-                        tokenEnd++;
-                    }
-
-                    result.Add(input[i..tokenEnd]);
-                    i = tokenEnd;
+                    result.Add(ParseUnquotedArg(input, ref i));
                 }
             }
         }
 
         return result;
+    }
+
+    private static string ParseQuotedArg(string input, ref int i)
+    {
+        var buf = new StringBuilder();
+        while (i < input.Length && input[i] != '"')
+        {
+            if (input[i] == '\\' && i + 1 < input.Length && input[i + 1] == '"')
+            {
+                buf.Append('"');
+                i += EscapedQuoteWidth;
+            }
+            else
+            {
+                buf.Append(input[i]);
+                i++;
+            }
+        }
+
+        if (i < input.Length)
+        {
+            i++; // skip closing quote
+        }
+
+        return buf.ToString();
+    }
+
+    private static string ParseUnquotedArg(string input, ref int i)
+    {
+        var end = i;
+        while (end < input.Length && !char.IsWhiteSpace(input[end]))
+        {
+            end++;
+        }
+
+        var token = input[i..end];
+        i = end;
+        return token;
     }
 
     internal void ParseAgentOutput(string line)

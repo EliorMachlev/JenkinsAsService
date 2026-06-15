@@ -23,14 +23,14 @@ public static class SecretWriter
     /// Preserves existing fields (CustomArguments, DebugMode, CompactLog, MaxRetries) if the file exists.
     /// </summary>
     public static void WriteConfig(string basePath, string secret, SecretMode mode,
-        string url, string? agentName, string? javaPath)
+        string server, string? agentName, string? javaPath)
     {
         var configSecret = ProcessSecret(secret, mode);
         var configPath = Path.Combine(basePath, ConfigFileName);
 
         var existingRoot = ReadExistingRoot(configPath);
         var existingJenkins = existingRoot?[ConfigSectionName]?.AsObject();
-        var jenkins = BuildJenkinsSection(configSecret, mode, url, agentName, javaPath, existingJenkins);
+        var jenkins = BuildJenkinsSection(configSecret, mode, server, agentName, javaPath, existingJenkins);
 
         var root = new JsonObject();
         if (existingRoot != null)
@@ -80,9 +80,9 @@ public static class SecretWriter
     }
 
     private static JsonObject BuildJenkinsSection(string configSecret, SecretMode mode,
-        string url, string? agentName, string? javaPath, JsonObject? existingJenkins) => new()
+        string server, string? agentName, string? javaPath, JsonObject? existingJenkins) => new()
     {
-        ["JenkinsURL"] = url,
+        ["JenkinsURL"] = server,
         ["AgentSecret"] = configSecret,
         ["SecretMode"] = mode.ToString(),
         ["AgentName"] = agentName ?? ExistingString(existingJenkins, "AgentName"),
