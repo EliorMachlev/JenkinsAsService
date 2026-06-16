@@ -158,7 +158,7 @@ The watchdog is event-driven — it awaits the process exit signal, not a pollin
 6. Starts a new agent process
 7. Resets retry counter after 60s of stability
 
-For full service host crashes (rare), configure Windows-level recovery in `services.msc` > Jenkins > Recovery > **Restart the Service**.
+The MSI installer configures Windows-level service recovery automatically: first, second, and third failures all restart the service after 10 seconds, with the failure counter resetting daily.
 
 ## Troubleshooting
 
