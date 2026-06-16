@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="136" height="20" role="img" aria-label="license: BSD-3-Clause">
+  <title>license: BSD-3-Clause</title>
+  <g shape-rendering="crispEdges">
+    <rect width="52" height="20" fill="#555"/>
+    <rect x="52" width="84" height="20" fill="#007ec6"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="11">
+    <text x="26" y="14">license</text>
+    <text x="93" y="14">BSD-3-Clause</text>
+  </g>
+</svg>
