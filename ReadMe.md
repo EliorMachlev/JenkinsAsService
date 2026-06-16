@@ -8,6 +8,7 @@ Run a Jenkins inbound (JNLP) agent as a native Windows Service — no login sess
 [![.NET](misc/badges/dotnet.svg)](https://dotnet.microsoft.com/)
 ![Platform](misc/badges/platform.svg)
 [![Latest Release](https://img.shields.io/github/v/tag/EliorMachlev/JenkinsAsService?style=flat-square&label=Latest%20Release&color=%23008000)](https://github.com/EliorMachlev/JenkinsAsService/releases/latest)
+[![Docs](misc/badges/docs.svg)](https://eliormachlev.github.io/JenkinsAsService/index.html)
 
 ## Why This Exists
 
