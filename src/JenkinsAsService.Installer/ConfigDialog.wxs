@@ -89,7 +89,7 @@
                  Property="JENKINS_SECRET_MODE">
           <RadioButtonGroup Property="JENKINS_SECRET_MODE">
             <RadioButton Value="EnvironmentVariable" X="0" Y="0" Width="330" Height="18"
-                         Text="Environment Variable — read from Jenkins_Agents_Secret (recommended)" />
+                         Text="Environment Variable — read from JENKINS_SECRET (recommended)" />
             <RadioButton Value="Dpapi" X="0" Y="28" Width="330" Height="18"
                          Text="DPAPI — machine-scoped encryption (non-portable)" />
             <RadioButton Value="CredentialManager" X="0" Y="56" Width="330" Height="18"

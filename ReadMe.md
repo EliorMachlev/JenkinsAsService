@@ -4,8 +4,10 @@ Run a Jenkins inbound (JNLP) agent as a native Windows Service — no login sess
 
 [![Build](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/build.yml/badge.svg)](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/build.yml)
 [![CodeQL](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/codeql.yml/badge.svg)](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/codeql.yml)
-[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
-[![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/EliorMachlev/JenkinsAsService/latest/total?sort=date&style=flat-square&label=Download%20Latest%20Release&labelColor=%23008000&color=%23808080)](https://github.com/EliorMachlev/JenkinsAsService/releases/latest)
+[![License](misc/badges/license.svg)](LICENSE)
+[![.NET](misc/badges/dotnet.svg)](https://dotnet.microsoft.com/)
+![Platform](misc/badges/platform.svg)
+[![Latest Release](https://img.shields.io/github/v/tag/EliorMachlev/JenkinsAsService?style=flat-square&label=Latest%20Release&color=%23008000)](https://github.com/EliorMachlev/JenkinsAsService/releases/latest)
 
 ## Why This Exists
 
@@ -117,7 +119,7 @@ JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins
 |---|---|---|
 | `Unprotected` | Plaintext | Returned as-is |
 | `Dpapi` | Base64 DPAPI ciphertext | `ProtectedData.Unprotect` (machine-scoped, non-portable) |
-| `EnvironmentVariable` | Env var name | Reads machine-level environment variable |
+| `EnvironmentVariable` | Env var name | Reads machine-level environment variable (default: `JENKINS_SECRET`) |
 | `CredentialManager` | Target name | Reads from Windows Credential Manager |
 
 ### OpenTelemetry
