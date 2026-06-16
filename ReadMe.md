@@ -4,7 +4,7 @@ Run a Jenkins inbound (JNLP) agent as a native Windows Service — no login sess
 
 [![Build](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/build.yml/badge.svg)](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/build.yml)
 [![CodeQL](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/codeql.yml/badge.svg)](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/codeql.yml)
-[![License](https://img.shields.io/github/license/EliorMachlev/JenkinsAsService?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 [![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/EliorMachlev/JenkinsAsService/latest/total?sort=date&style=flat-square&label=Download%20Latest%20Release&labelColor=%23008000&color=%23808080)](https://github.com/EliorMachlev/JenkinsAsService/releases/latest)
 
 ## Why This Exists
@@ -51,24 +51,38 @@ flowchart TD
 
 ## Quick Start
 
-**Prerequisites:** Windows 10+, Java 11+ (`JAVA_HOME` set or path configured), a Jenkins controller with an inbound agent node.
+**Prerequisites:** Windows 10+, a [supported JDK or OpenJDK](https://www.jenkins.io/doc/book/platform-information/support-policy-java/#running-jenkins-system) (`JAVA_HOME` set or path configured), a Jenkins controller with an inbound agent node.
 
 1. Download the MSI for your architecture from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases)
-2. Run the installer (installs to `C:\Program Files\Jenkins`, registers the service)
-3. Edit `C:\Program Files\Jenkins\appsettings.json`:
+2. Run the installer — it walks you through: install path, Jenkins URL, agent secret, and secret protection mode
+3. The service starts automatically after install
 
-```json
-{
-  "Jenkins": {
-    "JenkinsURL": "https://jenkins.example.com:8443",
-    "AgentSecret": "your-secret-from-jenkins-node-config"
-  }
-}
+Default install path is `C:\Program Files\Jenkins`. You can change it in the installer UI.
+
+No .NET runtime needed on target — the binary is self-contained.
+
+### Silent Install
+
+For automated deployments, use `msiexec` with public properties:
+
+```powershell
+msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
+    INSTALLFOLDER="D:\Jenkins" `
+    JENKINS_URL="https://jenkins.example.com:8443" `
+    JENKINS_SECRET="your-secret" `
+    JENKINS_SECRET_MODE="Dpapi" `
+    JENKINS_AGENT_NAME="" `
+    JENKINS_JAVA_PATH=""
 ```
 
-4. `Start-Service -Name 'Jenkins'`
-
-The agent connects, and the watchdog takes over. No .NET runtime needed on target — the binary is self-contained.
+| Property | Required | Default | Description |
+|---|:---:|---|---|
+| `INSTALLFOLDER` | No | `C:\Program Files\Jenkins` | Installation directory |
+| `JENKINS_URL` | Yes | — | Jenkins controller URL with explicit port |
+| `JENKINS_SECRET` | Yes | — | JNLP agent secret |
+| `JENKINS_SECRET_MODE` | No | `Dpapi` | `Dpapi`, `EnvironmentVariable`, `CredentialManager`, or `Unprotected` |
+| `JENKINS_AGENT_NAME` | No | Hostname | Agent node name in Jenkins |
+| `JENKINS_JAVA_PATH` | No | `JAVA_HOME` | Path to JDK `bin` folder |
 
 ## Configuration
 
@@ -84,6 +98,7 @@ All settings live in the `Jenkins` section of `appsettings.json`.
 | `CustomArguments` | No | *(empty)* | Extra `java.exe` args (supports quoted values and escaped quotes) |
 | `DebugMode` | No | `false` | Verbose Java agent output in logs |
 | `CompactLog` | No | `false` | CLEF JSON output (`agent.clef`) instead of human-readable (`agent.log`) |
+| `RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
 | `MaxRetries` | No | `0` | Max recovery attempts before giving up (`0` = infinite) |
 
 ### Secret Protection
@@ -103,7 +118,7 @@ JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins
 
 ### OpenTelemetry
 
-Disabled by default. Add a `Telemetry` section to opt in:
+The `Telemetry` section is included in `appsettings.json` with `Enabled` set to `false`. To opt in, set `Enabled` to `true` and configure the OTLP endpoint:
 
 ```json
 {
@@ -119,7 +134,7 @@ Exports: `jenkins_agent_restarts_total`, `jenkins_agent_severe_events_total`, an
 
 ## Logging
 
-**File:** `agent.log` (human-readable) or `agent.clef` (CLEF JSON when `CompactLog: true`). Rolls at 10MB, keeps 3 backups.
+**File:** `agent.log` (human-readable) or `agent.clef` (CLEF JSON when `CompactLog: true`). Rolls at 10MB, keeps `RetainedLogs` backups (default: 3). Oldest files are permanently deleted.
 
 **Windows Event Log:** Warnings and errors under source `JenkinsAsService` — crash evidence even when the file log is unavailable.
 
@@ -143,7 +158,7 @@ The watchdog is event-driven — it awaits the process exit signal, not a pollin
 6. Starts a new agent process
 7. Resets retry counter after 60s of stability
 
-For full service host crashes (rare), configure Windows-level recovery in `services.msc` > Jenkins > Recovery > **Restart the Service**.
+The MSI installer configures Windows-level service recovery automatically: first, second, and third failures all restart the service after 10 seconds, with the failure counter resetting daily.
 
 ## Troubleshooting
 
