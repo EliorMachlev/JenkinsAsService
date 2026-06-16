@@ -13,6 +13,8 @@ const string ConfigFileName = "appsettings.json";
 const string ConfigSectionName = "Jenkins";
 const string DebugModeKey = "DebugMode";
 const string CompactLogKey = "CompactLog";
+const string RetainedLogsKey = "RetainedLogs";
+const int DefaultRetainedLogs = 3;
 const string ServiceName = "Jenkins";
 const string JarDownloaderClientName = "JarDownloader";
 const string EventLogSource = "JenkinsAsService";
@@ -20,7 +22,6 @@ const string EventLogName = "Application";
 const string TextLogFileName = "agent.log";
 const string CompactLogFileName = "agent.clef";
 const long FileSizeLimitBytes = 10 * 1024 * 1024;
-const int RetainedFileCount = 3;
 const string TelemetrySectionName = "Telemetry";
 const string LogOutputTemplate =
     "{ProcessId} | {Timestamp:yyyy-MM-dd HH:mm:ss} | {Level} | {Message:lj}{NewLine}{Exception}";
@@ -45,8 +46,9 @@ var bootConfig = new ConfigurationBuilder()
 var jenkinsSection = bootConfig.GetSection(ConfigSectionName);
 var debugMode = jenkinsSection.GetValue<bool>(DebugModeKey);
 var compactLog = jenkinsSection.GetValue<bool>(CompactLogKey);
+var retainedLogs = jenkinsSection.GetValue<int?>(RetainedLogsKey) ?? DefaultRetainedLogs;
 
-Log.Logger = BuildLogger(debugMode, compactLog, basePath);
+Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, basePath);
 
 try
 {
@@ -68,7 +70,7 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, string basePath)
+static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int retainedLogs, string basePath)
 {
     var logConfig = new LoggerConfiguration()
         .MinimumLevel.Is(debugMode ? LogEventLevel.Debug : LogEventLevel.Information)
@@ -79,7 +81,7 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, string b
         .Enrich.WithMachineName()
         .Enrich.WithEnvironmentName();
 
-    ConfigureFileSink(logConfig, compactLog, basePath);
+    ConfigureFileSink(logConfig, compactLog, retainedLogs, basePath);
 
     return logConfig
         .WriteTo.EventLog(
@@ -90,7 +92,7 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, string b
         .CreateLogger();
 }
 
-static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, string basePath)
+static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, int retainedLogs, string basePath)
 {
     if (compactLog)
     {
@@ -100,7 +102,7 @@ static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, st
             rollingInterval: RollingInterval.Infinite,
             rollOnFileSizeLimit: true,
             fileSizeLimitBytes: FileSizeLimitBytes,
-            retainedFileCountLimit: RetainedFileCount);
+            retainedFileCountLimit: retainedLogs);
     }
     else
     {
@@ -109,7 +111,7 @@ static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, st
             rollingInterval: RollingInterval.Infinite,
             rollOnFileSizeLimit: true,
             fileSizeLimitBytes: FileSizeLimitBytes,
-            retainedFileCountLimit: RetainedFileCount,
+            retainedFileCountLimit: retainedLogs,
             outputTemplate: LogOutputTemplate);
     }
 }

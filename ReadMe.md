@@ -98,6 +98,7 @@ All settings live in the `Jenkins` section of `appsettings.json`.
 | `CustomArguments` | No | *(empty)* | Extra `java.exe` args (supports quoted values and escaped quotes) |
 | `DebugMode` | No | `false` | Verbose Java agent output in logs |
 | `CompactLog` | No | `false` | CLEF JSON output (`agent.clef`) instead of human-readable (`agent.log`) |
+| `RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
 | `MaxRetries` | No | `0` | Max recovery attempts before giving up (`0` = infinite) |
 
 ### Secret Protection
@@ -117,7 +118,7 @@ JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins
 
 ### OpenTelemetry
 
-Disabled by default. Add a `Telemetry` section to opt in:
+The `Telemetry` section is included in `appsettings.json` with `Enabled` set to `false`. To opt in, set `Enabled` to `true` and configure the OTLP endpoint:
 
 ```json
 {
@@ -133,7 +134,7 @@ Exports: `jenkins_agent_restarts_total`, `jenkins_agent_severe_events_total`, an
 
 ## Logging
 
-**File:** `agent.log` (human-readable) or `agent.clef` (CLEF JSON when `CompactLog: true`). Rolls at 10MB, keeps 3 backups.
+**File:** `agent.log` (human-readable) or `agent.clef` (CLEF JSON when `CompactLog: true`). Rolls at 10MB, keeps `RetainedLogs` backups (default: 3). Oldest files are permanently deleted.
 
 **Windows Event Log:** Warnings and errors under source `JenkinsAsService` — crash evidence even when the file log is unavailable.
 

@@ -28,6 +28,9 @@ public sealed class ServiceSettings
     /// <summary>Use compact JSON format for log file (Serilog CompactJsonFormatter). Default: false.</summary>
     public bool CompactLog { get; set; }
 
+    /// <summary>Number of rolled log files to keep. Oldest are permanently deleted. Default: 3.</summary>
+    public int RetainedLogs { get; set; } = 3;
+
     /// <summary>Secret protection mode: Unprotected, Dpapi, EnvironmentVariable, CredentialManager.</summary>
     public SecretMode SecretMode { get; set; } = SecretMode.Unprotected;
 }
