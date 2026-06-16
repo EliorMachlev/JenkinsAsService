@@ -51,15 +51,19 @@ flowchart TD
 
 ## Quick Start
 
-**Prerequisites:** Windows 10+, a [supported JDK or OpenJDK](https://www.jenkins.io/doc/book/platform-information/support-policy-java/#running-jenkins-system) (`JAVA_HOME` set or path configured), a Jenkins controller with an inbound agent node.
+### Prerequisites
 
-1. Download the MSI for your architecture from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases)
-2. Run the installer — it walks you through: install path, Jenkins URL, agent secret, and secret protection mode
-3. The service starts automatically after install
+- **Windows 10** / Server 2016 or later
+- A [supported JDK or OpenJDK](https://www.jenkins.io/doc/book/platform-information/support-policy-java/#running-jenkins-system) — set `JAVA_HOME` or configure the path in the installer
+- A Jenkins controller with an inbound (JNLP) agent node configured
 
-Default install path is `C:\Program Files\Jenkins`. You can change it in the installer UI.
+### Install
 
-No .NET runtime needed on target — the binary is self-contained.
+1. Download the `.msi` for your architecture from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases)
+2. Run the installer — it walks you through install path, Jenkins URL, agent secret, and secret protection mode
+3. Done — the service registers and starts automatically
+
+The default install path is `C:\Program Files\Jenkins` (customizable in the UI). No .NET runtime needed — the binary is fully self-contained.
 
 ### Silent Install
 
