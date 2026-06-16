@@ -74,7 +74,7 @@ msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
     INSTALLFOLDER="D:\Jenkins" `
     JENKINS_URL="https://jenkins.example.com:8443" `
     JENKINS_SECRET="your-secret" `
-    JENKINS_SECRET_MODE="Dpapi" `
+    JENKINS_SECRET_MODE="EnvironmentVariable" `
     JENKINS_AGENT_NAME="" `
     JENKINS_JAVA_PATH=""
 ```
@@ -84,7 +84,7 @@ msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
 | `INSTALLFOLDER` | No | `C:\Program Files\Jenkins` | Installation directory |
 | `JENKINS_URL` | Yes | — | Jenkins controller URL with explicit port |
 | `JENKINS_SECRET` | Yes | — | JNLP agent secret |
-| `JENKINS_SECRET_MODE` | No | `Dpapi` | `Dpapi`, `EnvironmentVariable`, `CredentialManager`, or `Unprotected` |
+| `JENKINS_SECRET_MODE` | No | `EnvironmentVariable` | `EnvironmentVariable`, `Dpapi`, `CredentialManager`, or `Unprotected` |
 | `JENKINS_AGENT_NAME` | No | Hostname | Agent node name in Jenkins |
 | `JENKINS_JAVA_PATH` | No | `JAVA_HOME` | Path to JDK `bin` folder |
 

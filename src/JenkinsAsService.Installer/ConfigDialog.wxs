@@ -6,7 +6,7 @@
     <Property Id="JENKINS_SECRET" Value="" Hidden="yes" />
     <Property Id="JENKINS_AGENT_NAME" Value="" />
     <Property Id="JENKINS_JAVA_PATH" Value="" />
-    <Property Id="JENKINS_SECRET_MODE" Value="Dpapi" />
+    <Property Id="JENKINS_SECRET_MODE" Value="EnvironmentVariable" />
   </Package>
 
   <Fragment>
@@ -88,10 +88,10 @@
         <Control Id="SecretModeGroup" Type="RadioButtonGroup" X="20" Y="60" Width="330" Height="140"
                  Property="JENKINS_SECRET_MODE">
           <RadioButtonGroup Property="JENKINS_SECRET_MODE">
-            <RadioButton Value="Dpapi" X="0" Y="0" Width="330" Height="18"
-                         Text="DPAPI — machine-scoped encryption (recommended)" />
-            <RadioButton Value="EnvironmentVariable" X="0" Y="28" Width="330" Height="18"
-                         Text="Environment Variable — store in JENKINS_AGENT_SECRET system variable" />
+            <RadioButton Value="EnvironmentVariable" X="0" Y="0" Width="330" Height="18"
+                         Text="Environment Variable — read from Jenkins_Agents_Secret (recommended)" />
+            <RadioButton Value="Dpapi" X="0" Y="28" Width="330" Height="18"
+                         Text="DPAPI — machine-scoped encryption (non-portable)" />
             <RadioButton Value="CredentialManager" X="0" Y="56" Width="330" Height="18"
                          Text="Windows Credential Manager — store in OS credential vault" />
             <RadioButton Value="Unprotected" X="0" Y="84" Width="330" Height="18"
