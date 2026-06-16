@@ -4,7 +4,7 @@ Run a Jenkins inbound (JNLP) agent as a native Windows Service — no login sess
 
 [![Build](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/build.yml/badge.svg)](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/build.yml)
 [![CodeQL](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/codeql.yml/badge.svg)](https://github.com/EliorMachlev/JenkinsAsService/actions/workflows/codeql.yml)
-[![License](https://img.shields.io/github/license/EliorMachlev/JenkinsAsService?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 [![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/EliorMachlev/JenkinsAsService/latest/total?sort=date&style=flat-square&label=Download%20Latest%20Release&labelColor=%23008000&color=%23808080)](https://github.com/EliorMachlev/JenkinsAsService/releases/latest)
 
 ## Why This Exists
@@ -54,21 +54,35 @@ flowchart TD
 **Prerequisites:** Windows 10+, a [supported JDK or OpenJDK](https://www.jenkins.io/doc/book/platform-information/support-policy-java/#running-jenkins-system) (`JAVA_HOME` set or path configured), a Jenkins controller with an inbound agent node.
 
 1. Download the MSI for your architecture from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases)
-2. Run the installer (installs to `C:\Program Files\Jenkins`, registers the service)
-3. Edit `C:\Program Files\Jenkins\appsettings.json`:
+2. Run the installer — it walks you through: install path, Jenkins URL, agent secret, and secret protection mode
+3. The service starts automatically after install
 
-```json
-{
-  "Jenkins": {
-    "JenkinsURL": "https://jenkins.example.com:8443",
-    "AgentSecret": "your-secret-from-jenkins-node-config"
-  }
-}
+Default install path is `C:\Program Files\Jenkins`. You can change it in the installer UI.
+
+No .NET runtime needed on target — the binary is self-contained.
+
+### Silent Install
+
+For automated deployments, use `msiexec` with public properties:
+
+```powershell
+msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
+    INSTALLFOLDER="D:\Jenkins" `
+    JENKINS_URL="https://jenkins.example.com:8443" `
+    JENKINS_SECRET="your-secret" `
+    JENKINS_SECRET_MODE="Dpapi" `
+    JENKINS_AGENT_NAME="" `
+    JENKINS_JAVA_PATH=""
 ```
 
-4. `Start-Service -Name 'Jenkins'`
-
-The agent connects, and the watchdog takes over. No .NET runtime needed on target — the binary is self-contained.
+| Property | Required | Default | Description |
+|---|:---:|---|---|
+| `INSTALLFOLDER` | No | `C:\Program Files\Jenkins` | Installation directory |
+| `JENKINS_URL` | Yes | — | Jenkins controller URL with explicit port |
+| `JENKINS_SECRET` | Yes | — | JNLP agent secret |
+| `JENKINS_SECRET_MODE` | No | `Dpapi` | `Dpapi`, `EnvironmentVariable`, `CredentialManager`, or `Unprotected` |
+| `JENKINS_AGENT_NAME` | No | Hostname | Agent node name in Jenkins |
+| `JENKINS_JAVA_PATH` | No | `JAVA_HOME` | Path to JDK `bin` folder |
 
 ## Configuration
 
