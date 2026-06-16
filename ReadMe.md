@@ -51,7 +51,7 @@ flowchart TD
 
 ## Quick Start
 
-**Prerequisites:** Windows 10+, Java 11+ (`JAVA_HOME` set or path configured), a Jenkins controller with an inbound agent node.
+**Prerequisites:** Windows 10+, a [supported JDK or OpenJDK](https://www.jenkins.io/doc/book/platform-information/support-policy-java/#running-jenkins-system) (`JAVA_HOME` set or path configured), a Jenkins controller with an inbound agent node.
 
 1. Download the MSI for your architecture from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases)
 2. Run the installer (installs to `C:\Program Files\Jenkins`, registers the service)
