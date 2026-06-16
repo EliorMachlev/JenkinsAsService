@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,22 +10,23 @@
   <link rel="stylesheet" href="styles.css">
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
 </head>
-<body data-theme="dark">
+<body>
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
   <button id="hamburger" class="hamburger" aria-label="Toggle navigation" aria-expanded="false">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="3" y1="6" x2="21" y2="6"/>
-      <line x1="3" y1="12" x2="21" y2="12"/>
-      <line x1="3" y1="18" x2="21" y2="18"/>
-    </svg>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
 
   <nav id="sidebar" class="sidebar">
-    <div class="sidebar__header">
-      <a href="index.html" class="sidebar__title">JenkinsAsService</a>
+    <div class="sidebar-header">
+      <a href="index.html" class="site-title">JenkinsAsService</a>
     </div>
-    <ul class="sidebar__nav">
+    <button id="search-trigger" class="search-trigger" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Search docs
+      <kbd>Ctrl+K</kbd>
+    </button>
+    <ul class="sidebar-nav">
       <li><a href="index.html">Home</a></li>
       <li><a href="overview.html">Overview</a></li>
       <li><a href="architecture.html">Architecture</a></li>
@@ -35,11 +36,9 @@
       <li><a href="ci-cd.html">CI/CD &amp; Security</a></li>
       <li><a href="troubleshooting.html" class="active">Troubleshooting</a></li>
     </ul>
-    <div class="sidebar__footer">
-      <button id="theme-toggle" class="theme-toggle" aria-label="Switch to light theme">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-      </button>
-      <a href="https://github.com/EliorMachlev/JenkinsAsService" class="sidebar__github" target="_blank" rel="noopener noreferrer">
+    <div class="sidebar-footer">
+      <button id="theme-toggle" class="theme-toggle" aria-label="Switch to light theme"></button>
+      <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
         <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
       </a>
@@ -51,144 +50,152 @@
 
     <h2 id="log-files">Log Files</h2>
 
-    <p>The primary diagnostic tool is <code class="inline">agent.log</code> located in the installation directory. Log format:</p>
+    <p>The primary diagnostic tool is <code>agent.log</code> located in the installation directory. Log format:</p>
 
-    <pre><code class="language-text">&lt;PID&gt; | &lt;datetime&gt; | &lt;Level&gt; | &lt;message&gt;</code></pre>
+    <pre data-lang="text"><code>&lt;PID&gt; | &lt;datetime&gt; | &lt;Level&gt; | &lt;message&gt;</code></pre>
 
     <h3 id="log-rotation">Log Rotation</h3>
 
     <p>Serilog handles log rotation automatically:</p>
     <ul>
-      <li>When <code class="inline">agent.log</code> exceeds 10MB, it rolls to <code class="inline">agent_001.log</code>, <code class="inline">agent_002.log</code>, etc.</li>
-      <li>Number of retained files is configurable via <code class="inline">RetainedLogs</code> (default: 3). Oldest files are permanently deleted (skips recycle bin).</li>
+      <li>When <code>agent.log</code> exceeds 10MB, it rolls to <code>agent_001.log</code>, <code>agent_002.log</code>, etc.</li>
+      <li>Number of retained files is configurable via <code>RetainedLogs</code> (default: 3). Oldest files are permanently deleted (skips recycle bin).</li>
       <li>Logs are appended across restarts &mdash; never wiped</li>
     </ul>
 
     <h3 id="windows-event-log">Windows Event Log</h3>
 
-    <p>Warnings and Errors are also written to the Windows <strong>Application</strong> event log under source <code class="inline">JenkinsAsService</code>. Check this when:</p>
+    <p>Warnings and Errors are also written to the Windows <strong>Application</strong> event log under source <code>JenkinsAsService</code>. Check this when:</p>
     <ul>
       <li>The file log is missing or corrupted</li>
       <li>The service crashed before writing to the file</li>
       <li>You need crash evidence across multiple restarts</li>
     </ul>
 
-    <pre><code class="language-powershell">Get-EventLog -LogName Application -Source JenkinsAsService -Newest 20</code></pre>
+    <pre data-lang="powershell"><code>Get-EventLog -LogName Application -Source JenkinsAsService -Newest 20</code></pre>
 
     <h2 id="common-issues">Common Issues</h2>
 
     <h3 id="service-starts-and-immediately-stops">Service starts and immediately stops</h3>
 
-    <p><strong>Check <code class="inline">agent.log</code> for:</strong></p>
+    <p><strong>Check <code>agent.log</code> for:</strong></p>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Log Message</th>
-          <th>Cause</th>
-          <th>Fix</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code class="inline">Mandatory fields (JenkinsURL, AgentSecret) are empty</code></td>
-          <td>Config not filled in</td>
-          <td>Edit <code class="inline">appsettings.json</code> and fill the <code class="inline">Jenkins</code> section</td>
-        </tr>
-        <tr>
-          <td><code class="inline">'JenkinsURL' is a mandatory field</code></td>
-          <td><code class="inline">JenkinsURL</code> empty</td>
-          <td>Set the Jenkins URL in <code class="inline">appsettings.json</code></td>
-        </tr>
-        <tr>
-          <td><code class="inline">'AgentSecret' is a mandatory field</code></td>
-          <td><code class="inline">AgentSecret</code> empty</td>
-          <td>Copy the secret from Jenkins node configuration</td>
-        </tr>
-        <tr>
-          <td><code class="inline">JenkinsURL must include an explicit port</code></td>
-          <td>URL uses default port (80/443)</td>
-          <td>Add an explicit port, e.g. <code class="inline">https://jenkins.example.com:8443</code></td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Log Message</th>
+            <th>Cause</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Mandatory fields (JenkinsURL, AgentSecret) are empty</code></td>
+            <td>Config not filled in</td>
+            <td>Edit <code>appsettings.json</code> and fill the <code>Jenkins</code> section</td>
+          </tr>
+          <tr>
+            <td><code>'JenkinsURL' is a mandatory field</code></td>
+            <td><code>JenkinsURL</code> empty</td>
+            <td>Set the Jenkins URL in <code>appsettings.json</code></td>
+          </tr>
+          <tr>
+            <td><code>'AgentSecret' is a mandatory field</code></td>
+            <td><code>AgentSecret</code> empty</td>
+            <td>Copy the secret from Jenkins node configuration</td>
+          </tr>
+          <tr>
+            <td><code>JenkinsURL must include an explicit port</code></td>
+            <td>URL uses default port (80/443)</td>
+            <td>Add an explicit port, e.g. <code>https://jenkins.example.com:8443</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <h3 id="java-not-found">Java not found</h3>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Log Message</th>
-          <th>Cause</th>
-          <th>Fix</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code class="inline">Cannot find java.exe. Set 'JavaPath' in appsettings.json or the JAVA_HOME environment variable.</code></td>
-          <td>No Java configured</td>
-          <td>Set <code class="inline">JavaPath</code> in config or set <code class="inline">JAVA_HOME</code> system environment variable. Path should point to the JDK <code class="inline">bin</code> folder.</td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Log Message</th>
+            <th>Cause</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Cannot find java.exe. Set 'JavaPath' in appsettings.json or the JAVA_HOME environment variable.</code></td>
+            <td>No Java configured</td>
+            <td>Set <code>JavaPath</code> in config or set <code>JAVA_HOME</code> system environment variable. Path should point to the JDK <code>bin</code> folder.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <h3 id="connection-failures">Connection failures</h3>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Log Message</th>
-          <th>Cause</th>
-          <th>Fix</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code class="inline">Cannot reach Jenkins at '...' on port ... (timed out)</code></td>
-          <td>Jenkins unreachable / timeout</td>
-          <td>Check firewall, DNS, and that Jenkins is running</td>
-        </tr>
-        <tr>
-          <td><code class="inline">Cannot reach Jenkins at '...' on port ...: &lt;socket error&gt;</code></td>
-          <td>Connection refused or DNS failure</td>
-          <td>Verify URL, port, and network connectivity</td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Log Message</th>
+            <th>Cause</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Cannot reach Jenkins at '...' on port ... (timed out)</code></td>
+            <td>Jenkins unreachable / timeout</td>
+            <td>Check firewall, DNS, and that Jenkins is running</td>
+          </tr>
+          <tr>
+            <td><code>Cannot reach Jenkins at '...' on port ...: &lt;socket error&gt;</code></td>
+            <td>Connection refused or DNS failure</td>
+            <td>Verify URL, port, and network connectivity</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <h3 id="download-failures">Download failures</h3>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Symptom</th>
-          <th>Cause</th>
-          <th>Fix</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>HTTP error in log during download</td>
-          <td>Jenkins URL wrong or controller down</td>
-          <td>Verify <code class="inline">JenkinsURL</code> is correct and Jenkins is running</td>
-        </tr>
-        <tr>
-          <td><code class="inline">agent.jar</code> download hangs</td>
-          <td>Network issues / proxy</td>
-          <td>Check connectivity, consider adding proxy config to <code class="inline">HttpClient</code></td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symptom</th>
+            <th>Cause</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>HTTP error in log during download</td>
+            <td>Jenkins URL wrong or controller down</td>
+            <td>Verify <code>JenkinsURL</code> is correct and Jenkins is running</td>
+          </tr>
+          <tr>
+            <td><code>agent.jar</code> download hangs</td>
+            <td>Network issues / proxy</td>
+            <td>Check connectivity, consider adding proxy config to <code>HttpClient</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <h3 id="agent-connects-but-disconnects-randomly">Agent connects but disconnects randomly</h3>
 
     <ul>
-      <li>Check watchdog log entries: search for <code class="inline">Watchdog:</code> in <code class="inline">agent.log</code></li>
+      <li>Check watchdog log entries: search for <code>Watchdog:</code> in <code>agent.log</code></li>
       <li>The watchdog will auto-recover with exponential backoff</li>
-      <li>If <code class="inline">Watchdog: Max retries (N) exceeded</code> appears, the issue is persistent &mdash; check:
+      <li>If <code>Watchdog: Max retries (N) exceeded</code> appears, the issue is persistent &mdash; check:
         <ul>
-          <li><code class="inline">AgentName</code> matches the node name in Jenkins <strong>exactly</strong> (case-sensitive)</li>
-          <li><code class="inline">AgentSecret</code> is correct (regenerate in Jenkins if unsure)</li>
+          <li><code>AgentName</code> matches the node name in Jenkins <strong>exactly</strong> (case-sensitive)</li>
+          <li><code>AgentSecret</code> is correct (regenerate in Jenkins if unsure)</li>
           <li>Jenkins controller logs for rejection reasons</li>
           <li>Network stability between the agent and controller</li>
         </ul>
@@ -199,17 +206,18 @@
 
     <p>If the agent repeatedly dies and recovers:</p>
     <ul>
-      <li>Enable <code class="inline">DebugMode: true</code> for detailed Java output</li>
-      <li>Look for patterns in <code class="inline">agent.log</code> &mdash; the watchdog logs exit codes before each restart</li>
-      <li>Common causes: Java OOM (increase heap via <code class="inline">CustomArguments</code>), Jenkins controller restarts, network drops</li>
+      <li>Enable <code>DebugMode: true</code> for detailed Java output</li>
+      <li>Look for patterns in <code>agent.log</code> &mdash; the watchdog logs exit codes before each restart</li>
+      <li>Common causes: Java OOM (increase heap via <code>CustomArguments</code>), Jenkins controller restarts, network drops</li>
     </ul>
 
     <h2 id="debug-mode">Debug Mode</h2>
 
-    <p>Set <code class="inline">DebugMode</code> to <code class="inline">true</code> in <code class="inline">appsettings.json</code> to enable verbose Java agent output in the log file. This captures all Java stdout/stderr including remoting/JNLP handshake details.</p>
+    <p>Set <code>DebugMode</code> to <code>true</code> in <code>appsettings.json</code> to enable verbose Java agent output in the log file. This captures all Java stdout/stderr including remoting/JNLP handshake details.</p>
 
-    <div class="callout callout-note">
-      <p><strong>Note:</strong> Debug mode is set at startup via Serilog minimum level. A service restart is required to toggle it.</p>
+    <div class="callout callout--note">
+      <div class="callout-title">Note</div>
+      <p>Debug mode is set at startup via Serilog minimum level. A service restart is required to toggle it.</p>
     </div>
 
     <h2 id="service-recovery-windows-level">Service Recovery (Windows-Level)</h2>
@@ -220,13 +228,28 @@
       <li>Reset fail count after: <strong>1 day</strong></li>
     </ul>
 
-    <p>This is set via <code class="inline">util:ServiceConfig</code> in <code class="inline">Service.wxs</code> during installation &mdash; no manual configuration needed.</p>
+    <p>This is set via <code>util:ServiceConfig</code> in <code>Service.wxs</code> during installation &mdash; no manual configuration needed.</p>
   </main>
 
-  <aside class="toc-sidebar">
-    <h2>On this page</h2>
-    <div id="toc"></div>
+  <aside class="toc">
+    <div class="toc-title">On this page</div>
+    <div id="toc-list"></div>
   </aside>
+
+  <div id="search-overlay" class="search-overlay">
+    <div class="search-modal">
+      <div class="search-input-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="search-input" class="search-input" type="text" placeholder="Search documentation..." autocomplete="off">
+      </div>
+      <div id="search-results" class="search-results"></div>
+      <div class="search-footer">
+        <span><kbd>Esc</kbd> to close</span>
+        <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> to navigate</span>
+        <span><kbd>Enter</kbd> to select</span>
+      </div>
+    </div>
+  </div>
 
   <script src="main.js"></script>
 </body>
