@@ -47,8 +47,8 @@ jobs:
           -p:DebuggerSupport=false
           -p:MetadataUpdaterSupport=false
           -p:Deterministic=true
-          -p:DebugType=None
-          -p:DebugSymbols=false
+          -p:DebugType=Embedded
+          -p:DebugSymbols=true
           -p:InformationalVersion="${{ steps.version.outputs.VERSION }}"
           /v:q /clp:ErrorsOnly
 
@@ -70,8 +70,8 @@ jobs:
           -p:DebuggerSupport=false
           -p:MetadataUpdaterSupport=false
           -p:Deterministic=true
-          -p:DebugType=None
-          -p:DebugSymbols=false
+          -p:DebugType=Embedded
+          -p:DebugSymbols=true
           -p:InformationalVersion="${{ steps.version.outputs.VERSION }}"
           /v:q /clp:ErrorsOnly
 
