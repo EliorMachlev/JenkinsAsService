@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CI/CD &amp; Security - JenkinsAsService</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+</head>
+<body data-theme="dark">
+    <button class="hamburger" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 class="site-title">JenkinsAsService</h2>
+        </div>
+        <ul class="nav-links">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="overview.html">Overview</a></li>
+            <li><a href="architecture.html">Architecture</a></li>
+            <li><a href="configuration.html">Configuration</a></li>
+            <li><a href="api-reference.html">API Reference</a></li>
+            <li><a href="installation.html">Installation</a></li>
+            <li><a href="ci-cd.html" class="active">CI/CD &amp; Security</a></li>
+            <li><a href="troubleshooting.html">Troubleshooting</a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <button class="theme-toggle" aria-label="Toggle theme">
+                <span class="theme-icon-dark">&#9790;</span>
+                <span class="theme-icon-light">&#9728;</span>
+            </button>
+            <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                GitHub
+            </a>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>CI/CD and Security Scanning</h1>
+
+        <h2 id="github-actions-workflows">GitHub Actions Workflows</h2>
+
+        <p>The repository has eight workflows covering build, test, security scanning, and release automation.</p>
+
+        <h3 id="net-build">.NET Build (<code class="inline">.github/workflows/build.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Build and test on every push/PR to <code class="inline">main</code></li>
+            <li><strong>Runner:</strong> <code class="inline">windows-latest</code></li>
+            <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code class="inline">dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code class="inline">dotnet build</code> &rarr; <code class="inline">dotnet test</code></li>
+            <li><strong>Tests:</strong> 59 unit tests (xUnit + NSubstitute + FluentAssertions)</li>
+        </ul>
+
+        <h3 id="release">Release (<code class="inline">.github/workflows/release.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Automated dual-architecture release on version tags</li>
+            <li><strong>Trigger:</strong> Push tag matching <code class="inline">v*</code></li>
+            <li><strong>Runner:</strong> <code class="inline">windows-latest</code></li>
+            <li><strong>Steps:</strong>
+                <ol>
+                    <li>Setup .NET 10 &rarr; <code class="inline">dotnet test</code></li>
+                    <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
+                    <li>Build MSI installers for both architectures via <strong>WiX v5</strong></li>
+                    <li>Create <code class="inline">.7z</code> archives (LZMA2, max compression) via 7-Zip</li>
+                    <li>Install WinRAR via Chocolatey &rarr; create <code class="inline">.rar</code> archives (RAR5 with 5% recovery record)</li>
+                    <li>Generate <code class="inline">checksums.json</code> with SHA256 hashes for all artifacts</li>
+                    <li>Create GitHub Release with all artifacts and auto-generated release notes</li>
+                </ol>
+            </li>
+            <li><strong>Tool:</strong> <a href="https://github.com/softprops/action-gh-release">softprops/action-gh-release</a></li>
+            <li><strong>Naming:</strong> <code class="inline">JenkinsAsService_&lt;version&gt;_&lt;arch&gt;.&lt;ext&gt;</code></li>
+        </ul>
+
+        <h3 id="codeql">CodeQL (<code class="inline">.github/workflows/codeql.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Source code vulnerability analysis (C#)</li>
+            <li><strong>Tool:</strong> <a href="https://github.com/github/codeql-action">github/codeql-action</a></li>
+            <li><strong>Trigger:</strong> Push/PR to <code class="inline">main</code>, weekly schedule</li>
+            <li><strong>Output:</strong> Findings in GitHub Security tab</li>
+        </ul>
+
+        <h3 id="psscriptanalyzer">PSScriptAnalyzer (<code class="inline">.github/workflows/powershell.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Static analysis of PowerShell code (full ruleset)</li>
+            <li><strong>Tool:</strong> <a href="https://github.com/microsoft/action-psscriptanalyzer">microsoft/psscriptanalyzer-action</a></li>
+            <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
+            <li><strong>Schedule:</strong> Sundays at 23:23 UTC</li>
+        </ul>
+
+        <h3 id="semgrep">Semgrep (<code class="inline">.github/workflows/semgrep.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Pattern-based SAST &mdash; vulnerable code patterns, deprecated APIs, common weaknesses</li>
+            <li><strong>Tool:</strong> <a href="https://github.com/semgrep/semgrep-action">semgrep/semgrep-action@v1</a></li>
+            <li><strong>Rules:</strong> <code class="inline">p/default</code> + <code class="inline">p/csharp</code> + <code class="inline">p/secrets</code> (community rulesets, no token required)</li>
+            <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
+            <li><strong>Schedule:</strong> Sundays at 04:38 UTC</li>
+        </ul>
+
+        <h3 id="gitleaks">Gitleaks (<code class="inline">.github/workflows/gitleaks.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Secret and credential scanning across full git history</li>
+            <li><strong>Tool:</strong> <a href="https://github.com/gitleaks/gitleaks-action">gitleaks/gitleaks-action@v3.0.0</a></li>
+            <li><strong>Coverage:</strong> <code class="inline">fetch-depth: 0</code> &mdash; scans all commits</li>
+            <li><strong>Schedule:</strong> Sundays at 05:00 UTC</li>
+        </ul>
+
+        <h3 id="dependency-review">Dependency Review (<code class="inline">.github/workflows/dependency-review.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Block PRs that introduce NuGet packages with known CVEs</li>
+            <li><strong>Trigger:</strong> PRs to <code class="inline">main</code></li>
+            <li><strong>Tool:</strong> <a href="https://github.com/actions/dependency-review-action">actions/dependency-review-action@v5</a></li>
+            <li><strong>Database:</strong> GitHub Advisory Database (GHSA)</li>
+        </ul>
+
+        <h3 id="trivy-sca-full-scan">Trivy &mdash; SCA Full Scan (<code class="inline">.github/workflows/osv-scanner.yml</code>)</h3>
+        <ul>
+            <li><strong>Purpose:</strong> Full-repo dependency vulnerability scan (post-merge + weekly)</li>
+            <li><strong>Trigger:</strong> Push to <code class="inline">main</code>, weekly schedule (Saturdays 23:28 UTC)</li>
+            <li><strong>Tool:</strong> <a href="https://github.com/aquasecurity/trivy-action">aquasecurity/trivy-action</a></li>
+            <li><strong>Databases:</strong> NVD + GitHub Advisory + OSV</li>
+            <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
+            <li><strong>Pattern:</strong> Calls <code class="inline">trivy-reusable.yml</code> via <code class="inline">uses: ./.github/workflows/trivy-reusable.yml</code></li>
+        </ul>
+
+        <h3 id="trivy-reusable-workflow">Trivy &mdash; Reusable Workflow (<code class="inline">.github/workflows/trivy-reusable.yml</code>)</h3>
+        <ul>
+            <li><strong>Trigger:</strong> <code class="inline">workflow_call</code> with inputs <code class="inline">scan-type</code> (default: <code class="inline">fs</code>) and <code class="inline">scan-ref</code> (default: <code class="inline">.</code>)</li>
+            <li><strong>Steps:</strong> checkout &rarr; trivy &rarr; upload-sarif (<code class="inline">if: always()</code>)</li>
+            <li><strong>Versioning:</strong> <code class="inline">actions/checkout@v6</code>, <code class="inline">github/codeql-action/upload-sarif@v4</code>, <code class="inline">aquasecurity/trivy-action@v0.36.0</code></li>
+        </ul>
+
+        <h2 id="dependabot">Dependabot (<code class="inline">.github/dependabot.yml</code>)</h2>
+
+        <p>Weekly automated PRs for:</p>
+        <ul>
+            <li><code class="inline">nuget</code> &mdash; NuGet package updates</li>
+            <li><code class="inline">github-actions</code> &mdash; Action version bumps</li>
+        </ul>
+
+        <h2 id="security-scanning-stack-summary">Security Scanning Stack Summary</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Layer</th>
+                    <th>Tool</th>
+                    <th>Trigger</th>
+                    <th>Scope</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>SAST (C#)</td>
+                    <td>CodeQL</td>
+                    <td>Push/PR/weekly</td>
+                    <td>Source code vulnerabilities</td>
+                </tr>
+                <tr>
+                    <td>SAST (patterns)</td>
+                    <td>Semgrep</td>
+                    <td>Push/PR/weekly</td>
+                    <td>Vulnerable patterns, deprecated APIs</td>
+                </tr>
+                <tr>
+                    <td>Secret scanning</td>
+                    <td>Gitleaks</td>
+                    <td>Push/PR/weekly</td>
+                    <td>Secrets/credentials across full git history</td>
+                </tr>
+                <tr>
+                    <td>SAST (PS)</td>
+                    <td>PSScriptAnalyzer</td>
+                    <td>Push/PR/weekly</td>
+                    <td>PowerShell scripts</td>
+                </tr>
+                <tr>
+                    <td>SCA (PR gate)</td>
+                    <td>Dependency Review</td>
+                    <td>PRs only</td>
+                    <td>New CVEs introduced by PR diff</td>
+                </tr>
+                <tr>
+                    <td>SCA (full)</td>
+                    <td>Trivy</td>
+                    <td>Push + weekly</td>
+                    <td>All NuGet deps, multi-DB</td>
+                </tr>
+                <tr>
+                    <td>Dependabot alerts</td>
+                    <td>GitHub native</td>
+                    <td>Always</td>
+                    <td>CVE alerts on current packages</td>
+                </tr>
+                <tr>
+                    <td>Dependabot updates</td>
+                    <td>GitHub native</td>
+                    <td>Weekly PRs</td>
+                    <td>NuGet + GitHub Actions version bumps</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="action-versioning-policy">Action Versioning Policy</h2>
+
+        <p>All actions use <strong>floating major-version tags</strong> &mdash; no SHA pins. Rationale: personal/low-risk repo; SHA pins add friction without meaningful supply-chain benefit at this scale.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Action family</th>
+                    <th>Tag used</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">actions/checkout</code></td>
+                    <td><code class="inline">@v6</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">actions/setup-dotnet</code></td>
+                    <td><code class="inline">@v5</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">actions/dependency-review-action</code></td>
+                    <td><code class="inline">@v5</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">github/codeql-action/*</code></td>
+                    <td><code class="inline">@v4</code> (init/analyze/upload-sarif &mdash; all consistent)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">semgrep/semgrep-action</code></td>
+                    <td><code class="inline">@v1</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">gitleaks/gitleaks-action</code></td>
+                    <td><code class="inline">@v3.0.0</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">microsoft/psscriptanalyzer-action</code></td>
+                    <td>SHA pin &mdash; repo has no tags (unmaintained since 2023-03-03)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">aquasecurity/trivy-action</code></td>
+                    <td><code class="inline">@v0.36.0</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">softprops/action-gh-release</code></td>
+                    <td><code class="inline">@v3</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout callout-note">
+            <div class="callout-title">Note: Removed scanners</div>
+            <div class="callout-content">
+                <ul>
+                    <li><strong>Codacy</strong> (<code class="inline">codacy.yml</code>) &mdash; removed. The native Codacy GitHub App ("SonarSharp reported by Codacy") is separate.</li>
+                    <li><strong>DevSkim</strong> &mdash; removed. Docker/MCR rate-limit issues; unmaintained. Replaced by Semgrep + Gitleaks.</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2 id="codacy-sonarsharp-alert-resolution">Codacy / SonarSharp Alert Resolution (Historical)</h2>
+
+        <h3 id="pr-13">PR #13 &mdash; 211 alerts to 0</h3>
+
+        <p>Initial alert storm on first push of <code class="inline">feature/secret-protection</code>. Key fixes:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Fix</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>S1451 &mdash; File header</td>
+                    <td><code class="inline">.editorconfig</code> suppression</td>
+                </tr>
+                <tr>
+                    <td>S3990 / ComVisible / CLSCompliant</td>
+                    <td>Added <code class="inline">Properties/AssemblyInfo.cs</code> with explicit attributes</td>
+                </tr>
+                <tr>
+                    <td>S2221 &mdash; Catch specific exception</td>
+                    <td>Replaced bare <code class="inline">catch { }</code> with typed catches</td>
+                </tr>
+                <tr>
+                    <td>S1121 &mdash; Cyclomatic complexity</td>
+                    <td>Extracted <code class="inline">ParseState</code> + helper methods; CC 12 &rarr; 4</td>
+                </tr>
+                <tr>
+                    <td>S3994 &mdash; Uri parameter</td>
+                    <td>Changed <code class="inline">BuildJarUri</code> return type to <code class="inline">Uri</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3 id="pr-14">PR #14 &mdash; 170 alerts to ~147</h3>
+
+        <p>Two-commit fix sequence addressing S4261 (async suffix), S3994 (Uri params), S134 (nesting depth), S109 (magic numbers), and naming false positives.</p>
+
+        <h3 id="remaining-unfixable">Remaining unfixable (~80)</h3>
+
+        <p>Require Codacy dashboard configuration &mdash; not fixable via code:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Rule</th>
+                    <th>Count</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>S1451 (copyright header)</td>
+                    <td>~20</td>
+                    <td>No regex pattern configured on Codacy server</td>
+                </tr>
+                <tr>
+                    <td>S3904/S3991/S3992/S3993 (assembly attributes)</td>
+                    <td>~58</td>
+                    <td>Codacy processes each .cs file in isolation</td>
+                </tr>
+                <tr>
+                    <td>S1128/S100/S1515/S4261</td>
+                    <td>~7</td>
+                    <td>False positives on NuGet types and raw string literals</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout callout-warning">
+            <div class="callout-title">Warning: Key lesson</div>
+            <div class="callout-content">
+                <p><code class="inline">// NOSONAR</code> only suppresses line-level rules. File-level rules (S1451, S3904) require Codacy dashboard configuration.</p>
+            </div>
+        </div>
+
+        <h2 id="security-policy">Security Policy (<code class="inline">Security.md</code>)</h2>
+
+        <ul>
+            <li><strong>Scope:</strong> JenkinsAsService executable, MSI installer, CI workflows. Jenkins/JDK/OS/third-party packages are out of scope.</li>
+            <li><strong>Supported versions:</strong> Latest release only. Older versions are not patched.</li>
+            <li><strong>Reporting:</strong> GitHub Private Vulnerability Reporting (preferred). No public issues for security bugs.</li>
+            <li><strong>Response timeline:</strong> Acknowledge in 3 business days, assess in 7, patch within 30 days (critical/high) or 90 days (medium/low).</li>
+            <li><strong>Coordinated disclosure:</strong> 90-day window, reporter can self-disclose after. Credit offered if desired.</li>
+            <li><strong>Bounties:</strong> None (volunteer project).</li>
+        </ul>
+
+        <h2 id="community-files">Community Files</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">CONTRIBUTING.md</code></td>
+                    <td>Dev setup, PR guidelines, branch naming, commit convention, CI checks</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">CODE_OF_CONDUCT.md</code></td>
+                    <td>Contributor Covenant v2.0 &mdash; enforcement via GitHub private reporting</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Security.md</code></td>
+                    <td>Security policy, architecture overview, dependency monitoring</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+
+    <aside class="toc"></aside>
+
+    <script src="main.js"></script>
+</body>
+</html>

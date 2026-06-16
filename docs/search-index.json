@@ -1,0 +1,50 @@
+[
+  {
+    "id": "index",
+    "title": "Home",
+    "url": "index.html",
+    "keywords": ["home", "landing", "welcome", "jenkinsasservice", "windows service", "dotnet", "getting started"]
+  },
+  {
+    "id": "overview",
+    "title": "Overview",
+    "url": "overview.html",
+    "keywords": ["overview", "introduction", "what is", "features", "windows service", "jenkins", "automation", "service management", "dotnet"]
+  },
+  {
+    "id": "architecture",
+    "title": "Architecture",
+    "url": "architecture.html",
+    "keywords": ["architecture", "design", "diagram", "worker", "service", "pipeline", "components", "structure", "hosting", "dependency injection"]
+  },
+  {
+    "id": "configuration",
+    "title": "Configuration",
+    "url": "configuration.html",
+    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog"]
+  },
+  {
+    "id": "api-reference",
+    "title": "API Reference",
+    "url": "api-reference.html",
+    "keywords": ["api", "reference", "endpoints", "rest", "http", "swagger", "controllers", "routes", "methods", "request", "response"]
+  },
+  {
+    "id": "installation",
+    "title": "Installation",
+    "url": "installation.html",
+    "keywords": ["installation", "install", "setup", "deploy", "windows", "service", "sc", "publish", "prerequisites", "requirements", "powershell"]
+  },
+  {
+    "id": "ci-cd",
+    "title": "CI/CD & Security",
+    "url": "ci-cd.html",
+    "keywords": ["ci", "cd", "cicd", "pipeline", "github actions", "security", "scanning", "semgrep", "gitleaks", "trivy", "psscriptanalyzer", "sast", "secrets", "vulnerabilities"]
+  },
+  {
+    "id": "troubleshooting",
+    "title": "Troubleshooting",
+    "url": "troubleshooting.html",
+    "keywords": ["troubleshooting", "debug", "errors", "logs", "faq", "common issues", "problems", "fix", "event log", "service", "startup"]
+  }
+]

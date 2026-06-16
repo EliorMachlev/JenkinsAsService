@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Installation - JenkinsAsService</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+</head>
+<body data-theme="dark">
+    <button class="hamburger" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <a href="index.html" class="site-title">JenkinsAsService</a>
+        </div>
+        <ul class="nav-links">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="overview.html">Overview</a></li>
+            <li><a href="architecture.html">Architecture</a></li>
+            <li><a href="configuration.html">Configuration</a></li>
+            <li><a href="api-reference.html">API Reference</a></li>
+            <li><a href="installation.html" class="active">Installation</a></li>
+            <li><a href="ci-cd.html">CI/CD &amp; Security</a></li>
+            <li><a href="troubleshooting.html">Troubleshooting</a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <button class="theme-toggle" aria-label="Toggle theme">
+                <span class="theme-icon-dark">&#9790;</span>
+                <span class="theme-icon-light">&#9728;</span>
+            </button>
+            <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+                GitHub
+            </a>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>Installation</h1>
+
+        <h2 id="build-toolchain">Build Toolchain</h2>
+        <p>The project uses the <strong>.NET 10 SDK</strong> with the <code class="inline">Microsoft.NET.Sdk.Worker</code> project type. Deterministic builds with locked NuGet restore (<code class="inline">packages.lock.json</code>).</p>
+
+        <h2 id="build-publish">Build &amp; Publish</h2>
+        <pre><code class="language-powershell"># Restore (locked mode — requires packages.lock.json)
+dotnet restore -p:RestoreLockedMode=true
+
+# Run tests
+dotnet test -c Release
+
+# Publish optimized self-contained single-file executable
+dotnet publish src/JenkinsAsService `
+    --nologo --configuration Release `
+    -p:RestoreLockedMode=true `
+    --runtime win-x64 --self-contained true `
+    --output publish/x64/ `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:EnableCompressionInSingleFile=true `
+    -p:PublishReadyToRun=true `
+    -p:OptimizationPreference=Speed `
+    -p:UseSharedCompilation=true `
+    -p:DebuggerSupport=false `
+    -p:MetadataUpdaterSupport=false `
+    -p:Deterministic=true `
+    -p:DebugType=Embedded `
+    -p:DebugSymbols=true `
+    -p:InformationalVersion="1.0.0" `
+    /v:q /clp:ErrorsOnly
+
+# Build MSI installer (requires WiX v5 SDK — auto-restored via NuGet)
+dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x64/ -p:Version=1.0.0</code></pre>
+
+        <h3 id="publish-flags">Publish Flags</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Flag</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">PublishSingleFile</code></td>
+                    <td>Single .exe output</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">IncludeNativeLibrariesForSelfExtract</code></td>
+                    <td>Bundles native libs inside the single file</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">EnableCompressionInSingleFile</code></td>
+                    <td>Compresses the bundle</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">PublishReadyToRun</code></td>
+                    <td>AOT pre-compilation (R2R) for faster startup</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">OptimizationPreference=Speed</code></td>
+                    <td>Optimize for speed over size</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">DebuggerSupport=false</code></td>
+                    <td>Strip debugger attach points (production service)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">MetadataUpdaterSupport=false</code></td>
+                    <td>Strip hot-reload metadata</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Deterministic=true</code></td>
+                    <td>Same source &rarr; identical binary</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">DebugType=Embedded</code></td>
+                    <td>PDB symbols embedded in .exe (stack traces with file/line info, no separate .pdb)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">InformationalVersion</code></td>
+                    <td>Set from git tag in CI</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>The published output:</p>
+        <ul>
+            <li><code class="inline">JenkinsAsService.exe</code> &mdash; Self-contained executable (~42MB, no .NET runtime needed)</li>
+            <li><code class="inline">appsettings.json</code> &mdash; Configuration template</li>
+        </ul>
+
+        <h2 id="nuget-dependencies">NuGet Dependencies</h2>
+
+        <h3 id="main-project">Main Project</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Package</th>
+                    <th>Version</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">Microsoft.Extensions.Hosting.WindowsServices</code></td>
+                    <td>10.0.9</td>
+                    <td>Windows Service integration</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Microsoft.Extensions.Http</code></td>
+                    <td>10.0.9</td>
+                    <td><code class="inline">IHttpClientFactory</code> for jar download</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Microsoft.Extensions.Http.Resilience</code></td>
+                    <td>10.7.0</td>
+                    <td>Polly retry, circuit breaker, timeout</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Serilog.Extensions.Hosting</code></td>
+                    <td>9.0.0</td>
+                    <td>Serilog integration with .NET hosting</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Serilog.Sinks.File</code></td>
+                    <td>7.0.0</td>
+                    <td>Rolling file log sink</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Serilog.Sinks.EventLog</code></td>
+                    <td>4.0.0</td>
+                    <td>Windows Event Log sink</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Serilog.Enrichers.Environment</code></td>
+                    <td>3.0.1</td>
+                    <td><code class="inline">MachineName</code> and <code class="inline">EnvironmentName</code> enrichment</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Serilog.Enrichers.Process</code></td>
+                    <td>3.0.0</td>
+                    <td><code class="inline">ProcessId</code> enrichment</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Serilog.Formatting.Compact</code></td>
+                    <td>3.0.0</td>
+                    <td>CLEF JSON formatter</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">AdysTech.CredentialManager</code></td>
+                    <td>3.1.0</td>
+                    <td>Windows Credential Manager access</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">System.Security.Cryptography.ProtectedData</code></td>
+                    <td>10.0.9</td>
+                    <td>DPAPI encryption</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">OpenTelemetry.Extensions.Hosting</code></td>
+                    <td>1.16.0</td>
+                    <td>OTel hosting integration</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">OpenTelemetry.Exporter.OpenTelemetryProtocol</code></td>
+                    <td>1.16.0</td>
+                    <td>OTLP exporter</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">OpenTelemetry.Instrumentation.Runtime</code></td>
+                    <td>1.15.1</td>
+                    <td>.NET runtime metrics</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3 id="test-project">Test Project</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Package</th>
+                    <th>Version</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">xunit</code></td>
+                    <td>2.9.3</td>
+                    <td>Test framework</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">xunit.runner.visualstudio</code></td>
+                    <td>3.1.4</td>
+                    <td>VS Test adapter</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">NSubstitute</code></td>
+                    <td>5.3.0</td>
+                    <td>Mocking library</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">FluentAssertions</code></td>
+                    <td>8.10.0</td>
+                    <td>Fluent assertion syntax</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Microsoft.NET.Test.Sdk</code></td>
+                    <td>18.6.0</td>
+                    <td>Test platform SDK</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">coverlet.collector</code></td>
+                    <td>10.0.1</td>
+                    <td>Code coverage collection</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout callout-note">
+            <div class="callout-title">Note</div>
+            <p>All versions are pinned (no floating ranges). Both projects include <code class="inline">packages.lock.json</code> for deterministic restores via <code class="inline">RestoreLockedMode=true</code>.</p>
+        </div>
+
+        <h2 id="msi-installer">MSI Installer</h2>
+        <p>The project includes a <strong>WiX v5</strong> MSI installer (<code class="inline">src/JenkinsAsService.Installer/</code>) that:</p>
+        <ul>
+            <li>Installs to <code class="inline">C:\Program Files\Jenkins</code> (customizable via install directory dialog or <code class="inline">INSTALLFOLDER</code> property)</li>
+            <li>Registers the <code class="inline">Jenkins</code> Windows Service (LocalSystem, Automatic start)</li>
+            <li>Configures Windows-level service recovery automatically (<code class="inline">util:ServiceConfig</code> &mdash; restart on all 3 failures after 10s, reset daily)</li>
+            <li>Starts the service after install</li>
+            <li>Stops and removes the service on uninstall</li>
+            <li>Supports in-place upgrades (same <code class="inline">UpgradeCode</code> across versions)</li>
+            <li>Shows BSD 3-Clause license agreement during install</li>
+            <li>Default secret protection mode: <code class="inline">EnvironmentVariable</code> (reads from <code class="inline">JENKINS_SECRET</code>)</li>
+        </ul>
+
+        <h3 id="msi-dialog-flow">MSI Dialog Flow</h3>
+        <p><code class="inline">LicenseAgreementDlg</code> &rarr; <code class="inline">InstallDirDlg</code> &rarr; <code class="inline">JenkinsConfigDlg</code> &rarr; <code class="inline">SecurityOptionsDlg</code> &rarr; <code class="inline">VerifyReadyDlg</code></p>
+
+        <h3 id="msi-structure">MSI Structure</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">JenkinsAsService.Installer.wixproj</code></td>
+                    <td>WiX v5 project &mdash; references <code class="inline">WixToolset.UI.wixext</code> and <code class="inline">WixToolset.Util.wixext</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Package.wxs</code></td>
+                    <td>Package metadata, UI (<code class="inline">WixUI_InstallDir</code>), icon, features</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Folders.wxs</code></td>
+                    <td>Install directory definition (<code class="inline">ProgramFiles6432Folder\Jenkins</code>)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">Service.wxs</code></td>
+                    <td>File components + <code class="inline">ServiceInstall</code> / <code class="inline">ServiceControl</code> + <code class="inline">util:ServiceConfig</code> (recovery)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">ConfigDialog.wxs</code></td>
+                    <td>Custom dialogs: <code class="inline">JenkinsConfigDlg</code> (URL/secret/name/Java) + <code class="inline">SecurityOptionsDlg</code> (secret mode radio group)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">License.rtf</code></td>
+                    <td>BSD 3-Clause license in RTF format for the WixUI dialog</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>The installer project is excluded from the solution build (<code class="inline">Build=false</code>). Build it explicitly after publishing.</p>
+
+        <h2 id="installation">Installation</h2>
+
+        <h3 id="msi-recommended">MSI (Recommended)</h3>
+        <ol>
+            <li>Download the <code class="inline">.msi</code> for your architecture from <a href="https://github.com/EliorMachlev/JenkinsAsService/releases">Releases</a></li>
+            <li>Run the installer &mdash; it walks through install path, Jenkins URL, agent secret, and secret protection mode</li>
+            <li>Done &mdash; the service registers and starts automatically</li>
+        </ol>
+
+        <h3 id="silent-install">Silent Install</h3>
+        <p>For automated deployments, use <code class="inline">msiexec</code> with public properties:</p>
+        <pre><code class="language-powershell">msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
+    INSTALLFOLDER="D:\Jenkins" `
+    JENKINS_URL="https://jenkins.example.com:8443" `
+    JENKINS_SECRET="your-secret" `
+    JENKINS_SECRET_MODE="EnvironmentVariable" `
+    JENKINS_AGENT_NAME="" `
+    JENKINS_JAVA_PATH=""</code></pre>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Property</th>
+                    <th>Required</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">INSTALLFOLDER</code></td>
+                    <td>No</td>
+                    <td><code class="inline">C:\Program Files\Jenkins</code></td>
+                    <td>Installation directory</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JENKINS_URL</code></td>
+                    <td><strong>Yes</strong></td>
+                    <td>&mdash;</td>
+                    <td>Jenkins controller URL with explicit port</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JENKINS_SECRET</code></td>
+                    <td><strong>Yes</strong></td>
+                    <td>&mdash;</td>
+                    <td>JNLP agent secret</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JENKINS_SECRET_MODE</code></td>
+                    <td>No</td>
+                    <td><code class="inline">EnvironmentVariable</code></td>
+                    <td><code class="inline">EnvironmentVariable</code>, <code class="inline">Dpapi</code>, <code class="inline">CredentialManager</code>, or <code class="inline">Unprotected</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JENKINS_AGENT_NAME</code></td>
+                    <td>No</td>
+                    <td>Hostname</td>
+                    <td>Agent node name in Jenkins</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JENKINS_JAVA_PATH</code></td>
+                    <td>No</td>
+                    <td><code class="inline">JAVA_HOME</code></td>
+                    <td>Path to JDK <code class="inline">bin</code> folder</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="automated-release">Automated Release</h2>
+        <p>The GitHub Actions release workflow (<code class="inline">.github/workflows/release.yml</code>):</p>
+        <ol>
+            <li>Push a tag matching <code class="inline">v*</code> (e.g., <code class="inline">v1.0.4</code>)</li>
+            <li>Runs tests, publishes optimized self-contained executables for <strong>x64</strong> and <strong>x86</strong></li>
+            <li>Builds MSI installers for both architectures via WiX v5</li>
+            <li>Creates <code class="inline">.7z</code> (LZMA2, max compression) and <code class="inline">.rar</code> (RAR5 with 5% recovery record) archives</li>
+            <li>Generates <code class="inline">checksums.json</code> with SHA256 hashes for all artifacts</li>
+            <li>Creates GitHub Release with auto-generated release notes</li>
+        </ol>
+
+        <h3 id="release-artifacts">Release Artifacts</h3>
+        <p>For a tag <code class="inline">v1.0.4</code>:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">JenkinsAsService_1.0.4_x64.msi</code></td>
+                    <td>64-bit MSI installer</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JenkinsAsService_1.0.4_x86.msi</code></td>
+                    <td>32-bit MSI installer</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JenkinsAsService_1.0.4_x64.7z</code></td>
+                    <td>64-bit archive (7z)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JenkinsAsService_1.0.4_x64.rar</code></td>
+                    <td>64-bit archive (RAR5 + recovery)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JenkinsAsService_1.0.4_x86.7z</code></td>
+                    <td>32-bit archive (7z)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JenkinsAsService_1.0.4_x86.rar</code></td>
+                    <td>32-bit archive (RAR5 + recovery)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JenkinsAsService_1.0.4_checksums.json</code></td>
+                    <td>SHA256 hashes</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="service-recovery">Service Recovery (Windows-Level)</h2>
+        <p>The MSI installer configures Windows service recovery automatically via <code class="inline">util:ServiceConfig</code>:</p>
+        <ul>
+            <li>First / Second / Third failure: <strong>Restart the Service</strong> (after 10 seconds)</li>
+            <li>Reset fail count after: <strong>1 day</strong></li>
+        </ul>
+
+        <div class="callout callout-note">
+            <div class="callout-title">Note</div>
+            <p>The built-in watchdog handles Java process crashes. Windows-level recovery covers full service host crashes (the .NET process itself dying) &mdash; rare but covered automatically.</p>
+        </div>
+    </main>
+
+    <aside class="toc"></aside>
+
+    <script src="main.js"></script>
+</body>
+</html>

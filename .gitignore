@@ -47,5 +47,4 @@ remoting/
 #AI
 .claude/
 
-#Documentaion
-docs/
+#Documentation - now tracked for GitHub Pages

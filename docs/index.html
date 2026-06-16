@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home - JenkinsAsService</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+</head>
+<body data-theme="dark">
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <h2 class="site-title">JenkinsAsService</h2>
+    </div>
+    <ul class="nav-links">
+      <li><a href="index.html" class="active">Home</a></li>
+      <li><a href="overview.html">Overview</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="configuration.html">Configuration</a></li>
+      <li><a href="api-reference.html">API Reference</a></li>
+      <li><a href="installation.html">Installation</a></li>
+      <li><a href="ci-cd.html">CI/CD &amp; Security</a></li>
+      <li><a href="troubleshooting.html">Troubleshooting</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <button class="theme-toggle" aria-label="Toggle theme">
+        <span class="theme-toggle-icon"></span>
+      </button>
+      <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </nav>
+
+  <button class="hamburger" aria-label="Toggle navigation">
+    <span></span><span></span><span></span>
+  </button>
+
+  <main class="content">
+    <h1>JenkinsAsService</h1>
+
+    <div class="callout callout-summary">
+      <div class="callout-title">Summary</div>
+      <div class="callout-content">
+        <p>A .NET 10 Windows Service that runs a Jenkins Agent (JNLP/inbound) natively. Includes an event-driven watchdog with auto-recovery, secret protection (DPAPI/CredMgr/EnvVar), structured logging with Serilog, ETag-based jar caching, and optional OpenTelemetry metrics. Eliminates the need for manual agent startup, login sessions, or scheduled tasks.</p>
+      </div>
+    </div>
+
+    <h2 id="documentation">Documentation</h2>
+
+    <ul>
+      <li><a href="overview.html">Overview</a> &mdash; What the project does and why it exists</li>
+      <li><a href="architecture.html">Architecture</a> &mdash; Service lifecycle, watchdog design, DI, logging</li>
+      <li><a href="configuration.html">Configuration</a> &mdash; appsettings.json reference, secret protection, OpenTelemetry</li>
+      <li><a href="api-reference.html">API Reference</a> &mdash; Class and method documentation</li>
+      <li><a href="installation.html">Installation</a> &mdash; Build, publish, MSI installer, release pipeline</li>
+      <li><a href="ci-cd.html">CI/CD &amp; Security</a> &mdash; GitHub Actions workflows and security stack</li>
+      <li><a href="troubleshooting.html">Troubleshooting</a> &mdash; Common issues and debugging</li>
+    </ul>
+
+    <h2 id="quick-facts">Quick Facts</h2>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Runtime</td>
+            <td>.NET 10 (<code class="inline">net10.0-windows</code>)</td>
+          </tr>
+          <tr>
+            <td>Key Features</td>
+            <td>Event-driven watchdog, ETag jar caching, secret protection (DPAPI/CredMgr/EnvVar), OpenTelemetry (opt-in), HTTP resilience (Polly), secret redaction, CLEF JSON logging</td>
+          </tr>
+          <tr>
+            <td>Build</td>
+            <td>Deterministic, locked NuGet restore, R2R, compressed single-file, embedded PDB</td>
+          </tr>
+          <tr>
+            <td>Logging</td>
+            <td>Serilog rolling file + Windows Event Log, enriched with <code class="inline">ProcessId</code>, <code class="inline">MachineName</code>, <code class="inline">EnvironmentName</code></td>
+          </tr>
+          <tr>
+            <td>Config</td>
+            <td><code class="inline">appsettings.json</code> &mdash; Jenkins section + optional Telemetry section</td>
+          </tr>
+          <tr>
+            <td>Testing</td>
+            <td>59 unit tests (xUnit + NSubstitute + FluentAssertions)</td>
+          </tr>
+          <tr>
+            <td>CI/CD</td>
+            <td>Build + test, 6 security scans (CodeQL, Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy), dual-arch release (x64 + x86) with checksums</td>
+          </tr>
+          <tr>
+            <td>License</td>
+            <td>BSD 3-Clause</td>
+          </tr>
+          <tr>
+            <td>Install Path</td>
+            <td><code class="inline">C:\Program Files\Jenkins</code></td>
+          </tr>
+          <tr>
+            <td>Community Files</td>
+            <td><code class="inline">CONTRIBUTING.md</code>, <code class="inline">CODE_OF_CONDUCT.md</code> (Contributor Covenant v2.0), <code class="inline">Security.md</code></td>
+          </tr>
+          <tr>
+            <td>Badges</td>
+            <td>Self-hosted SVGs (<code class="inline">misc/badges/</code>) for license, .NET, platform; Shields.io for dynamic release tag</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <aside class="toc"></aside>
+
+  <script src="main.js"></script>
+</body>
+</html>
