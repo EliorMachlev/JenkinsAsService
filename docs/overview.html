@@ -1,87 +1,89 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Overview - JenkinsAsService</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overview - JenkinsAsService</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
 </head>
-<body data-theme="dark">
-    <nav class="sidebar">
-        <div class="sidebar-header">
-            <h1 class="site-title">JenkinsAsService</h1>
-        </div>
-        <ul class="nav-links">
-            <li><a href="index.html">Home</a></li>
-            <li><a href="overview.html" class="active">Overview</a></li>
-            <li><a href="architecture.html">Architecture</a></li>
-            <li><a href="configuration.html">Configuration</a></li>
-            <li><a href="api-reference.html">API Reference</a></li>
-            <li><a href="installation.html">Installation</a></li>
-            <li><a href="ci-cd.html">CI/CD &amp; Security</a></li>
-            <li><a href="troubleshooting.html">Troubleshooting</a></li>
-        </ul>
-        <div class="sidebar-footer">
-            <button class="theme-toggle" aria-label="Toggle theme">
-                <span class="theme-icon-dark">&#9790;</span>
-                <span class="theme-icon-light">&#9728;</span>
-            </button>
-            <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
-                <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-                GitHub
-            </a>
-        </div>
-    </nav>
+<body>
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
-    <button class="hamburger" aria-label="Toggle navigation">
-        <span></span>
-        <span></span>
-        <span></span>
+  <button id="hamburger" class="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+
+  <nav id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <a href="index.html" class="site-title">JenkinsAsService</a>
+    </div>
+    <button id="search-trigger" class="search-trigger" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Search docs
+      <kbd>Ctrl+K</kbd>
     </button>
+    <ul class="sidebar-nav">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="overview.html" class="active">Overview</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="configuration.html">Configuration</a></li>
+      <li><a href="api-reference.html">API Reference</a></li>
+      <li><a href="installation.html">Installation</a></li>
+      <li><a href="ci-cd.html">CI/CD &amp; Security</a></li>
+      <li><a href="troubleshooting.html">Troubleshooting</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <button id="theme-toggle" class="theme-toggle" aria-label="Switch to light theme"></button>
+      <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </nav>
 
-    <main class="content">
-        <h1>Overview</h1>
+  <main class="content">
+    <h1>Overview</h1>
 
-        <h2 id="problem">Problem</h2>
-        <p>Jenkins inbound (JNLP) agents on Windows typically require:</p>
-        <ol>
-            <li>A user to be logged in running <code class="inline">java -jar agent.jar</code> in a terminal</li>
-            <li>A scheduled task workaround that is fragile and lacks proper service lifecycle management</li>
-            <li>Manual restarts after reboots or crashes</li>
-        </ol>
+    <h2 id="problem">Problem</h2>
+    <p>Jenkins inbound (JNLP) agents on Windows typically require:</p>
+    <ol>
+      <li>A user to be logged in running <code>java -jar agent.jar</code> in a terminal</li>
+      <li>A scheduled task workaround that is fragile and lacks proper service lifecycle management</li>
+      <li>Manual restarts after reboots or crashes</li>
+    </ol>
 
-        <h2 id="solution">Solution</h2>
-        <p><strong>JenkinsAsService</strong> wraps the Jenkins inbound agent connection inside a native Windows Service built with .NET 10. The service:</p>
-        <ol>
-            <li>Reads configuration from <code class="inline">appsettings.json</code></li>
-            <li>Validates all settings (Jenkins URL with explicit port, agent secret, Java path)</li>
-            <li>Tests TCP connectivity to the Jenkins controller</li>
-            <li>Downloads <code class="inline">agent.jar</code> using ETag-based conditional GET (skips on 304 Not Modified)</li>
-            <li>Launches the Java agent process with async output parsing and secret redaction</li>
-            <li>Monitors the agent via an event-driven watchdog with exponential backoff auto-recovery</li>
-        </ol>
+    <h2 id="solution">Solution</h2>
+    <p><strong>JenkinsAsService</strong> wraps the Jenkins inbound agent connection inside a native Windows Service built with .NET 10. The service:</p>
+    <ol>
+      <li>Reads configuration from <code>appsettings.json</code></li>
+      <li>Validates all settings (Jenkins URL with explicit port, agent secret, Java path)</li>
+      <li>Tests TCP connectivity to the Jenkins controller</li>
+      <li>Downloads <code>agent.jar</code> using ETag-based conditional GET (skips on 304 Not Modified)</li>
+      <li>Launches the Java agent process with async output parsing and secret redaction</li>
+      <li>Monitors the agent via an event-driven watchdog with exponential backoff auto-recovery</li>
+    </ol>
 
-        <h2 id="key-benefits">Key Benefits</h2>
-        <ul>
-            <li><strong>Auto-start on boot</strong> &mdash; runs under LocalSystem, no interactive login required</li>
-            <li><strong>Event-driven watchdog</strong> &mdash; detects agent death instantly via <code class="inline">process.Exited</code> / <code class="inline">TaskCompletionSource</code>, auto-recovers with exponential backoff (10s&#8594;300s)</li>
-            <li><strong>Smart jar caching</strong> &mdash; ETag-based conditional GET (<code class="inline">If-None-Match</code> / 304 Not Modified) skips the download when the jar is unchanged</li>
-            <li><strong>Secret protection</strong> &mdash; DPAPI machine-scope encryption, Windows Credential Manager, system env var, or plaintext. CLI subcommand <code class="inline">update-secret</code> with <code class="inline">--impersonate</code> support</li>
-            <li><strong>HTTP resilience</strong> &mdash; Polly-based retry, circuit breaker, and timeout via <code class="inline">Microsoft.Extensions.Http.Resilience</code></li>
-            <li><strong>SEVERE crash diagnostics</strong> &mdash; counts <code class="inline">SEVERE:</code> lines per agent run; logs the count on each exit</li>
-            <li><strong>OpenTelemetry metrics</strong> &mdash; <code class="inline">jenkins_agent_restarts_total</code>, <code class="inline">jenkins_agent_severe_events_total</code>, .NET runtime metrics. Opt-in via <code class="inline">Telemetry:Enabled: true</code></li>
-            <li><strong>Dual logging</strong> &mdash; Serilog rolling file (<code class="inline">agent.log</code> or <code class="inline">agent.clef</code>) plus Windows Event Log</li>
-            <li><strong>Secret redaction</strong> &mdash; agent secrets scrubbed from all log output</li>
-            <li><strong>Single-file deploy</strong> &mdash; self-contained .exe with R2R, compression, and embedded PDB</li>
-            <li><strong>59 unit tests</strong> &mdash; xUnit + NSubstitute + FluentAssertions, CI on every push</li>
-        </ul>
+    <h2 id="key-benefits">Key Benefits</h2>
+    <ul>
+      <li><strong>Auto-start on boot</strong> &mdash; runs under LocalSystem, no interactive login required</li>
+      <li><strong>Event-driven watchdog</strong> &mdash; detects agent death instantly via <code>process.Exited</code> / <code>TaskCompletionSource</code>, auto-recovers with exponential backoff (10s&#8594;300s)</li>
+      <li><strong>Smart jar caching</strong> &mdash; ETag-based conditional GET (<code>If-None-Match</code> / 304 Not Modified) skips the download when the jar is unchanged</li>
+      <li><strong>Secret protection</strong> &mdash; DPAPI machine-scope encryption, Windows Credential Manager, system env var, or plaintext. CLI subcommand <code>update-secret</code> with <code>--impersonate</code> support</li>
+      <li><strong>HTTP resilience</strong> &mdash; Polly-based retry, circuit breaker, and timeout via <code>Microsoft.Extensions.Http.Resilience</code></li>
+      <li><strong>SEVERE crash diagnostics</strong> &mdash; counts <code>SEVERE:</code> lines per agent run; logs the count on each exit</li>
+      <li><strong>OpenTelemetry metrics</strong> &mdash; <code>jenkins_agent_restarts_total</code>, <code>jenkins_agent_severe_events_total</code>, .NET runtime metrics. Opt-in via <code>Telemetry:Enabled: true</code></li>
+      <li><strong>Dual logging</strong> &mdash; Serilog rolling file (<code>agent.log</code> or <code>agent.clef</code>) plus Windows Event Log</li>
+      <li><strong>Secret redaction</strong> &mdash; agent secrets scrubbed from all log output</li>
+      <li><strong>Single-file deploy</strong> &mdash; self-contained .exe with R2R, compression, and embedded PDB</li>
+      <li><strong>59 unit tests</strong> &mdash; xUnit + NSubstitute + FluentAssertions, CI on every push</li>
+    </ul>
 
-        <h2 id="how-it-works">How It Works</h2>
-        <pre class="mermaid">
+    <h2 id="how-it-works">How It Works</h2>
+    <pre class="mermaid">
 flowchart TD
     A[Windows Service Manager] -->|Calls ExecuteAsync| B[Validate Settings]
     B --> C{Settings OK?}
@@ -97,11 +99,29 @@ flowchart TD
     K --> I
     J -->|Yes| L["Log SEVERE count, Backoff, Re-download, Restart"]
     L --> I
-        </pre>
-    </main>
+    </pre>
+  </main>
 
-    <aside class="toc"></aside>
+  <aside class="toc">
+    <div class="toc-title">On this page</div>
+    <div id="toc-list"></div>
+  </aside>
 
-    <script src="main.js"></script>
+  <div id="search-overlay" class="search-overlay">
+    <div class="search-modal">
+      <div class="search-input-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="search-input" class="search-input" type="text" placeholder="Search documentation..." autocomplete="off">
+      </div>
+      <div id="search-results" class="search-results"></div>
+      <div class="search-footer">
+        <span><kbd>Esc</kbd> to close</span>
+        <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> to navigate</span>
+        <span><kbd>Enter</kbd> to select</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,12 +10,23 @@
   <link rel="stylesheet" href="styles.css">
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
 </head>
-<body data-theme="dark">
-  <nav class="sidebar">
+<body>
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+  <button id="hamburger" class="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+
+  <nav id="sidebar" class="sidebar">
     <div class="sidebar-header">
-      <h2 class="site-title">JenkinsAsService</h2>
+      <a href="index.html" class="site-title">JenkinsAsService</a>
     </div>
-    <ul class="nav-links">
+    <button id="search-trigger" class="search-trigger" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Search docs
+      <kbd>Ctrl+K</kbd>
+    </button>
+    <ul class="sidebar-nav">
       <li><a href="index.html" class="active">Home</a></li>
       <li><a href="overview.html">Overview</a></li>
       <li><a href="architecture.html">Architecture</a></li>
@@ -26,9 +37,7 @@
       <li><a href="troubleshooting.html">Troubleshooting</a></li>
     </ul>
     <div class="sidebar-footer">
-      <button class="theme-toggle" aria-label="Toggle theme">
-        <span class="theme-toggle-icon"></span>
-      </button>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Switch to light theme"></button>
       <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
         <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
@@ -36,18 +45,12 @@
     </div>
   </nav>
 
-  <button class="hamburger" aria-label="Toggle navigation">
-    <span></span><span></span><span></span>
-  </button>
-
   <main class="content">
     <h1>JenkinsAsService</h1>
 
-    <div class="callout callout-summary">
+    <div class="callout callout--summary">
       <div class="callout-title">Summary</div>
-      <div class="callout-content">
-        <p>A .NET 10 Windows Service that runs a Jenkins Agent (JNLP/inbound) natively. Includes an event-driven watchdog with auto-recovery, secret protection (DPAPI/CredMgr/EnvVar), structured logging with Serilog, ETag-based jar caching, and optional OpenTelemetry metrics. Eliminates the need for manual agent startup, login sessions, or scheduled tasks.</p>
-      </div>
+      <p>A .NET 10 Windows Service that runs a Jenkins Agent (JNLP/inbound) natively. Includes an event-driven watchdog with auto-recovery, secret protection (DPAPI/CredMgr/EnvVar), structured logging with Serilog, ETag-based jar caching, and optional OpenTelemetry metrics. Eliminates the need for manual agent startup, login sessions, or scheduled tasks.</p>
     </div>
 
     <h2 id="documentation">Documentation</h2>
@@ -64,7 +67,7 @@
 
     <h2 id="quick-facts">Quick Facts</h2>
 
-    <div class="table-wrapper">
+    <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -75,7 +78,7 @@
         <tbody>
           <tr>
             <td>Runtime</td>
-            <td>.NET 10 (<code class="inline">net10.0-windows</code>)</td>
+            <td>.NET 10 (<code>net10.0-windows</code>)</td>
           </tr>
           <tr>
             <td>Key Features</td>
@@ -87,11 +90,11 @@
           </tr>
           <tr>
             <td>Logging</td>
-            <td>Serilog rolling file + Windows Event Log, enriched with <code class="inline">ProcessId</code>, <code class="inline">MachineName</code>, <code class="inline">EnvironmentName</code></td>
+            <td>Serilog rolling file + Windows Event Log, enriched with <code>ProcessId</code>, <code>MachineName</code>, <code>EnvironmentName</code></td>
           </tr>
           <tr>
             <td>Config</td>
-            <td><code class="inline">appsettings.json</code> &mdash; Jenkins section + optional Telemetry section</td>
+            <td><code>appsettings.json</code> &mdash; Jenkins section + optional Telemetry section</td>
           </tr>
           <tr>
             <td>Testing</td>
@@ -107,22 +110,41 @@
           </tr>
           <tr>
             <td>Install Path</td>
-            <td><code class="inline">C:\Program Files\Jenkins</code></td>
+            <td><code>C:\Program Files\Jenkins</code></td>
           </tr>
           <tr>
             <td>Community Files</td>
-            <td><code class="inline">CONTRIBUTING.md</code>, <code class="inline">CODE_OF_CONDUCT.md</code> (Contributor Covenant v2.0), <code class="inline">Security.md</code></td>
+            <td><code>CONTRIBUTING.md</code>, <code>CODE_OF_CONDUCT.md</code> (Contributor Covenant v2.0), <code>Security.md</code></td>
           </tr>
           <tr>
             <td>Badges</td>
-            <td>Self-hosted SVGs (<code class="inline">misc/badges/</code>) for license, .NET, platform; Shields.io for dynamic release tag</td>
+            <td>Self-hosted SVGs (<code>misc/badges/</code>) for license, .NET, platform; Shields.io for dynamic release tag</td>
           </tr>
         </tbody>
       </table>
     </div>
   </main>
 
-  <aside class="toc"></aside>
+  <aside class="toc">
+    <div class="toc-title">On this page</div>
+    <div id="toc-list"></div>
+  </aside>
+
+  <!-- Search overlay -->
+  <div id="search-overlay" class="search-overlay">
+    <div class="search-modal">
+      <div class="search-input-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="search-input" class="search-input" type="text" placeholder="Search documentation..." autocomplete="off">
+      </div>
+      <div id="search-results" class="search-results"></div>
+      <div class="search-footer">
+        <span><kbd>Esc</kbd> to close</span>
+        <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> to navigate</span>
+        <span><kbd>Enter</kbd> to select</span>
+      </div>
+    </div>
+  </div>
 
   <script src="main.js"></script>
 </body>
