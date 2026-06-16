@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Reference - JenkinsAsService Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+</head>
+<body data-theme="dark">
+
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2 class="site-title">JenkinsAsService</h2>
+    </div>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="overview.html">Overview</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="configuration.html">Configuration</a></li>
+      <li><a href="api-reference.html" class="active">API Reference</a></li>
+      <li><a href="installation.html">Installation</a></li>
+      <li><a href="ci-cd.html">CI/CD &amp; Security</a></li>
+      <li><a href="troubleshooting.html">Troubleshooting</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </nav>
+
+  <button class="hamburger" id="hamburger" aria-label="Toggle navigation">
+    <span></span><span></span><span></span>
+  </button>
+
+  <main class="content">
+    <h1>Class &amp; Method Reference</h1>
+    <p>The .NET 10 version consists of 14 source files split across interfaces, implementations, CLI, and a central <code class="inline">BackgroundService</code>.</p>
+
+    <hr>
+
+    <h2 id="servicesettings"><code class="inline">ServiceSettings</code></h2>
+    <p><strong>File:</strong> <code class="inline">ServiceSettings.cs</code></p>
+    <p>Simple POCO bound from <code class="inline">appsettings.json</code> via <code class="inline">IOptions&lt;ServiceSettings&gt;</code>. Properties:</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Type</th>
+          <th>Default</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code class="inline">JenkinsURL</code></td>
+          <td><code class="inline">string</code></td>
+          <td><code class="inline">""</code></td>
+          <td>Jenkins URL with explicit port</td>
+        </tr>
+        <tr>
+          <td><code class="inline">AgentName</code></td>
+          <td><code class="inline">string</code></td>
+          <td><code class="inline">""</code></td>
+          <td>Agent name (defaults to hostname at runtime)</td>
+        </tr>
+        <tr>
+          <td><code class="inline">AgentSecret</code></td>
+          <td><code class="inline">string</code></td>
+          <td><code class="inline">""</code></td>
+          <td>JNLP secret (or reference/ciphertext depending on SecretMode)</td>
+        </tr>
+        <tr>
+          <td><code class="inline">SecretMode</code></td>
+          <td><code class="inline">SecretMode</code></td>
+          <td><code class="inline">Unprotected</code></td>
+          <td>How <code class="inline">AgentSecret</code> is stored/resolved</td>
+        </tr>
+        <tr>
+          <td><code class="inline">JavaPath</code></td>
+          <td><code class="inline">string</code></td>
+          <td><code class="inline">""</code></td>
+          <td>Path to JDK bin folder</td>
+        </tr>
+        <tr>
+          <td><code class="inline">CustomArguments</code></td>
+          <td><code class="inline">string</code></td>
+          <td><code class="inline">""</code></td>
+          <td>Extra java.exe arguments (supports quoted values)</td>
+        </tr>
+        <tr>
+          <td><code class="inline">DebugMode</code></td>
+          <td><code class="inline">bool</code></td>
+          <td><code class="inline">false</code></td>
+          <td>Verbose logging</td>
+        </tr>
+        <tr>
+          <td><code class="inline">CompactLog</code></td>
+          <td><code class="inline">bool</code></td>
+          <td><code class="inline">false</code></td>
+          <td>CLEF JSON log output (<code class="inline">agent.clef</code> instead of <code class="inline">agent.log</code>)</td>
+        </tr>
+        <tr>
+          <td><code class="inline">RetainedLogs</code></td>
+          <td><code class="inline">int</code></td>
+          <td><code class="inline">3</code></td>
+          <td>Number of rolled log files to keep (oldest permanently deleted)</td>
+        </tr>
+        <tr>
+          <td><code class="inline">MaxRetries</code></td>
+          <td><code class="inline">int</code></td>
+          <td><code class="inline">0</code></td>
+          <td>Max recovery attempts (0 = infinite)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="telemetrysettings"><code class="inline">TelemetrySettings</code></h2>
+    <p><strong>File:</strong> <code class="inline">TelemetrySettings.cs</code></p>
+    <p>POCO bound from <code class="inline">appsettings.json</code> section <code class="inline">Telemetry</code>. All optional — service functions normally with defaults.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Type</th>
+          <th>Default</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code class="inline">Enabled</code></td>
+          <td><code class="inline">bool</code></td>
+          <td><code class="inline">false</code></td>
+          <td>Enable OpenTelemetry export</td>
+        </tr>
+        <tr>
+          <td><code class="inline">OtlpEndpoint</code></td>
+          <td><code class="inline">string</code></td>
+          <td><code class="inline">""</code></td>
+          <td>OTLP gRPC exporter endpoint (empty = export disabled even when <code class="inline">Enabled: true</code>)</td>
+        </tr>
+        <tr>
+          <td><code class="inline">ServiceName</code></td>
+          <td><code class="inline">string</code></td>
+          <td><code class="inline">"JenkinsAsService"</code></td>
+          <td><code class="inline">service.name</code> resource attribute</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="secretwriter-secretresolver-updatesecretcommand"><code class="inline">SecretWriter</code> / <code class="inline">SecretResolver</code> / <code class="inline">UpdateSecretCommand</code></h2>
+    <p><strong>Files:</strong> <code class="inline">SecretWriter.cs</code>, <code class="inline">SecretResolver.cs</code>, <code class="inline">UpdateSecretCommand.cs</code>, <code class="inline">SecretMode.cs</code></p>
+
+    <h3 id="secretwriter-writeconfig"><code class="inline">SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath)</code></h3>
+    <p>Processes <code class="inline">secret</code> for the given <code class="inline">mode</code> (DPAPI encrypt / store env var / store CredMgr entry / leave plaintext), then writes <code class="inline">appsettings.json</code>. Preserves all existing top-level JSON sections (e.g. <code class="inline">Telemetry</code>) and existing Jenkins fields not explicitly provided (<code class="inline">CustomArguments</code>, <code class="inline">DebugMode</code>, etc.).</p>
+
+    <h3 id="secretresolver-resolve"><code class="inline">SecretResolver.Resolve(ServiceSettings)</code></h3>
+    <p>Resolves the raw secret at service startup:</p>
+    <ul>
+      <li><code class="inline">Unprotected</code> — returns <code class="inline">AgentSecret</code> as-is</li>
+      <li><code class="inline">Dpapi</code> — <code class="inline">ProtectedData.Unprotect</code> (machine-scoped, same entropy as writer)</li>
+      <li><code class="inline">EnvironmentVariable</code> — reads machine-level env var named by <code class="inline">AgentSecret</code></li>
+      <li><code class="inline">CredentialManager</code> — reads Credential Manager entry named by <code class="inline">AgentSecret</code></li>
+    </ul>
+
+    <h3 id="updatesecretcommand-run"><code class="inline">UpdateSecretCommand.Run(args, basePath?)</code></h3>
+    <p>CLI subcommand (<code class="inline">JenkinsAsService.exe update-secret</code>). Parses args manually (no System.CommandLine dependency). Returns <code class="inline">0</code> on success, <code class="inline">1</code> on error. Supports interactive and <code class="inline">--silent</code> modes; <code class="inline">--impersonate</code> wraps the write in <code class="inline">WindowsIdentity.RunImpersonated</code> via P/Invoke <code class="inline">LogonUser</code>.</p>
+
+    <p><strong>Argument parsing internals:</strong></p>
+    <ul>
+      <li><code class="inline">ParseState</code> — private mutable accumulator class; avoids a 10-parameter method signature</li>
+      <li><code class="inline">TryApplyValueArg(args, ref i, state)</code> — switch over value-args (<code class="inline">--secret</code>, <code class="inline">--url</code>, <code class="inline">--mode</code>, ...); CC &le; 9</li>
+      <li><code class="inline">TryApplyFlagArg(arg, state)</code> — switch over boolean flags (<code class="inline">--silent</code>, <code class="inline">--impersonate</code>); CC = 3</li>
+      <li><code class="inline">ParseArgs</code> itself has CC = 4 (loop + two-condition if)</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="ijardownloader-httpjardownloader"><code class="inline">IJarDownloader</code> / <code class="inline">HttpJarDownloader</code></h2>
+    <p><strong>Files:</strong> <code class="inline">IJarDownloader.cs</code>, <code class="inline">HttpJarDownloader.cs</code></p>
+
+    <h3 id="ijardownloader-interface"><code class="inline">IJarDownloader</code> (Interface)</h3>
+    <pre><code class="language-csharp">Task DownloadAsync(string jenkinsUrl, string destinationPath, CancellationToken ct);</code></pre>
+
+    <h3 id="httpjardownloader-implementation"><code class="inline">HttpJarDownloader</code> (Implementation)</h3>
+    <p>Downloads <code class="inline">agent.jar</code> from <code class="inline">$jenkinsUrl/jnlpJars/agent.jar</code> using a named <code class="inline">HttpClient</code> (<code class="inline">"JarDownloader"</code>) with Polly resilience (automatic retry, circuit breaker, timeout).</p>
+    <p><strong>ETag caching:</strong> Stores the server's <code class="inline">ETag</code> response header in <code class="inline">agent.jar.etag</code>. On subsequent calls, sends <code class="inline">If-None-Match</code> — a <code class="inline">304 Not Modified</code> skips the download entirely. If the jar file is missing, the etag file is ignored (preventing a 304 that would leave the caller without a jar). On <code class="inline">200</code> with no <code class="inline">ETag</code> header, the etag file is deleted so the next call is unconditional.</p>
+
+    <hr>
+
+    <h2 id="iconnectivitychecker-tcpconnectivitychecker"><code class="inline">IConnectivityChecker</code> / <code class="inline">TcpConnectivityChecker</code></h2>
+    <p><strong>Files:</strong> <code class="inline">IConnectivityChecker.cs</code>, <code class="inline">TcpConnectivityChecker.cs</code></p>
+
+    <h3 id="iconnectivitychecker-interface"><code class="inline">IConnectivityChecker</code> (Interface)</h3>
+    <pre><code class="language-csharp">Task TestAsync(string host, int port, int timeoutMs, CancellationToken ct);</code></pre>
+
+    <h3 id="tcpconnectivitychecker-implementation"><code class="inline">TcpConnectivityChecker</code> (Implementation)</h3>
+    <p>Creates <code class="inline">TcpClient</code>, connects async with configurable timeout via <code class="inline">CancellationTokenSource.CreateLinkedTokenSource</code>. Distinguishes timeout (<code class="inline">OperationCanceledException</code>) from connection refused (<code class="inline">SocketException</code>).</p>
+
+    <hr>
+
+    <h2 id="program-cs"><code class="inline">Program.cs</code></h2>
+    <p><strong>Top-level statements.</strong> Responsibilities:</p>
+    <ol>
+      <li>Reads config early to determine <code class="inline">DebugMode</code>, <code class="inline">CompactLog</code>, and <code class="inline">RetainedLogs</code> for Serilog configuration</li>
+      <li>Configures Serilog:
+        <ul>
+          <li>Rolling file sink (10MB, configurable retention via <code class="inline">RetainedLogs</code>, default 3) — human-readable (<code class="inline">agent.log</code>) or CLEF JSON (<code class="inline">agent.clef</code>) based on <code class="inline">CompactLog</code></li>
+          <li>EventLog sink (Warning+)</li>
+          <li>Enrichers: <code class="inline">Pid</code>, <code class="inline">MachineName</code>, <code class="inline">EnvironmentName</code></li>
+        </ul>
+      </li>
+      <li>Builds the host with:
+        <ul>
+          <li><code class="inline">AddWindowsService</code></li>
+          <li><code class="inline">IOptions&lt;ServiceSettings&gt;</code></li>
+          <li>Named <code class="inline">HttpClient</code> (<code class="inline">"JarDownloader"</code>) with <code class="inline">AddStandardResilienceHandler()</code></li>
+          <li><code class="inline">IJarDownloader</code> &rarr; <code class="inline">HttpJarDownloader</code></li>
+          <li><code class="inline">IConnectivityChecker</code> &rarr; <code class="inline">TcpConnectivityChecker</code></li>
+          <li><code class="inline">JenkinsAgentWorker</code> (hosted service)</li>
+        </ul>
+      </li>
+      <li>Validates mandatory fields before <code class="inline">host.RunAsync()</code></li>
+      <li>Global try/catch logs fatal errors via Serilog</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="jenkinsagentworker"><code class="inline">JenkinsAgentWorker : BackgroundService</code></h2>
+    <p><strong>File:</strong> <code class="inline">JenkinsAgentWorker.cs</code> — The main service class.</p>
+
+    <h3 id="constructor">Constructor</h3>
+    <p>Injected dependencies: <code class="inline">ILogger&lt;JenkinsAgentWorker&gt;</code>, <code class="inline">IOptions&lt;ServiceSettings&gt;</code>, <code class="inline">IJarDownloader</code>, <code class="inline">IConnectivityChecker</code>, <code class="inline">ISecretResolver</code>.</p>
+    <p>Sets <code class="inline">_basePath</code> to <code class="inline">AppContext.BaseDirectory</code>. Creates <code class="inline">Meter("JenkinsAsService", "1.0.0")</code> and two counters (<code class="inline">jenkins_agent_restarts_total</code>, <code class="inline">jenkins_agent_severe_events_total</code>) — zero-overhead when no OTel listener is registered.</p>
+
+    <h3 id="executeasync"><code class="inline">ExecuteAsync(CancellationToken)</code></h3>
+    <p>Service entry point. Calls in sequence:</p>
+    <ol>
+      <li><code class="inline">ValidateSettings()</code> &rarr; <code class="inline">ResolveJavaPath()</code></li>
+      <li><code class="inline">TestConnectivityAsync()</code> &rarr; <code class="inline">IJarDownloader.DownloadAsync()</code></li>
+      <li><code class="inline">StartAgentProcess()</code> &rarr; <code class="inline">RunWatchdogAsync()</code></li>
+    </ol>
+    <p>Catches <code class="inline">OperationCanceledException</code> for clean shutdown. Any other exception is logged and re-thrown (stops the host).</p>
+
+    <h3 id="stopasync"><code class="inline">StopAsync(CancellationToken)</code></h3>
+    <p>Logs stop request, calls <code class="inline">KillAgent()</code>, logs confirmation, calls <code class="inline">base.StopAsync()</code>.</p>
+
+    <hr>
+
+    <h3 id="validation-methods">Validation Methods</h3>
+
+    <h4 id="validatesettings-static"><code class="inline">ValidateSettings(ServiceSettings)</code> (internal static)</h4>
+    <p>Testable static method. Checks <code class="inline">JenkinsURL</code> and <code class="inline">AgentSecret</code> are non-empty. Parses URL via <code class="inline">System.Uri</code> and rejects <code class="inline">Uri.IsDefaultPort</code> (requires explicit port).</p>
+
+    <h4 id="validatesettings-instance"><code class="inline">ValidateSettings()</code> (private instance)</h4>
+    <p>Calls the static overload, then resolves <code class="inline">AgentName</code> to <code class="inline">Environment.MachineName</code> if empty — stored in a private <code class="inline">_agentName</code> field without mutating the <code class="inline">ServiceSettings</code> object.</p>
+
+    <h4 id="resolvejavapath"><code class="inline">ResolveJavaPath(string? configuredPath, string? javaHome)</code> (internal static)</h4>
+    <p>Testable static method. Builds candidate list: <code class="inline">configuredPath</code> &rarr; <code class="inline">javaHome</code> &rarr; <code class="inline">javaHome\bin</code>. Returns the first path containing <code class="inline">java.exe</code>. Throws if none found.</p>
+
+    <hr>
+
+    <h3 id="agent-lifecycle-methods">Agent Lifecycle Methods</h3>
+
+    <h4 id="startagentprocess"><code class="inline">StartAgentProcess()</code> &rarr; <code class="inline">Process</code></h4>
+    <p>Creates <code class="inline">ProcessStartInfo</code> with <code class="inline">ArgumentList</code> (no shell interpretation):</p>
+    <ul>
+      <li><code class="inline">-jar agent.jar -url ... -secret ... -name ... -workDir ...</code></li>
+      <li>Parses <code class="inline">CustomArguments</code> via <code class="inline">ParseArguments()</code> (supports quoted values with spaces)</li>
+    </ul>
+    <p>Hooks <code class="inline">OutputDataReceived</code> and <code class="inline">ErrorDataReceived</code> to <code class="inline">ParseAgentOutput()</code>. Returns the started <code class="inline">Process</code>.</p>
+
+    <h4 id="parsearguments"><code class="inline">ParseArguments(string?)</code> (internal static)</h4>
+    <p>Parses a string of arguments respecting double-quoted values:</p>
+    <ul>
+      <li><code class="inline">"-Dpath=C:\Program Files\Java"</code> &rarr; single argument with spaces preserved</li>
+      <li>Escaped quotes inside quoted arguments: <code class="inline">\"</code> &rarr; literal <code class="inline">"</code></li>
+      <li>Unquoted tokens split on whitespace</li>
+    </ul>
+
+    <h4 id="parseagentoutput"><code class="inline">ParseAgentOutput(string line)</code> (internal)</h4>
+    <p>Routes Java output by prefix. Redacts <code class="inline">_resolvedSecret</code> from the line before logging (protects against Jenkins echoing the secret on auth failure). All log calls use the shared <code class="inline">OutputMessageTemplate</code> constant (<code class="inline">"{Output}"</code>) to avoid repeating the structured-logging key.</p>
+    <ul>
+      <li><code class="inline">INFO: </code> &rarr; <code class="inline">LogInformation</code></li>
+      <li><code class="inline">WARNING: </code> &rarr; <code class="inline">LogWarning</code></li>
+      <li><code class="inline">SEVERE: </code> &rarr; <code class="inline">LogError</code> + <code class="inline">Interlocked.Increment(ref _severeCount)</code> + <code class="inline">_severeEventCounter.Add(1)</code></li>
+      <li>Other &rarr; <code class="inline">LogInformation</code> (or <code class="inline">LogDebug</code> when <code class="inline">DebugMode</code> is on)</li>
+    </ul>
+
+    <hr>
+
+    <h3 id="watchdog-methods">Watchdog Methods</h3>
+
+    <h4 id="runwatchdogasync"><code class="inline">RunWatchdogAsync(CancellationToken)</code></h4>
+    <p>Event-driven loop using <code class="inline">Task.WhenAny(exitTask, Task.Delay(StabilityMs))</code>. <code class="inline">exitTask</code> is a <code class="inline">TaskCompletionSource.Task</code> completed by <code class="inline">process.Exited</code>. No polling.</p>
+    <p>On exit detected:</p>
+    <ol>
+      <li>Logs SEVERE count (via <code class="inline">Interlocked.Exchange(ref _severeCount, 0)</code>)</li>
+      <li>Captures exit code, calls <code class="inline">KillAgent()</code> to dispose</li>
+      <li>Increments retry counter, checks <code class="inline">MaxRetries</code></li>
+      <li>Calls <code class="inline">RecoverAgentAsync(retryCount, ct)</code></li>
+    </ol>
+    <p>On stability window elapsed (agent still running):</p>
+    <ul>
+      <li>If <code class="inline">retryCount &gt; 0</code>: resets to 0 and logs stability message</li>
+    </ul>
+
+    <h4 id="recoveragentasync"><code class="inline">RecoverAgentAsync(int retryCount, CancellationToken)</code></h4>
+    <ol>
+      <li>Waits exponential backoff (10s base, 300s cap)</li>
+      <li>Tests TCP connectivity — if unreachable, logs warning, resets <code class="inline">_agentExitTcs</code>, returns <code class="inline">false</code></li>
+      <li>Downloads <code class="inline">agent.jar</code> via <code class="inline">IJarDownloader</code> (ETag cached)</li>
+      <li>Starts new process via <code class="inline">StartAgentProcess()</code></li>
+      <li>Returns <code class="inline">true</code> on success; caller increments <code class="inline">_restartCounter</code> only on <code class="inline">true</code></li>
+    </ol>
+    <p>On failure: a fresh uncompleted <code class="inline">TaskCompletionSource</code> is assigned so the watchdog loop waits properly instead of immediately re-entering recovery.</p>
+
+    <h4 id="killagent"><code class="inline">KillAgent()</code></h4>
+    <p>Kills the Java process tree (<code class="inline">Kill(entireProcessTree: true)</code>), disposes the <code class="inline">Process</code> object, sets reference to <code class="inline">null</code>. Catches <code class="inline">InvalidOperationException</code> (process already exited).</p>
+  </main>
+
+  <aside class="toc" id="toc"></aside>
+
+  <script src="main.js"></script>
+</body>
+</html>

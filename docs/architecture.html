@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture - JenkinsAsService</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+</head>
+<body data-theme="dark">
+    <button class="hamburger" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h1 class="site-title">JenkinsAsService</h1>
+        </div>
+        <ul class="nav-links">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="overview.html">Overview</a></li>
+            <li><a href="architecture.html" class="active">Architecture</a></li>
+            <li><a href="configuration.html">Configuration</a></li>
+            <li><a href="api-reference.html">API Reference</a></li>
+            <li><a href="installation.html">Installation</a></li>
+            <li><a href="ci-cd.html">CI/CD &amp; Security</a></li>
+            <li><a href="troubleshooting.html">Troubleshooting</a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <button class="theme-toggle" aria-label="Toggle theme">
+                <span class="theme-icon-dark">&#9790;</span>
+                <span class="theme-icon-light">&#9788;</span>
+            </button>
+            <a href="https://github.com/EliorMachlev/JenkinsAsService" class="github-link" target="_blank" rel="noopener noreferrer">
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                GitHub
+            </a>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>Architecture</h1>
+
+        <h2 id="project-structure">Project Structure</h2>
+
+        <pre><code class="language-text">JenkinsAsService/
+&#x251C;&#x2500;&#x2500; src/
+&#x2502;   &#x2514;&#x2500;&#x2500; JenkinsAsService/
+&#x2502;       &#x251C;&#x2500;&#x2500; JenkinsAsService.csproj    # .NET 10 Worker Service
+&#x2502;       &#x251C;&#x2500;&#x2500; Program.cs                 # Host builder, Serilog config, DI, OTel
+&#x2502;       &#x251C;&#x2500;&#x2500; Properties/AssemblyInfo.cs # Explicit assembly attributes (for Codacy)
+&#x2502;       &#x251C;&#x2500;&#x2500; ServiceSettings.cs         # Jenkins config POCO
+&#x2502;       &#x251C;&#x2500;&#x2500; TelemetrySettings.cs       # OpenTelemetry config POCO
+&#x2502;       &#x251C;&#x2500;&#x2500; SecretMode.cs              # Enum: Unprotected, Dpapi, EnvironmentVariable, CredentialManager
+&#x2502;       &#x251C;&#x2500;&#x2500; ISecretResolver.cs         # Secret resolution abstraction
+&#x2502;       &#x251C;&#x2500;&#x2500; SecretResolver.cs          # DPAPI / CredMgr / EnvVar / plaintext resolver
+&#x2502;       &#x251C;&#x2500;&#x2500; SecretWriter.cs            # Writes appsettings.json; stores secret per mode
+&#x2502;       &#x251C;&#x2500;&#x2500; UpdateSecretCommand.cs     # CLI subcommand: update-secret
+&#x2502;       &#x251C;&#x2500;&#x2500; JenkinsAgentWorker.cs      # BackgroundService &mdash; validation, process, watchdog, OTel
+&#x2502;       &#x251C;&#x2500;&#x2500; IJarDownloader.cs          # Jar download abstraction
+&#x2502;       &#x251C;&#x2500;&#x2500; HttpJarDownloader.cs       # HTTP jar downloader with ETag caching
+&#x2502;       &#x251C;&#x2500;&#x2500; IConnectivityChecker.cs    # Connectivity check abstraction
+&#x2502;       &#x251C;&#x2500;&#x2500; TcpConnectivityChecker.cs  # TCP connectivity implementation
+&#x2502;       &#x251C;&#x2500;&#x2500; appsettings.json           # Configuration file
+&#x2502;       &#x2514;&#x2500;&#x2500; packages.lock.json         # Locked NuGet restore
+&#x251C;&#x2500;&#x2500; src/
+&#x2502;   &#x2514;&#x2500;&#x2500; JenkinsAsService.Installer/    # WiX v5 MSI installer project
+&#x251C;&#x2500;&#x2500; tests/
+&#x2502;   &#x2514;&#x2500;&#x2500; JenkinsAsService.Tests/        # 59 xUnit unit tests
+&#x251C;&#x2500;&#x2500; .github/
+&#x2502;   &#x2514;&#x2500;&#x2500; workflows/                     # CI/CD: build, test, 6 security scans, release
+&#x251C;&#x2500;&#x2500; ReadMe.md
+&#x251C;&#x2500;&#x2500; Security.md
+&#x2514;&#x2500;&#x2500; LICENSE                            # BSD 3-Clause</code></pre>
+
+        <h2 id="runtime-file-layout">Runtime File Layout (Installed)</h2>
+
+        <pre><code class="language-text">C:\Program Files\Jenkins\
+&#x251C;&#x2500;&#x2500; JenkinsAsService.exe     # Self-contained .NET 10 executable
+&#x251C;&#x2500;&#x2500; appsettings.json         # Configuration
+&#x251C;&#x2500;&#x2500; agent.jar                # Downloaded from Jenkins (ETag cached)
+&#x251C;&#x2500;&#x2500; agent.jar.etag           # Stored ETag for conditional GET
+&#x251C;&#x2500;&#x2500; agent.log                # Serilog rolling log file
+&#x251C;&#x2500;&#x2500; agent_001.log            # Rolled log (size-based)
+&#x251C;&#x2500;&#x2500; agent_002.log            # Older rolled log
+&#x251C;&#x2500;&#x2500; agent_003.log            # Oldest kept log
+&#x2514;&#x2500;&#x2500; remoting/                # Jenkins remoting work directory</code></pre>
+
+        <h2 id="service-lifecycle">Service Lifecycle</h2>
+
+        <h3 id="executeasync-start">ExecuteAsync (Start)</h3>
+
+        <p><code class="inline">JenkinsAgentWorker.ExecuteAsync()</code> is the <code class="inline">BackgroundService</code> entry point:</p>
+
+        <ol>
+            <li><strong>Log session banner</strong> &mdash; <code class="inline">=== SERVICE STARTING (PID: ...) ===</code></li>
+            <li><strong><code class="inline">ValidateSettings()</code></strong> &mdash; Checks mandatory fields, rejects default-port URLs</li>
+            <li><strong><code class="inline">ResolveJavaPath()</code></strong> &mdash; Checks <code class="inline">JavaPath</code> config &rarr; <code class="inline">JAVA_HOME</code> &rarr; <code class="inline">JAVA_HOME\bin</code></li>
+            <li><strong><code class="inline">TestConnectivityAsync()</code></strong> &mdash; Delegates to <code class="inline">IConnectivityChecker</code> (TCP with 2s timeout)</li>
+            <li><strong><code class="inline">IJarDownloader.DownloadAsync()</code></strong> &mdash; Conditional GET with Polly resilience</li>
+            <li><strong><code class="inline">StartAgentProcess()</code></strong> &mdash; Launches Java via <code class="inline">Process</code> with async output parsing</li>
+            <li><strong><code class="inline">RunWatchdogAsync()</code></strong> &mdash; Enters monitoring loop</li>
+        </ol>
+
+        <h3 id="stopasync">StopAsync</h3>
+
+        <ol>
+            <li>Logs the stop request</li>
+            <li>Kills the Java process tree (<code class="inline">Process.Kill(entireProcessTree: true)</code>)</li>
+            <li>Logs confirmation</li>
+        </ol>
+
+        <h2 id="execution-model">Execution Model</h2>
+
+        <p>The Java process is managed directly via <code class="inline">System.Diagnostics.Process</code>:</p>
+
+        <ul>
+            <li><code class="inline">ProcessStartInfo.ArgumentList</code> for safe argument passing (no shell interpretation)</li>
+            <li><code class="inline">RedirectStandardOutput</code> + <code class="inline">RedirectStandardError</code> with async event handlers</li>
+            <li><code class="inline">OutputDataReceived</code> / <code class="inline">ErrorDataReceived</code> &rarr; <code class="inline">ParseAgentOutput()</code>:
+                <ul>
+                    <li><code class="inline">INFO: ...</code> &rarr; <code class="inline">LogInformation</code></li>
+                    <li><code class="inline">WARNING: ...</code> &rarr; <code class="inline">LogWarning</code></li>
+                    <li><code class="inline">SEVERE: ...</code> &rarr; <code class="inline">LogError</code></li>
+                    <li>Everything else &rarr; <code class="inline">LogInformation</code> (or <code class="inline">LogDebug</code> in debug mode)</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h2 id="watchdog-auto-recovery">Watchdog &amp; Auto-Recovery</h2>
+
+        <p><code class="inline">RunWatchdogAsync()</code> is <strong>event-driven</strong> &mdash; it awaits <code class="inline">Task.WhenAny(exitTask, Task.Delay(StabilityMs))</code> where <code class="inline">exitTask</code> is a <code class="inline">TaskCompletionSource</code> completed by the <code class="inline">process.Exited</code> event. No polling.</p>
+
+        <pre class="mermaid">flowchart TD
+    A[Watchdog Loop] -->|Await exit signal OR 60s stability timer| B{exitTask completed?}
+    B -->|No — 60s elapsed, agent still alive| C{retryCount > 0?}
+    C -->|Yes| D[Reset retry counter, log stability]
+    C -->|No| A
+    D --> A
+    B -->|Yes — process exited| E[Log SEVERE count, capture exit code, KillAgent]
+    E --> F{MaxRetries exceeded?}
+    F -->|Yes| G[Log error and stop]
+    F -->|No| H["Wait with exponential backoff (10s→300s)"]
+    H --> I[Test TCP connectivity]
+    I -->|Unreachable| J[Log warning, reset TCS, loop]
+    J --> A
+    I -->|OK| K["ETag conditional GET agent.jar"]
+    K --> L[Start new process, subscribe Exited before Start]
+    L --> M["_restartCounter.Add(1)"]
+    M --> A</pre>
+
+        <ul>
+            <li><strong>Exit detection:</strong> instant via <code class="inline">process.Exited</code> &rarr; <code class="inline">TCS.TrySetResult()</code>, subscribed <strong>before</strong> <code class="inline">process.Start()</code></li>
+            <li><strong>Fast-crash guard:</strong> After <code class="inline">Start()</code>, if <code class="inline">process.HasExited</code> is already true, <code class="inline">TCS.TrySetResult()</code> is called defensively</li>
+            <li><strong>Failed recovery:</strong> If connectivity check or download fails, a fresh uncompleted TCS is assigned so the loop waits properly instead of spinning</li>
+            <li><strong>Backoff:</strong> 10s &rarr; 20s &rarr; 40s &rarr; 80s &rarr; ... capped at 300s</li>
+            <li><strong>Retry reset:</strong> After 60s of stability, retry counter resets to 0</li>
+            <li><strong>MaxRetries:</strong> <code class="inline">0</code> = infinite (default)</li>
+            <li><strong>SEVERE counter:</strong> <code class="inline">_severeCount</code> is <code class="inline">Interlocked.Increment</code>-ed per SEVERE line; read and reset via <code class="inline">Interlocked.Exchange</code> on each exit</li>
+        </ul>
+
+        <h2 id="logging-serilog">Logging (Serilog)</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Sink</th>
+                    <th>What Gets Written</th>
+                    <th>Configuration</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Rolling file (<code class="inline">agent.log</code> or <code class="inline">agent.clef</code>)</td>
+                    <td>All log entries</td>
+                    <td>10MB size limit, configurable retention (<code class="inline">RetainedLogs</code>, default 3). CLEF JSON when <code class="inline">CompactLog: true</code></td>
+                </tr>
+                <tr>
+                    <td>Windows Event Log (<code class="inline">Application/JenkinsAsService</code>)</td>
+                    <td>Warnings and Errors only</td>
+                    <td>Source auto-created</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Enrichers: <code class="inline">ProcessId</code>, <code class="inline">MachineName</code>, <code class="inline">EnvironmentName</code>.</p>
+
+        <p>Output format: <code class="inline">&lt;PID&gt; | &lt;datetime&gt; | &lt;Level&gt; | &lt;message&gt;</code></p>
+
+        <div class="callout callout-tip">
+            <p class="callout-title">Tip</p>
+            <p>Set <code class="inline">CompactLog: true</code> for CLEF JSON output (<code class="inline">agent.clef</code>). Useful for Seq, Datadog, or any log aggregator.</p>
+        </div>
+
+        <h2 id="http-resilience">HTTP Resilience</h2>
+
+        <p>The <code class="inline">HttpClient</code> used by <code class="inline">HttpJarDownloader</code> is registered as a named client (<code class="inline">"JarDownloader"</code>) with <code class="inline">AddStandardResilienceHandler()</code> from <code class="inline">Microsoft.Extensions.Http.Resilience</code>. This provides automatic retry, circuit breaker, and timeout. Separate from the watchdog's recovery loop.</p>
+
+        <h2 id="constants">Constants</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Constant</th>
+                    <th>Value</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">BackoffBaseSec</code></td>
+                    <td><code class="inline">10</code></td>
+                    <td>Initial backoff delay (seconds)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">BackoffMaxSec</code></td>
+                    <td><code class="inline">300</code></td>
+                    <td>Maximum backoff delay (seconds)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">StabilityMs</code></td>
+                    <td><code class="inline">60000</code></td>
+                    <td>Stability window &mdash; reset retry counter after this many ms of uptime</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">JarFilename</code></td>
+                    <td><code class="inline">agent.jar</code></td>
+                    <td>Jenkins agent jar file name</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">InfoPrefix</code> / <code class="inline">WarningPrefix</code> / <code class="inline">SeverePrefix</code></td>
+                    <td><code class="inline">"INFO: "</code> etc.</td>
+                    <td>Agent output log-level prefixes</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">SecretRedaction</code></td>
+                    <td><code class="inline">"*****"</code></td>
+                    <td>Replacement value for redacted secrets</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="dependency-injection">Dependency Injection</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Implementation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">IOptions&lt;ServiceSettings&gt;</code></td>
+                    <td>Bound from <code class="inline">appsettings.json</code> section <code class="inline">Jenkins</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">IOptions&lt;TelemetrySettings&gt;</code></td>
+                    <td>Bound from <code class="inline">appsettings.json</code> section <code class="inline">Telemetry</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">IHttpClientFactory</code></td>
+                    <td>Named client <code class="inline">"JarDownloader"</code> with Polly resilience</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">IJarDownloader</code></td>
+                    <td><code class="inline">HttpJarDownloader</code> (ETag caching)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">IConnectivityChecker</code></td>
+                    <td><code class="inline">TcpConnectivityChecker</code></td>
+                </tr>
+                <tr>
+                    <td><code class="inline">ISecretResolver</code></td>
+                    <td><code class="inline">SecretResolver</code> (DPAPI/CredMgr/EnvVar/plaintext)</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">ILogger&lt;T&gt;</code></td>
+                    <td>Serilog-backed structured logging</td>
+                </tr>
+                <tr>
+                    <td>OpenTelemetry (optional)</td>
+                    <td><code class="inline">AddOpenTelemetry().WithMetrics()</code> when <code class="inline">Telemetry:Enabled: true</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="testing">Testing</h2>
+
+        <p>59 unit tests in <code class="inline">tests/JenkinsAsService.Tests/</code>:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Test Class</th>
+                    <th>Tests</th>
+                    <th>Coverage</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="inline">ValidateSettingsTests</code></td>
+                    <td>6</td>
+                    <td>Empty URL/secret, default port, malformed URL, valid settings, SecretMode backward compat</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">ParseArgumentsTests</code></td>
+                    <td>7</td>
+                    <td>Null, whitespace, simple split, quoted args, extra whitespace, single arg, escaped quotes</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">ResolveJavaPathTests</code></td>
+                    <td>5</td>
+                    <td>No java, bad paths, configured path, JAVA_HOME/bin, priority order</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">ParseAgentOutputTests</code></td>
+                    <td>6</td>
+                    <td>INFO/WARNING/SEVERE prefix parsing, debug mode, non-debug mode, whitespace lines</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">UpdateSecretCommandTests</code></td>
+                    <td>17</td>
+                    <td>Help, silent mode validation, ParseMode, file/env secret input, impersonation, unknown option</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">HttpJarDownloaderTests</code></td>
+                    <td>5</td>
+                    <td>200 download + ETag save, 304 skip, If-None-Match header, 200 without ETag, orphan guard</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">SecretResolverTests</code></td>
+                    <td>6</td>
+                    <td>Unprotected, DPAPI decrypt, DPAPI invalid base64, env var missing, credential manager missing, empty secret</td>
+                </tr>
+                <tr>
+                    <td><code class="inline">SecretWriterTests</code></td>
+                    <td>3</td>
+                    <td>DPAPI write, unprotected write, preserve existing fields</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3 id="test-stack">Test Stack</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Package</th>
+                    <th>Version</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>xUnit</td>
+                    <td>2.9.3</td>
+                    <td>Test framework</td>
+                </tr>
+                <tr>
+                    <td>NSubstitute</td>
+                    <td>5.3.0</td>
+                    <td>Mocking</td>
+                </tr>
+                <tr>
+                    <td>FluentAssertions</td>
+                    <td>8.10.0</td>
+                    <td>Fluent assertions</td>
+                </tr>
+                <tr>
+                    <td>Microsoft.NET.Test.Sdk</td>
+                    <td>18.6.0</td>
+                    <td>Test platform SDK</td>
+                </tr>
+                <tr>
+                    <td>coverlet.collector</td>
+                    <td>10.0.1</td>
+                    <td>Code coverage</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+
+    <aside class="toc"></aside>
+
+    <script src="main.js"></script>
+</body>
+</html>
