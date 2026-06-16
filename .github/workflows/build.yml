@@ -22,7 +22,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore -p:RestoreLockedMode=true
 
       - name: Build
         run: dotnet build --no-restore -c Release

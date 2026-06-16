@@ -20,7 +20,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore -p:RestoreLockedMode=true
 
       - name: Test
         run: dotnet test -c Release --verbosity normal
@@ -30,10 +30,50 @@ jobs:
         run: echo "VERSION=$("${{ github.ref_name }}".TrimStart('v'))" >> $env:GITHUB_OUTPUT
 
       - name: Publish x64
-        run: dotnet publish src/JenkinsAsService -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/x64/
+        run: >-
+          dotnet publish src/JenkinsAsService
+          --nologo
+          --configuration Release
+          -p:RestoreLockedMode=true
+          --runtime win-x64
+          --self-contained true
+          --output publish/x64/
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:PublishReadyToRun=true
+          -p:OptimizationPreference=Speed
+          -p:UseSharedCompilation=true
+          -p:DebuggerSupport=false
+          -p:MetadataUpdaterSupport=false
+          -p:Deterministic=true
+          -p:DebugType=Embedded
+          -p:DebugSymbols=true
+          -p:InformationalVersion="${{ steps.version.outputs.VERSION }}"
+          /v:q /clp:ErrorsOnly
 
       - name: Publish x86
-        run: dotnet publish src/JenkinsAsService -c Release -r win-x86 --self-contained -p:PublishSingleFile=true -o publish/x86/
+        run: >-
+          dotnet publish src/JenkinsAsService
+          --nologo
+          --configuration Release
+          -p:RestoreLockedMode=true
+          --runtime win-x86
+          --self-contained true
+          --output publish/x86/
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:PublishReadyToRun=true
+          -p:OptimizationPreference=Speed
+          -p:UseSharedCompilation=true
+          -p:DebuggerSupport=false
+          -p:MetadataUpdaterSupport=false
+          -p:Deterministic=true
+          -p:DebugType=Embedded
+          -p:DebugSymbols=true
+          -p:InformationalVersion="${{ steps.version.outputs.VERSION }}"
+          /v:q /clp:ErrorsOnly
 
       - name: Build MSI x64
         run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x64/
