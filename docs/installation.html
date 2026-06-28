@@ -408,6 +408,22 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       </table>
     </div>
 
+    <h3 id="portable-archive">Portable (Archive)</h3>
+    <p>For environments where MSI installation isn't possible, download the <code>.7z</code> or <code>.rar</code> archive from <a href="https://github.com/EliorMachlev/JenkinsAsService/releases">Releases</a>:</p>
+    <ol>
+      <li>Extract to a folder of your choice (e.g. <code>D:\Jenkins</code>)</li>
+      <li>Edit <code>appsettings.json</code> &mdash; fill in <code>JenkinsURL</code>, <code>AgentSecret</code>, and any other settings</li>
+      <li>Register and start the service:</li>
+    </ol>
+    <pre data-lang="powershell"><code>sc.exe create Jenkins binPath= "D:\Jenkins\JenkinsAsService.exe" start= auto obj= LocalSystem
+sc.exe failure Jenkins reset= 86400 actions= restart/10000/restart/10000/restart/10000
+sc.exe start Jenkins</code></pre>
+    <p>To configure secret protection, run the CLI before starting:</p>
+    <pre data-lang="powershell"><code>.\JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins:8443" --mode Dpapi --silent</code></pre>
+    <p>To uninstall:</p>
+    <pre data-lang="powershell"><code>sc.exe stop Jenkins
+sc.exe delete Jenkins</code></pre>
+
     <h2 id="automated-release">Automated Release</h2>
     <p>The GitHub Actions release workflow (<code>.github/workflows/release.yml</code>):</p>
     <ol>

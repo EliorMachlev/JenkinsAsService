@@ -8,6 +8,7 @@ Run a Jenkins inbound (JNLP) agent as a native Windows Service — no login sess
 [![.NET](misc/badges/dotnet.svg)](https://dotnet.microsoft.com/)
 ![Platform](misc/badges/platform.svg)
 [![Latest Release](https://img.shields.io/github/v/tag/EliorMachlev/JenkinsAsService?style=flat-square&label=Latest%20Release&color=%23008000)](https://github.com/EliorMachlev/JenkinsAsService/releases/latest)
+[![Docs](misc/badges/docs.svg)](https://eliormachlev.github.io/JenkinsAsService/index.html)
 
 ## Why This Exists
 
@@ -89,6 +90,33 @@ msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
 | `JENKINS_SECRET_MODE` | No | `EnvironmentVariable` | `EnvironmentVariable`, `Dpapi`, `CredentialManager`, or `Unprotected` |
 | `JENKINS_AGENT_NAME` | No | Hostname | Agent node name in Jenkins |
 | `JENKINS_JAVA_PATH` | No | `JAVA_HOME` | Path to JDK `bin` folder |
+
+### Portable (Archive)
+
+For environments where MSI installation isn't possible, download the `.7z` or `.rar` archive from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases):
+
+1. Extract to a folder of your choice (e.g. `D:\Jenkins`)
+2. Edit `appsettings.json` — fill in `JenkinsURL`, `AgentSecret`, and any other settings
+3. Register and start the service:
+
+```powershell
+sc.exe create Jenkins binPath= "D:\Jenkins\JenkinsAsService.exe" start= auto obj= LocalSystem
+sc.exe failure Jenkins reset= 86400 actions= restart/10000/restart/10000/restart/10000
+sc.exe start Jenkins
+```
+
+To configure secret protection, run the CLI before starting:
+
+```powershell
+.\JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins:8443" --mode Dpapi --silent
+```
+
+To uninstall:
+
+```powershell
+sc.exe stop Jenkins
+sc.exe delete Jenkins
+```
 
 ## Configuration
 
