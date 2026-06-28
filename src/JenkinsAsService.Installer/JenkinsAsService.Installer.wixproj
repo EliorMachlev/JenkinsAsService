@@ -1,6 +1,8 @@
 <Project Sdk="WixToolset.Sdk/5.0.2">
 
   <PropertyGroup>
+    <!-- WiX uses floating 5.* versions managed inline; keep it out of central package management. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <OutputType>Package</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
     <!-- Set via -p:PublishDir=... from the build script after dotnet publish -->
