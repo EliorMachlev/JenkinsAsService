@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: [ "v*" ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Optional explicit version (e.g. 1.05). Leave blank to auto-bump the latest published non-prerelease release by +1.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -27,7 +33,41 @@ jobs:
 
       - name: Set version
         id: version
-        run: echo "VERSION=$("${{ github.ref_name }}".TrimStart('v'))" >> $env:GITHUB_OUTPUT
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:EVENT_NAME -eq 'push') {
+            # Triggered by a pushed tag (e.g. v1.0.5 or 1.04) — use it verbatim.
+            $version = $env:REF_NAME.TrimStart('v')
+            $tag = $env:REF_NAME
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:INPUT_VERSION)) {
+            # Manual run with an explicit version override.
+            $version = $env:INPUT_VERSION.TrimStart('v')
+            $tag = $version
+          }
+          else {
+            # Manual run, no version given — bump the latest published non-prerelease release by +1.
+            $latest = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq '.tag_name'
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($latest)) {
+              throw "Could not determine the latest published release. Provide an explicit 'version' input."
+            }
+            $parts = $latest.TrimStart('v').Split('.')
+            $last = $parts[-1]
+            if ($last -notmatch '^\d+$') {
+              throw "Latest release tag '$latest' does not end in a numeric segment; provide an explicit 'version' input."
+            }
+            # Increment the final segment, preserving zero-padding width (e.g. 1.03 -> 1.04).
+            $parts[-1] = ([int]$last + 1).ToString().PadLeft($last.Length, '0')
+            $version = $parts -join '.'
+            $tag = $version
+            Write-Host "Auto-bumped latest release '$latest' -> '$version'"
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Publish x64
         run: >-
@@ -126,6 +166,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ steps.version.outputs.TAG }}
           generate_release_notes: true
           files: |
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.msi
