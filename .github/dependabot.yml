@@ -4,8 +4,31 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      serilog:
+        patterns:
+          - "Serilog*"
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry*"
+      xunit:
+        patterns:
+          - "xunit*"
+      test-tooling:
+        patterns:
+          - "Microsoft.NET.Test.Sdk"
+          - "coverlet*"
+          - "NSubstitute"
+          - "FluentAssertions"
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
