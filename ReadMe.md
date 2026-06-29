@@ -28,7 +28,7 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **OpenTelemetry metrics** — opt-in OTLP export: restart counter, SEVERE event counter, .NET runtime metrics
 - **Secret redaction** — agent secrets are scrubbed from all log output
 - **59 unit tests** — xUnit + NSubstitute + FluentAssertions, CI on every push
-- **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy
+- **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy; all actions SHA-pinned
 - **Single-file deploy** — self-contained `.exe` with R2R, compression, and embedded PDB symbols
 - **Dual-arch releases** — x64 + x86 MSI installers, 7z/RAR archives, SHA256 checksums
 
@@ -230,7 +230,7 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 - Secrets encrypted at rest (DPAPI/CredMgr) and redacted from all logs
 - Deterministic builds with locked NuGet restore and embedded PDB symbols
 - 59 unit tests run on every push and PR
-- 6 security scans: **CodeQL** (C# SAST + Actions YAML), **Semgrep** (pattern SAST + secrets), **Gitleaks** (git history), **PSScriptAnalyzer** (PowerShell), **Dependency Review** (CVE gate), **Trivy** (SCA, NVD + GHSA + OSV)
+- 6 security scans: **CodeQL** (C# SAST + Actions YAML), **Semgrep** (pattern SAST + secrets), **Gitleaks** (git history), **PSScriptAnalyzer** (PowerShell, via direct `pwsh` step), **Dependency Review** (CVE gate), **Trivy** (SCA, NVD + GHSA + OSV); all actions SHA-pinned against tag mutation
 - Automated dual-arch release pipeline with SHA256 checksums
 
 See [Security Policy](Security.md) for vulnerability reporting.

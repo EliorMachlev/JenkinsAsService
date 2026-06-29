@@ -58,10 +58,11 @@
 
     <h3 id="net-build">.NET Build (<code>.github/workflows/build.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Build and test on every push/PR to <code>main</code></li>
+      <li><strong>Purpose:</strong> Full end-to-end build validation on every push/PR to <code>main</code></li>
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
-      <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet build</code> &rarr; <code>dotnet test</code></li>
+      <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet test</code> &rarr; optimized publish (win-x64 + win-x86) &rarr; WiX v5 MSI build (both architectures, <code>Version=0.0.0</code>)</li>
       <li><strong>Tests:</strong> 59 unit tests (xUnit + NSubstitute + FluentAssertions)</li>
+      <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time.</li>
     </ul>
 
     <h3 id="release">Release (<code>.github/workflows/release.yml</code>)</h3>
@@ -110,9 +111,10 @@
     <h3 id="psscriptanalyzer">PSScriptAnalyzer (<code>.github/workflows/powershell.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Static analysis of PowerShell code (full ruleset)</li>
-      <li><strong>Tool:</strong> <a href="https://github.com/microsoft/action-psscriptanalyzer">microsoft/psscriptanalyzer-action</a></li>
+      <li><strong>Implementation:</strong> Direct <code>pwsh</code> <code>run:</code> step &mdash; no action wrapper. <code>PSScriptAnalyzer</code> is pre-installed on <code>ubuntu-latest</code> runners; the <code>ConvertToSARIF</code> module (PSGallery) is installed at runtime to translate output objects to SARIF.</li>
       <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 23:23 UTC, <code>workflow_dispatch</code> (manual)</li>
-      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results</li>
+      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results (category: <code>psscriptanalyzer</code>)</li>
+      <li><strong>Note:</strong> Replaces the unmaintained <code>microsoft/action-psscriptanalyzer</code> (last updated 2023; Microsoft&rsquo;s <code>ConvertToSARIF</code> repo archived June 2026). The module itself remains active on PSGallery.</li>
     </ul>
 
     <h3 id="semgrep">Semgrep (<code>.github/workflows/semgrep.yml</code>)</h3>
@@ -154,7 +156,7 @@
     <ul>
       <li><strong>Trigger:</strong> <code>workflow_call</code> with inputs <code>scan-type</code> (default: <code>fs</code>) and <code>scan-ref</code> (default: <code>.</code>)</li>
       <li><strong>Steps:</strong> checkout &rarr; trivy &rarr; upload-sarif (<code>if: always()</code>)</li>
-      <li><strong>Versioning:</strong> <code>actions/checkout@v7</code>, <code>github/codeql-action/upload-sarif@v4</code>, <code>aquasecurity/trivy-action@v0.36.0</code></li>
+      <li><strong>Versioning:</strong> all actions SHA-pinned (see <a href="#action-versioning-policy">Action Versioning Policy</a> below)</li>
     </ul>
 
     <h2 id="dependabot">Dependabot (<code>.github/dependabot.yml</code>)</h2>
@@ -260,56 +262,62 @@
 
     <h2 id="action-versioning-policy">Action Versioning Policy</h2>
 
-    <p>All actions use <strong>floating major-version tags</strong> &mdash; no SHA pins. Rationale: personal/low-risk repo; SHA pins add friction without meaningful supply-chain benefit at this scale.</p>
+    <p>All actions are <strong>pinned to full commit SHAs</strong> to prevent supply-chain attacks via tag mutation (a tag like <code>@v7</code> is mutable and can be silently redirected to malicious code; a SHA is immutable). The human-readable version tag is preserved as an inline comment for readability. Dependabot keeps the pins current via automated PRs.</p>
 
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Action family</th>
-            <th>Tag used</th>
+            <th>Action</th>
+            <th>Version</th>
+            <th>Pinned SHA</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td><code>actions/checkout</code></td>
-            <td><code>@v7</code></td>
+            <td><code>v7</code></td>
+            <td><code>9c091bb</code></td>
           </tr>
           <tr>
             <td><code>actions/setup-dotnet</code></td>
-            <td><code>@v5</code></td>
+            <td><code>v5</code></td>
+            <td><code>26b0ec1</code></td>
           </tr>
           <tr>
             <td><code>actions/dependency-review-action</code></td>
-            <td><code>@v5</code></td>
+            <td><code>v5</code></td>
+            <td><code>a1d282b</code></td>
           </tr>
           <tr>
             <td><code>github/codeql-action/*</code></td>
-            <td><code>@v4</code> (init/analyze/upload-sarif &mdash; all consistent)</td>
+            <td><code>v4</code></td>
+            <td><code>8aad20d</code> (init / analyze / upload-sarif &mdash; all consistent)</td>
           </tr>
           <tr>
             <td><code>semgrep/semgrep-action</code></td>
-            <td><code>@v1</code></td>
+            <td><code>v1</code></td>
+            <td><code>713efdd</code></td>
           </tr>
           <tr>
             <td><code>gitleaks/gitleaks-action</code></td>
-            <td><code>@v3.0.0</code></td>
-          </tr>
-          <tr>
-            <td><code>microsoft/psscriptanalyzer-action</code></td>
-            <td>SHA pin &mdash; repo has no tags (unmaintained since 2023-03-03)</td>
+            <td><code>v3.0.0</code></td>
+            <td><code>e0c47f4</code></td>
           </tr>
           <tr>
             <td><code>aquasecurity/trivy-action</code></td>
-            <td><code>@v0.36.0</code></td>
+            <td><code>v0.36.0</code></td>
+            <td><code>ed142fd</code></td>
           </tr>
           <tr>
             <td><code>softprops/action-gh-release</code></td>
-            <td><code>@v3</code></td>
+            <td><code>v3</code></td>
+            <td><code>718ea10</code></td>
           </tr>
         </tbody>
       </table>
     </div>
+    <p><code>microsoft/psscriptanalyzer-action</code> has been fully removed &mdash; replaced by a direct <code>pwsh</code> run step (see <a href="#psscriptanalyzer">PSScriptAnalyzer</a> above).</p>
 
     <div class="callout callout--note">
       <div class="callout-title">Note: Removed scanners</div>
