@@ -66,12 +66,23 @@
 
     <h3 id="release">Release (<code>.github/workflows/release.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Automated dual-architecture release on version tags</li>
-      <li><strong>Trigger:</strong> Push tag matching <code>v*</code></li>
+      <li><strong>Purpose:</strong> Automated dual-architecture release</li>
+      <li><strong>Triggers:</strong>
+        <ul>
+          <li><strong>Tag push</strong> &mdash; any tag matching <code>v*</code> (e.g. <code>v1.0.5</code>). Version is taken verbatim from the tag name.</li>
+          <li><strong>Manual (<code>workflow_dispatch</code>)</strong> &mdash; optional <code>version</code> input:
+            <ul>
+              <li>If provided (e.g. <code>1.05</code>): used verbatim as the release version.</li>
+              <li>If omitted: auto-bumps the latest published non-prerelease release by +1 on the final segment, preserving zero-padding (e.g. <code>1.03</code> &rarr; <code>1.04</code>).</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
       <li><strong>Steps:</strong>
         <ol>
           <li>Setup .NET 10 &rarr; <code>dotnet test</code></li>
+          <li>Resolve version (from tag, explicit input, or auto-bump via <code>gh api</code>)</li>
           <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
           <li>Build MSI installers for both architectures via <strong>WiX v5</strong></li>
           <li>Create <code>.7z</code> archives (LZMA2, max compression) via 7-Zip</li>
@@ -139,15 +150,25 @@
     <ul>
       <li><strong>Trigger:</strong> <code>workflow_call</code> with inputs <code>scan-type</code> (default: <code>fs</code>) and <code>scan-ref</code> (default: <code>.</code>)</li>
       <li><strong>Steps:</strong> checkout &rarr; trivy &rarr; upload-sarif (<code>if: always()</code>)</li>
-      <li><strong>Versioning:</strong> <code>actions/checkout@v6</code>, <code>github/codeql-action/upload-sarif@v4</code>, <code>aquasecurity/trivy-action@v0.36.0</code></li>
+      <li><strong>Versioning:</strong> <code>actions/checkout@v7</code>, <code>github/codeql-action/upload-sarif@v4</code>, <code>aquasecurity/trivy-action@v0.36.0</code></li>
     </ul>
 
     <h2 id="dependabot">Dependabot (<code>.github/dependabot.yml</code>)</h2>
 
-    <p>Weekly automated PRs for:</p>
+    <p>Weekly automated PRs using <strong>grouped updates</strong> to reduce noise:</p>
+
+    <h3 id="dependabot-nuget">NuGet (<code>nuget</code>)</h3>
     <ul>
-      <li><code>nuget</code> &mdash; NuGet package updates</li>
-      <li><code>github-actions</code> &mdash; Action version bumps</li>
+      <li><code>serilog</code> &mdash; all <code>Serilog.*</code> packages in one PR</li>
+      <li><code>microsoft-extensions</code> &mdash; all <code>Microsoft.Extensions.*</code> packages in one PR</li>
+      <li><code>opentelemetry</code> &mdash; all <code>OpenTelemetry*</code> packages in one PR</li>
+      <li><code>xunit</code> &mdash; all <code>xunit*</code> packages in one PR</li>
+      <li><code>test-tooling</code> &mdash; <code>Microsoft.NET.Test.Sdk</code>, <code>coverlet.*</code>, <code>NSubstitute</code>, <code>FluentAssertions</code> in one PR</li>
+    </ul>
+
+    <h3 id="dependabot-actions">GitHub Actions (<code>github-actions</code>)</h3>
+    <ul>
+      <li>All action version bumps grouped into a single weekly PR</li>
     </ul>
 
     <h2 id="security-scanning-stack-summary">Security Scanning Stack Summary</h2>
@@ -230,7 +251,7 @@
         <tbody>
           <tr>
             <td><code>actions/checkout</code></td>
-            <td><code>@v6</code></td>
+            <td><code>@v7</code></td>
           </tr>
           <tr>
             <td><code>actions/setup-dotnet</code></td>

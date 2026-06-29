@@ -55,6 +55,8 @@
     <h2 id="build-toolchain">Build Toolchain</h2>
     <p>The project uses the <strong>.NET 10 SDK</strong> with the <code>Microsoft.NET.Sdk.Worker</code> project type. Deterministic builds with locked NuGet restore (<code>packages.lock.json</code>).</p>
 
+    <p><strong>Central Package Management (CPM)</strong> is enabled via <code>Directory.Packages.props</code> at the repo root. All NuGet version numbers are declared there &mdash; individual <code>.csproj</code> files reference packages without version attributes. Dependabot targets the CPM file directly, producing grouped PRs per package family.</p>
+
     <h2 id="build-publish">Build &amp; Publish</h2>
     <pre data-lang="powershell"><code># Restore (locked mode — requires packages.lock.json)
 dotnet restore -p:RestoreLockedMode=true
@@ -279,7 +281,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
 
     <div class="callout callout--note">
       <div class="callout-title">Note</div>
-      <p>All versions are pinned (no floating ranges). Both projects include <code>packages.lock.json</code> for deterministic restores via <code>RestoreLockedMode=true</code>.</p>
+      <p>All versions are pinned (no floating ranges) and centrally managed in <code>Directory.Packages.props</code>. Both projects include <code>packages.lock.json</code> for deterministic, hash-verified restores via <code>RestoreLockedMode=true</code>.</p>
     </div>
 
     <h2 id="msi-installer">MSI Installer</h2>
