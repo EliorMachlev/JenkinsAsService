@@ -4,11 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Installation - JenkinsAsService</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
@@ -279,7 +275,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       </table>
     </div>
 
-    <div class="callout callout--note">
+    <div class="callout callout-note">
       <div class="callout-title">Note</div>
       <p>All versions are pinned (no floating ranges) and centrally managed in <code>Directory.Packages.props</code>. Both projects include <code>packages.lock.json</code> for deterministic, hash-verified restores via <code>RestoreLockedMode=true</code>.</p>
     </div>
@@ -487,7 +483,7 @@ sc.exe delete Jenkins</code></pre>
       <li>Reset fail count after: <strong>1 day</strong></li>
     </ul>
 
-    <div class="callout callout--note">
+    <div class="callout callout-note">
       <div class="callout-title">Note</div>
       <p>The built-in watchdog handles Java process crashes. Windows-level recovery covers full service host crashes (the .NET process itself dying) &mdash; rare but covered automatically.</p>
     </div>

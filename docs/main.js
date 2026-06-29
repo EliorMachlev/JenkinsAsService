@@ -286,15 +286,15 @@
      ----------------------------------------------------------- */
   var mermaidThemeVars = {
     dark: {
-      primaryColor: '#533483',
-      primaryTextColor: '#e0e0e0',
-      primaryBorderColor: '#0f3460',
+      primaryColor: '#0f3460',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#388bfd',
       lineColor: '#58a6ff',
       secondaryColor: '#16213e',
       tertiaryColor: '#1a1a2e'
     },
     light: {
-      primaryColor: '#8250df',
+      primaryColor: '#ddf4ff',
       primaryTextColor: '#1f2328',
       primaryBorderColor: '#0969da',
       lineColor: '#0969da',

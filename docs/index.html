@@ -4,11 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Home - JenkinsAsService</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
@@ -52,7 +48,7 @@
   <main class="content">
     <h1>JenkinsAsService</h1>
 
-    <div class="callout callout--summary">
+    <div class="callout callout-summary">
       <div class="callout-title">Summary</div>
       <p>A .NET 10 Windows Service that runs a Jenkins Agent (JNLP/inbound) natively. Includes an event-driven watchdog with auto-recovery, secret protection (DPAPI/CredMgr/EnvVar), structured logging with Serilog, ETag-based jar caching, and optional OpenTelemetry metrics. Eliminates the need for manual agent startup, login sessions, or scheduled tasks.</p>
     </div>

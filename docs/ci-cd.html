@@ -4,11 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CI/CD &amp; Security - JenkinsAsService</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
@@ -54,7 +50,7 @@
 
     <h2 id="github-actions-workflows">GitHub Actions Workflows</h2>
 
-    <p>The repository has eight workflows covering build, test, security scanning, and release automation.</p>
+    <p>The repository has nine workflows covering build, test, docs quality, security scanning, and release automation.</p>
 
     <h3 id="net-build">.NET Build (<code>.github/workflows/build.yml</code>)</h3>
     <ul>
@@ -98,11 +94,12 @@
 
     <h3 id="codeql">CodeQL Advanced (<code>.github/workflows/codeql.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Vulnerability analysis across two language targets in a matrix:</li>
-      <ul>
-        <li><code>language: actions</code> (<code>build-mode: none</code>) &mdash; GitHub Actions workflow YAML files</li>
-        <li><code>language: csharp</code> (<code>build-mode: autobuild</code>) &mdash; C# source code</li>
-      </ul>
+      <li><strong>Purpose:</strong> Vulnerability analysis across two language targets in a matrix:
+        <ul>
+          <li><code>language: actions</code> (<code>build-mode: none</code>) &mdash; GitHub Actions workflow YAML files</li>
+          <li><code>language: csharp</code> (<code>build-mode: autobuild</code>) &mdash; C# source code</li>
+        </ul>
+      </li>
       <li><strong>Tool:</strong> <a href="https://github.com/github/codeql-action">github/codeql-action</a></li>
       <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule (Tuesdays 16:35 UTC)</li>
       <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results (one entry per language)</li>
@@ -111,10 +108,10 @@
     <h3 id="psscriptanalyzer">PSScriptAnalyzer (<code>.github/workflows/powershell.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Static analysis of PowerShell code (full ruleset)</li>
-      <li><strong>Implementation:</strong> Direct <code>pwsh</code> <code>run:</code> step &mdash; no action wrapper. <code>PSScriptAnalyzer</code> is pre-installed on <code>ubuntu-latest</code> runners; the <code>ConvertToSARIF</code> module (PSGallery) is installed at runtime to translate output objects to SARIF.</li>
+      <li><strong>Implementation:</strong> Direct <code>pwsh</code> <code>run:</code> step &mdash; no action wrapper, no external modules. <code>PSScriptAnalyzer</code> is pre-installed on <code>ubuntu-latest</code> runners; SARIF 2.1.0 output is serialised inline in PowerShell using <code>ConvertTo-Json</code> and written to <code>results.sarif</code>, then uploaded via <code>github/codeql-action/upload-sarif</code>.</li>
       <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 23:23 UTC, <code>workflow_dispatch</code> (manual)</li>
       <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results (category: <code>psscriptanalyzer</code>)</li>
-      <li><strong>Note:</strong> Replaces the unmaintained <code>microsoft/action-psscriptanalyzer</code> (last updated 2023; Microsoft&rsquo;s <code>ConvertToSARIF</code> repo archived June 2026). The module itself remains active on PSGallery.</li>
+      <li><strong>Note:</strong> Replaces the unmaintained <code>microsoft/action-psscriptanalyzer</code> (last updated 2023; Microsoft&rsquo;s <code>ConvertToSARIF</code> repo archived June 2026). No PSGallery dependency required.</li>
     </ul>
 
     <h3 id="semgrep">Semgrep (<code>.github/workflows/semgrep.yml</code>)</h3>
@@ -144,8 +141,8 @@
 
     <h3 id="trivy-sca-full-scan">Trivy &mdash; SCA Full Scan (<code>.github/workflows/osv-scanner.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Full-repo dependency vulnerability scan (post-merge + weekly)</li>
-      <li><strong>Trigger:</strong> Push to <code>main</code>, weekly schedule (Saturdays 23:28 UTC)</li>
+      <li><strong>Purpose:</strong> Full-repo dependency vulnerability scan (on every PR/push + weekly)</li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule (Saturdays 23:28 UTC)</li>
       <li><strong>Tool:</strong> <a href="https://github.com/aquasecurity/trivy-action">aquasecurity/trivy-action</a></li>
       <li><strong>Databases:</strong> NVD + GitHub Advisory + OSV</li>
       <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
@@ -157,6 +154,21 @@
       <li><strong>Trigger:</strong> <code>workflow_call</code> with inputs <code>scan-type</code> (default: <code>fs</code>) and <code>scan-ref</code> (default: <code>.</code>)</li>
       <li><strong>Steps:</strong> checkout &rarr; trivy &rarr; upload-sarif (<code>if: always()</code>)</li>
       <li><strong>Versioning:</strong> all actions SHA-pinned (see <a href="#action-versioning-policy">Action Versioning Policy</a> below)</li>
+    </ul>
+
+    <h3 id="html-css-lint">HTML &amp; CSS Lint (<code>.github/workflows/html-lint.yml</code>)</h3>
+    <ul>
+      <li><strong>Purpose:</strong> Validate documentation HTML and CSS quality on every docs change</li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code> when any file under <code>docs/</code> changes (path filter)</li>
+      <li><strong>Runner:</strong> <code>ubuntu-latest</code></li>
+      <li><strong>Steps:</strong>
+        <ol>
+          <li><strong>W3C Nu HTML Checker</strong> &mdash; <code>pip install html5validator</code>, then <code>html5validator --root docs/ --match "*.html"</code>. Wraps the official vnu.jar validator; catches malformed markup, invalid nesting, and missing attributes.</li>
+          <li><strong>Stylelint</strong> &mdash; <code>npm install stylelint stylelint-config-standard</code>, then <code>npx stylelint "docs/*.css"</code>. Enforces modern CSS standards: no vendor-prefix shortcuts, modern <code>rgb()</code>/<code>hsl()</code> notation, range media queries (<code>width &lt;= N</code>), no deprecated <code>page-break-*</code>, consistent selector specificity ordering, and kebab-case class naming.</li>
+        </ol>
+      </li>
+      <li><strong>Config:</strong> <code>.stylelintrc.json</code> at repo root extends <code>stylelint-config-standard</code> with <code>alpha-value-notation: number</code> (keep <code>.4</code> instead of <code>40%</code>)</li>
+      <li><strong>No new actions</strong> &mdash; uses only <code>actions/checkout</code> (already SHA-pinned); HTML and CSS tooling run via <code>pip</code> and <code>npm</code> directly, so no allowlist changes required</li>
     </ul>
 
     <h2 id="dependabot">Dependabot (<code>.github/dependabot.yml</code>)</h2>
@@ -223,8 +235,14 @@
           <tr>
             <td>SCA (full)</td>
             <td>Trivy</td>
-            <td>Push + weekly</td>
+            <td>Push/PR/weekly</td>
             <td>All NuGet deps, multi-DB (NVD + GHSA + OSV)</td>
+          </tr>
+          <tr>
+            <td>Docs quality</td>
+            <td>W3C Nu + Stylelint</td>
+            <td>Push/PR (docs/** only)</td>
+            <td>HTML validity (W3C Nu Checker) and CSS standards (Stylelint + stylelint-config-standard)</td>
           </tr>
           <tr>
             <td>Dependency graph</td>
@@ -319,7 +337,7 @@
     </div>
     <p><code>microsoft/psscriptanalyzer-action</code> has been fully removed &mdash; replaced by a direct <code>pwsh</code> run step (see <a href="#psscriptanalyzer">PSScriptAnalyzer</a> above).</p>
 
-    <div class="callout callout--note">
+    <div class="callout callout-note">
       <div class="callout-title">Note: Removed scanners</div>
       <ul>
         <li><strong>Codacy</strong> (<code>codacy.yml</code>) &mdash; removed. The native Codacy GitHub App ("SonarSharp reported by Codacy") is separate.</li>
@@ -403,7 +421,7 @@
       </table>
     </div>
 
-    <div class="callout callout--warning">
+    <div class="callout callout-warning">
       <div class="callout-title">Warning: Key lesson</div>
       <p><code>// NOSONAR</code> only suppresses line-level rules. File-level rules (S1451, S3904) require Codacy dashboard configuration.</p>
     </div>
