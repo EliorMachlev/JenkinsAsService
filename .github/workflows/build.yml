@@ -24,8 +24,55 @@ jobs:
       - name: Restore
         run: dotnet restore -p:RestoreLockedMode=true
 
-      - name: Build
-        run: dotnet build --no-restore -c Release
-
       - name: Test
-        run: dotnet test --no-build -c Release --verbosity normal
+        run: dotnet test -c Release --verbosity normal
+
+      - name: Publish x64
+        run: >-
+          dotnet publish src/JenkinsAsService
+          --nologo
+          --configuration Release
+          -p:RestoreLockedMode=true
+          --runtime win-x64
+          --self-contained true
+          --output publish/x64/
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:PublishReadyToRun=true
+          -p:OptimizationPreference=Speed
+          -p:UseSharedCompilation=true
+          -p:DebuggerSupport=false
+          -p:MetadataUpdaterSupport=false
+          -p:Deterministic=true
+          -p:DebugType=Embedded
+          -p:DebugSymbols=true
+          /v:q /clp:ErrorsOnly
+
+      - name: Publish x86
+        run: >-
+          dotnet publish src/JenkinsAsService
+          --nologo
+          --configuration Release
+          -p:RestoreLockedMode=true
+          --runtime win-x86
+          --self-contained true
+          --output publish/x86/
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:PublishReadyToRun=true
+          -p:OptimizationPreference=Speed
+          -p:UseSharedCompilation=true
+          -p:DebuggerSupport=false
+          -p:MetadataUpdaterSupport=false
+          -p:Deterministic=true
+          -p:DebugType=Embedded
+          -p:DebugSymbols=true
+          /v:q /clp:ErrorsOnly
+
+      - name: Build MSI x64
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=0.0.0 -o msi/x64/
+
+      - name: Build MSI x86
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=0.0.0 -o msi/x86/
