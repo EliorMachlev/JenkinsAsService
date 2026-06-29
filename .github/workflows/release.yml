@@ -18,10 +18,10 @@ jobs:
     name: Build & Publish
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.x'
 
@@ -164,7 +164,7 @@ jobs:
           $checksums | ConvertTo-Json -Depth 3 | Set-Content "JenkinsAsService_${v}_checksums.json" -Encoding utf8
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           generate_release_notes: true
