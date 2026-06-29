@@ -221,7 +221,7 @@ dotnet publish src/JenkinsAsService `
 
 # Optional: build WiX v5 MSI
 dotnet build src/JenkinsAsService.Installer -c Release `
-    -p:PublishDir=../../publish/x64/ -p:Version=1.0.0
+    -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:Version=1.0.0
 ```
 
 ## Security
