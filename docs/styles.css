@@ -1,56 +1,68 @@
 /* ============================================================
    JenkinsAsService Documentation — styles.css
-   Dark-first, responsive, print-ready documentation site
+   Dark-first, responsive, print-ready, dependency-free.
+   - System font stack (zero network requests, universal)
+   - No browser-specific properties (standard CSS only)
+   - Accessible: focus-visible, reduced-motion, color-scheme
    ============================================================ */
 
 /* ----- Custom Properties (Dark — default) ----- */
 :root {
+  color-scheme: dark;
+
   --bg: #1a1a2e;
   --surface: #16213e;
+  --surface-2: #1e2a4a;
   --primary: #0f3460;
-  --highlight: #533483;
-  --text: #e0e0e0;
-  --text-muted: #8b949e;
+  --highlight: #388bfd;
+  --text: #e6edf3;
+  --text-muted: #9aa7b5;
   --code-bg: #0d1117;
   --link: #58a6ff;
   --link-hover: #79c0ff;
-  --border: #30363d;
+  --border: #2a3346;
   --sidebar-w: 280px;
   --toc-w: 220px;
-  --content-max: 900px;
-  --nav-active: #533483;
-  --callout-tip: #238636;
+  --content-max: 880px;
+  --nav-active: #388bfd;
+  --callout-tip: #3fb950;
   --callout-warning: #d29922;
   --callout-note: #58a6ff;
-  --callout-summary: #8b949e;
-  --scrollbar-thumb: #484f58;
-  --scrollbar-track: transparent;
+  --callout-summary: #9aa7b5;
+  --scrollbar-thumb: #3a455c;
   --shadow: 0 1px 3px rgb(0 0 0 / .4);
-  --radius: 6px;
-  --transition: .25s ease;
-  --font-body: 'Inter', -apple-system, blinkmacsystemfont, 'Segoe UI', helvetica, arial, sans-serif;
-  --font-code: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', consolas, monospace;
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / .45);
+  --radius: 8px;
+  --radius-sm: 5px;
+  --ease: cubic-bezier(.16, 1, .3, 1);
+  --transition: .2s var(--ease);
+  --font-body: system-ui, -apple-system, 'Segoe UI', roboto, helvetica, arial, sans-serif;
+  --font-code: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', 'Roboto Mono', menlo, consolas, monospace;
 }
 
 /* ----- Light theme ----- */
 [data-theme="light"] {
+  color-scheme: light;
+
   --bg: #fff;
   --surface: #f6f8fa;
+  --surface-2: #eef1f5;
   --primary: #0969da;
-  --highlight: #8250df;
+  --highlight: #0969da;
   --text: #1f2328;
-  --text-muted: #656d76;
+  --text-muted: #59636e;
   --code-bg: #f6f8fa;
   --link: #0969da;
   --link-hover: #0550ae;
   --border: #d0d7de;
-  --nav-active: #8250df;
+  --nav-active: #0969da;
   --callout-tip: #1a7f37;
   --callout-warning: #9a6700;
   --callout-note: #0969da;
-  --callout-summary: #656d76;
+  --callout-summary: #59636e;
   --scrollbar-thumb: #afb8c1;
-  --shadow: 0 1px 3px rgb(0 0 0 / .12);
+  --shadow: 0 1px 3px rgb(0 0 0 / .1);
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / .18);
 }
 
 /* ----- Reset ----- */
@@ -66,7 +78,8 @@ html {
   scroll-behavior: smooth;
   scroll-padding-top: 24px;
   font-size: 16px;
-  text-size-adjust: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 body {
@@ -74,13 +87,21 @@ body {
   color: var(--text);
   background: var(--bg);
   line-height: 1.65;
+  font-synthesis: none;
   transition: background var(--transition), color var(--transition);
   overflow-x: hidden;
 }
 
+/* Accessible keyboard focus across all interactive elements */
+:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 /* ============================================================
-   TYPOGRAPHY — placed before layout so generic selectors
-   (a, ul, li) have lower source order than component selectors
+   TYPOGRAPHY — generic element selectors first so component
+   selectors (.toc a, .sidebar-nav a) keep higher source order
    ============================================================ */
 
 h1,
@@ -90,21 +111,23 @@ h4,
 h5,
 h6 {
   color: var(--text);
-  line-height: 1.3;
-  margin-top: 2rem;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  margin-top: 2.5rem;
   margin-bottom: .75rem;
   scroll-margin-top: 24px;
+  text-wrap: balance;
 }
 
 h1 {
-  font-size: 2rem;
+  font-size: clamp(1.7rem, 1.3rem + 1.8vw, 2.1rem);
   margin-top: 0;
   border-bottom: 1px solid var(--border);
   padding-bottom: .4em;
 }
 
 h2 {
-  font-size: 1.5rem;
+  font-size: clamp(1.35rem, 1.1rem + 1vw, 1.55rem);
   border-bottom: 1px solid var(--border);
   padding-bottom: .3em;
 }
@@ -119,6 +142,7 @@ h4 {
 
 p {
   margin-bottom: 1rem;
+  text-wrap: pretty;
 }
 
 a {
@@ -168,6 +192,7 @@ blockquote {
 
 img {
   max-width: 100%;
+  height: auto;
   border-radius: var(--radius);
 }
 
@@ -175,8 +200,8 @@ img {
    LAYOUT
    ============================================================ */
 
-/* TOC sidebar (right) — placed before sidebar nav so .toc a
-   has lower source order than .sidebar-nav a:hover */
+/* TOC sidebar (right). Declared before .sidebar-nav so the
+   interleaved link rules below ascend in specificity. */
 .toc {
   position: fixed;
   top: 40px;
@@ -205,8 +230,8 @@ img {
   margin-bottom: 2px;
 }
 
-/* Link styles ordered by specificity — interleaved across toc and sidebar-nav
-   to satisfy no-descending-specificity for all a-targeting rules. */
+/* Link styles ordered by specificity — interleaved across .toc
+   and .sidebar-nav to satisfy no-descending-specificity. */
 
 /* (0,1,1) */
 .toc a {
@@ -259,12 +284,18 @@ img {
   font-size: .78rem;
 }
 
+[data-theme="light"] .sidebar-nav a:hover {
+  background: rgb(0 0 0 / .04);
+}
+
+[data-theme="light"] .sidebar-nav a.active {
+  background: rgb(0 0 0 / .06);
+}
+
 /* Sidebar */
 .sidebar {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
+  inset: 0 auto 0 0;
   width: var(--sidebar-w);
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -306,14 +337,6 @@ img {
   list-style: none;
 }
 
-[data-theme="light"] .sidebar-nav a:hover {
-  background: rgb(0 0 0 / .04);
-}
-
-[data-theme="light"] .sidebar-nav a.active {
-  background: rgb(0 0 0 / .06);
-}
-
 .sidebar-nav .nav-section {
   font-size: .7rem;
   font-weight: 700;
@@ -341,9 +364,9 @@ img {
   background: none;
   border: 1px solid var(--border);
   color: var(--text-muted);
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -355,7 +378,11 @@ img {
 .theme-toggle:hover {
   color: var(--text);
   border-color: var(--text-muted);
-  background: var(--primary);
+  background: var(--surface-2);
+}
+
+.theme-toggle:active {
+  transform: scale(.94);
 }
 
 .theme-toggle svg {
@@ -393,7 +420,7 @@ img {
   width: calc(100% - 40px);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   font-family: var(--font-body);
   font-size: .85rem;
@@ -426,9 +453,9 @@ img {
   z-index: 1100;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  width: 40px;
-  height: 40px;
+  border-radius: var(--radius-sm);
+  width: 44px;
+  height: 44px;
   cursor: pointer;
   align-items: center;
   justify-content: center;
@@ -437,7 +464,11 @@ img {
 }
 
 .hamburger:hover {
-  background: var(--primary);
+  background: var(--surface-2);
+}
+
+.hamburger:active {
+  transform: scale(.96);
 }
 
 .hamburger svg {
@@ -466,27 +497,9 @@ img {
   margin-left: var(--sidebar-w);
   margin-right: calc(var(--toc-w) + 48px);
   max-width: var(--content-max);
-  padding: 40px 48px 80px;
+  padding: 48px 56px 88px;
   min-height: 100vh;
   transition: margin var(--transition);
-}
-
-/* ============================================================
-   SCROLLBAR
-   ============================================================ */
-
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
 }
 
 /* ============================================================
@@ -500,6 +513,7 @@ code {
   padding: .15em .4em;
   border-radius: 4px;
   color: var(--link);
+  overflow-wrap: break-word;
 }
 
 pre {
@@ -518,6 +532,7 @@ pre code {
   padding: 0;
   color: var(--text);
   font-size: .85rem;
+  overflow-wrap: normal;
 }
 
 /* Language label */
@@ -563,12 +578,24 @@ pre[data-lang] code {
   background: var(--primary);
 }
 
-pre:hover .copy-btn {
+.copy-btn:active {
+  transform: scale(.96);
+}
+
+pre:hover .copy-btn,
+pre:focus-within .copy-btn {
   opacity: 1;
 }
 
 .copy-btn.copied {
   color: var(--callout-tip);
+}
+
+/* Keep copy button reachable on touch devices (no hover) */
+@media (hover: none) {
+  .copy-btn {
+    opacity: 1;
+  }
 }
 
 /* ============================================================
@@ -578,7 +605,6 @@ pre:hover .copy-btn {
 .table-wrap {
   overflow-x: auto;
   margin-bottom: 1.25rem;
-  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -617,7 +643,7 @@ tr:nth-child(even) {
 }
 
 tr:hover {
-  background: rgb(88 166 255 / .06);
+  background: rgb(88 166 255 / .1);
 }
 
 /* ============================================================
@@ -704,8 +730,8 @@ tr:hover {
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 16px 48px rgb(0 0 0 / .35);
-  animation: search-in .15s ease;
+  box-shadow: var(--shadow-lg);
+  animation: search-in .15s var(--ease);
 }
 
 @keyframes search-in {
@@ -754,7 +780,7 @@ tr:hover {
 }
 
 .search-results:empty::after {
-  content: 'Start typing to search...';
+  content: 'Start typing to search…';
   display: block;
   padding: 16px;
   color: var(--text-muted);
@@ -801,6 +827,7 @@ tr:hover {
   color: var(--text-muted);
   display: flex;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .search-footer kbd {
@@ -823,7 +850,7 @@ tr:hover {
 
 .hero h1 {
   border: none;
-  font-size: 2.4rem;
+  font-size: clamp(2rem, 1.4rem + 2.6vw, 2.6rem);
   margin-bottom: .5rem;
 }
 
@@ -846,12 +873,17 @@ tr:hover {
   align-items: center;
   gap: 6px;
   padding: 10px 22px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   font-weight: 600;
   font-size: .92rem;
   text-decoration: none;
-  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition), transform var(--transition);
   border: 1px solid transparent;
+}
+
+.btn:active {
+  transform: scale(.98);
 }
 
 .btn-primary {
@@ -861,8 +893,8 @@ tr:hover {
 }
 
 .btn-primary:hover {
-  background: transparent;
-  color: var(--highlight);
+  filter: brightness(1.08);
+  color: #fff;
   text-decoration: none;
 }
 
@@ -874,6 +906,7 @@ tr:hover {
 
 .btn-secondary:hover {
   border-color: var(--text-muted);
+  background: var(--surface);
   text-decoration: none;
 }
 
@@ -890,12 +923,13 @@ tr:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
 }
 
 .feature-card:hover {
   border-color: var(--highlight);
   box-shadow: var(--shadow);
+  transform: translateY(-2px);
 }
 
 .feature-card h3 {
@@ -977,23 +1011,34 @@ tr:hover {
 
   .content {
     margin-left: 0;
-    padding: 64px 20px 60px;
-  }
-
-  h1 {
-    font-size: 1.6rem;
-  }
-
-  h2 {
-    font-size: 1.25rem;
-  }
-
-  .hero h1 {
-    font-size: 1.8rem;
+    padding: 68px 20px 60px;
   }
 
   .hero {
     padding: 24px 16px 20px;
+  }
+
+  th,
+  td {
+    padding: 8px 10px;
+  }
+}
+
+/* ============================================================
+   MOTION PREFERENCES (universal a11y)
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
   }
 }
 
