@@ -24,10 +24,21 @@
     <Property Id="JENKINS_AGENT_NAME" Secure="yes" />
     <Property Id="JENKINS_JAVA_PATH" Secure="yes" />
     <Property Id="JENKINS_SECRET_MODE" Value="EnvironmentVariable" Secure="yes" />
+    <Property Id="JENKINS_THUMBPRINT" Secure="yes" />
+
+    <!-- ─── Service identity (least privilege). Default: virtual service account 'NT SERVICE\Jenkins'.
+         For a password-based or gMSA account, override all three: SERVICE_ACCOUNT='DOMAIN\svc' (+ '$'
+         for gMSA), SERVICE_ACCOUNT_DOMAIN/SERVICE_ACCOUNT_NAME (for the folder ACL), and
+         SERVICE_PASSWORD (empty for gMSA/virtual). ─── -->
+    <Property Id="SERVICE_ACCOUNT" Value="NT SERVICE\Jenkins" Secure="yes" />
+    <Property Id="SERVICE_ACCOUNT_DOMAIN" Value="NT SERVICE" Secure="yes" />
+    <Property Id="SERVICE_ACCOUNT_NAME" Value="Jenkins" Secure="yes" />
+    <Property Id="SERVICE_PASSWORD" Secure="yes" Hidden="yes" />
 
     <Feature Id="Main" Title="Jenkins Agent Service" Level="1">
       <ComponentGroupRef Id="PublishOutput" />
       <ComponentRef Id="ServiceComponent" />
+      <ComponentRef Id="ServiceFolderAcl" />
     </Feature>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -36,7 +47,7 @@
     <!-- ─── Custom Action: call installed exe to write appsettings.json ─── -->
     <CustomAction Id="WriteConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE] --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
+                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE] --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
                   Execute="deferred" Impersonate="no" />
 
     <InstallExecuteSequence>

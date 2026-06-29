@@ -21,7 +21,7 @@
     "id": "configuration",
     "title": "Configuration",
     "url": "configuration.html",
-    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog"]
+    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog", "dpapi", "dpapi scope", "machine scope", "user scope", "certificate pinning", "thumbprint", "controller cert", "secret protection"]
   },
   {
     "id": "api-reference",
@@ -33,7 +33,7 @@
     "id": "installation",
     "title": "Installation",
     "url": "installation.html",
-    "keywords": ["installation", "install", "setup", "deploy", "windows", "service", "sc", "publish", "prerequisites", "requirements", "powershell", "central package management", "cpm", "directory.packages.props", "nuget", "msi", "wix"]
+    "keywords": ["installation", "install", "setup", "deploy", "windows", "service", "sc", "publish", "prerequisites", "requirements", "powershell", "central package management", "cpm", "directory.packages.props", "nuget", "msi", "wix", "service account", "virtual account", "gmsa", "least privilege", "acl", "permissions", "hardening", "nt service"]
   },
   {
     "id": "ci-cd",

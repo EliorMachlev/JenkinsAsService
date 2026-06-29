@@ -124,6 +124,18 @@
             <td><code>Unprotected</code></td>
             <td>How <code>AgentSecret</code> is stored/resolved. See <a href="#secret-protection-modes">Secret Protection Modes</a> below.</td>
           </tr>
+          <tr>
+            <td><code>DpapiScope</code></td>
+            <td>No</td>
+            <td><code>Machine</code></td>
+            <td>DPAPI scope when <code>SecretMode</code> is <code>Dpapi</code>: <code>Machine</code> (any local process can decrypt) or <code>User</code> (only the encrypting identity). See <a href="#dpapi-scope">DPAPI Scope</a>.</td>
+          </tr>
+          <tr>
+            <td><code>ControllerCertThumbprint</code></td>
+            <td>No</td>
+            <td><em>(empty)</em></td>
+            <td>SHA-256 thumbprint to pin the controller's TLS certificate for the <code>agent.jar</code> download. See <a href="#cert-pinning">Certificate Pinning</a>.</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -134,9 +146,11 @@
     "JenkinsURL": "https://jenkins.example.com:8443",
     "AgentSecret": "your-agent-secret-here",
     "SecretMode": "Unprotected",
+    "DpapiScope": "Machine",
     "AgentName": "",
     "JavaPath": "",
     "CustomArguments": "",
+    "ControllerCertThumbprint": "",
     "DebugMode": false,
     "CompactLog": false,
     "RetainedLogs": 3,
@@ -207,7 +221,7 @@
           <tr>
             <td><code>Dpapi</code></td>
             <td>Base64-encoded DPAPI ciphertext</td>
-            <td><code>ProtectedData.Unprotect</code> (machine-scoped, non-portable)</td>
+            <td><code>ProtectedData.Unprotect</code> (non-portable; <code>Machine</code> or <code>User</code> scope &mdash; see <a href="#dpapi-scope">below</a>)</td>
           </tr>
           <tr>
             <td><code>EnvironmentVariable</code></td>
@@ -228,6 +242,47 @@
       <p>DPAPI mode binds the secret to the <strong>machine</strong>. Moving <code>appsettings.json</code> to another machine will fail decryption. Re-run <code>update-secret</code> after a machine migration.</p>
     </div>
 
+    <h3 id="dpapi-scope">DPAPI Scope (Machine vs. User)</h3>
+    <p>When <code>SecretMode</code> is <code>Dpapi</code>, <code>DpapiScope</code> chooses which key protects the secret:</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Scope</th>
+            <th>Who can decrypt</th>
+            <th>Requirement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Machine</code> (default)</td>
+            <td>Any process on the machine</td>
+            <td>None &mdash; works regardless of which identity wrote the secret</td>
+          </tr>
+          <tr>
+            <td><code>User</code></td>
+            <td>Only the identity that encrypted it</td>
+            <td>The secret <strong>must be written by the service account</strong> (see below)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-warning">
+      <div class="callout-title">User-scope identity constraint</div>
+      <p>User-scope DPAPI binds the ciphertext to a single Windows identity. Because the MSI writes the config as <code>SYSTEM</code>, a default install always uses <code>Machine</code> scope. To use <code>User</code> scope, the secret must be encrypted <em>by the account that runs the service</em>:</p>
+      <ul>
+        <li>Works with a <strong>password-based dedicated account</strong> &mdash; run <code>update-secret --mode Dpapi --dpapi-scope User --impersonate --username "DOMAIN\svc"</code> (password via the <code>JAS_IMPERSONATE_PASSWORD</code> env var).</li>
+        <li><strong>Not</strong> compatible with virtual accounts (<code>NT SERVICE\Jenkins</code>) or gMSA &mdash; they cannot be interactively logged on, so they cannot run the encryption step. Use <code>Machine</code> scope, <code>EnvironmentVariable</code>, or <code>CredentialManager</code> for those identities.</li>
+      </ul>
+    </div>
+
+    <h3 id="cert-pinning">Certificate Pinning</h3>
+    <p>Set <code>ControllerCertThumbprint</code> to the SHA-256 thumbprint of the Jenkins controller's TLS certificate to defend against a MITM that presents a different but chain-trusted certificate (e.g. a rogue internal CA). When set, the <code>agent.jar</code> download accepts the connection <strong>only</strong> if the server certificate's thumbprint matches &mdash; the pin replaces chain trust. Separators (colons, spaces) and case are ignored.</p>
+    <div class="callout callout-note">
+      <div class="callout-title">Scope of the pin</div>
+      <p>This pins the <strong>.NET <code>agent.jar</code> download only</strong>. The Java agent's own control-channel TLS is handled by the JVM, not .NET. To pin that connection as well, pass the controller certificate to the agent via <code>CustomArguments</code> (the Jenkins remoting agent accepts <code>-cert &lt;PEM&gt;</code>).</p>
+    </div>
+
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>
     <pre data-lang="text"><code>JenkinsAsService.exe update-secret [options]
@@ -236,9 +291,12 @@
   --secret-env &lt;var&gt;     Read from named environment variable
   --url &lt;value&gt;          Jenkins controller URL
   --mode &lt;value&gt;         Dpapi | EnvironmentVariable | CredentialManager | Unprotected
+  --dpapi-scope &lt;value&gt;  Machine (default) | User  (User requires writing as the service account)
+  --thumbprint &lt;value&gt;   SHA-256 thumbprint of the controller cert to pin (agent.jar download)
+  --service-account &lt;a&gt;  Service account granted read on the config; hardens appsettings.json ACL
   --agent-name &lt;value&gt;   Node name (default: hostname)
   --java-path &lt;value&gt;    Java bin folder (default: JAVA_HOME)
-  --impersonate          Run Credential Manager write as a different user
+  --impersonate          Run the write as a different user (Credential Manager / User-scope DPAPI)
   --username &lt;value&gt;     Username for impersonation (DOMAIN\user)
   --silent               Non-interactive (all values from flags)</code></pre>
 

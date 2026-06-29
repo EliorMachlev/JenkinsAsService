@@ -284,14 +284,21 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     <p>The project includes a <strong>WiX v5</strong> MSI installer (<code>src/JenkinsAsService.Installer/</code>) that:</p>
     <ul>
       <li>Installs to <code>C:\Program Files\Jenkins</code> (customizable via install directory dialog or <code>INSTALLFOLDER</code> property)</li>
-      <li>Registers the <code>Jenkins</code> Windows Service (LocalSystem, Automatic start)</li>
+      <li>Registers the <code>Jenkins</code> Windows Service under a least-privilege <strong>virtual service account</strong> (<code>NT SERVICE\Jenkins</code>, Automatic start) instead of <code>LocalSystem</code></li>
+      <li>Hardens the install folder ACL: the service account gets write access (for logs / <code>agent.jar</code> / work dir) while standard users keep only Read &amp; Execute &mdash; a non-admin user cannot replace the <code>.exe</code></li>
+      <li>Locks down <code>appsettings.json</code> so only SYSTEM, Administrators and the service account can read it (the secret-bearing file is removed from <code>Users</code>)</li>
+      <li>Pre-creates the Windows Event Log source (the low-privilege account cannot create it at runtime)</li>
       <li>Configures Windows-level service recovery automatically (<code>util:ServiceConfig</code> &mdash; restart on all 3 failures after 10s, reset daily)</li>
       <li>Starts the service after install</li>
       <li>Stops and removes the service on uninstall</li>
       <li>Supports in-place upgrades (same <code>UpgradeCode</code> across versions)</li>
-      <li>Shows BSD 3-Clause license agreement during install</li>
       <li>Default secret protection mode: <code>EnvironmentVariable</code> (reads from <code>JENKINS_SECRET</code>)</li>
     </ul>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Service account</div>
+      <p>The default <code>NT SERVICE\Jenkins</code> virtual account needs no password and no Active Directory. For a domain <strong>gMSA</strong> or a dedicated password-based account, override <code>SERVICE_ACCOUNT</code> (plus <code>SERVICE_ACCOUNT_DOMAIN</code> / <code>SERVICE_ACCOUNT_NAME</code> for the folder ACL, and <code>SERVICE_PASSWORD</code> &mdash; leave empty for gMSA).</p>
+    </div>
 
     <h3 id="msi-dialog-flow">MSI Dialog Flow</h3>
     <p><code>LicenseAgreementDlg</code> &rarr; <code>InstallDirDlg</code> &rarr; <code>JenkinsConfigDlg</code> &rarr; <code>SecurityOptionsDlg</code> &rarr; <code>VerifyReadyDlg</code></p>
@@ -320,7 +327,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
           </tr>
           <tr>
             <td><code>Service.wxs</code></td>
-            <td>File components + <code>ServiceInstall</code> / <code>ServiceControl</code> + <code>util:ServiceConfig</code> (recovery)</td>
+            <td>File components + <code>ServiceInstall</code> (virtual service account) / <code>ServiceControl</code> + <code>util:ServiceConfig</code> (recovery) + <code>util:PermissionEx</code> install-folder ACL grant</td>
           </tr>
           <tr>
             <td><code>ConfigDialog.wxs</code></td>
@@ -352,8 +359,18 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     JENKINS_URL="https://jenkins.example.com:8443" `
     JENKINS_SECRET="your-secret" `
     JENKINS_SECRET_MODE="EnvironmentVariable" `
+    JENKINS_THUMBPRINT="" `
     JENKINS_AGENT_NAME="" `
     JENKINS_JAVA_PATH=""</code></pre>
+
+    <p>For a domain gMSA, add the identity properties (note the trailing <code>$</code> and empty password):</p>
+    <pre data-lang="powershell"><code>msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
+    JENKINS_URL="https://jenkins.example.com:8443" `
+    JENKINS_SECRET="your-secret" `
+    SERVICE_ACCOUNT="CONTOSO\svc-jenkins$" `
+    SERVICE_ACCOUNT_DOMAIN="CONTOSO" `
+    SERVICE_ACCOUNT_NAME="svc-jenkins$" `
+    SERVICE_PASSWORD=""</code></pre>
 
     <div class="table-wrap">
       <table>
@@ -391,6 +408,30 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>EnvironmentVariable</code>, <code>Dpapi</code>, <code>CredentialManager</code>, or <code>Unprotected</code></td>
           </tr>
           <tr>
+            <td><code>JENKINS_THUMBPRINT</code></td>
+            <td>No</td>
+            <td>&mdash;</td>
+            <td>SHA-256 thumbprint of the controller TLS certificate to pin the <code>agent.jar</code> download (empty = standard chain validation)</td>
+          </tr>
+          <tr>
+            <td><code>SERVICE_ACCOUNT</code></td>
+            <td>No</td>
+            <td><code>NT SERVICE\Jenkins</code></td>
+            <td>Service identity. Use a gMSA (<code>DOMAIN\svc$</code>) or dedicated account for domain scenarios</td>
+          </tr>
+          <tr>
+            <td><code>SERVICE_ACCOUNT_DOMAIN</code> / <code>SERVICE_ACCOUNT_NAME</code></td>
+            <td>No</td>
+            <td><code>NT SERVICE</code> / <code>Jenkins</code></td>
+            <td>Domain and name halves of <code>SERVICE_ACCOUNT</code>, used for the install-folder ACL grant. Override when changing <code>SERVICE_ACCOUNT</code></td>
+          </tr>
+          <tr>
+            <td><code>SERVICE_PASSWORD</code></td>
+            <td>No</td>
+            <td>&mdash;</td>
+            <td>Password for a dedicated account. Leave empty for virtual accounts and gMSA (managed, passwordless)</td>
+          </tr>
+          <tr>
             <td><code>JENKINS_AGENT_NAME</code></td>
             <td>No</td>
             <td>Hostname</td>
@@ -413,11 +454,18 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       <li>Edit <code>appsettings.json</code> &mdash; fill in <code>JenkinsURL</code>, <code>AgentSecret</code>, and any other settings</li>
       <li>Register and start the service:</li>
     </ol>
-    <pre data-lang="powershell"><code>sc.exe create Jenkins binPath= "D:\Jenkins\JenkinsAsService.exe" start= auto obj= LocalSystem
+    <pre data-lang="powershell"><code># Least-privilege virtual service account (matches the MSI default). Use obj= LocalSystem only if required.
+sc.exe create Jenkins binPath= "D:\Jenkins\JenkinsAsService.exe" start= auto obj= "NT SERVICE\Jenkins"
 sc.exe failure Jenkins reset= 86400 actions= restart/10000/restart/10000/restart/10000
 sc.exe start Jenkins</code></pre>
-    <p>To configure secret protection, run the CLI before starting:</p>
-    <pre data-lang="powershell"><code>.\JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins:8443" --mode Dpapi --silent</code></pre>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Low-privilege account prerequisites</div>
+      <p>A virtual / low-privilege account cannot create the Event Log source or write into <code>Program Files</code>. When not using the MSI, run <code>update-secret --silent</code> from an elevated prompt once (it pre-creates the Event Log source), and grant the account Modify on the install folder so it can write logs and download <code>agent.jar</code>. The service falls back to file-only logging if the Event Log source is unavailable.</p>
+    </div>
+
+    <p>To configure secret protection and harden the config ACL, run the CLI (elevated) before starting:</p>
+    <pre data-lang="powershell"><code>.\JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins:8443" --mode Dpapi --service-account "NT SERVICE\Jenkins" --silent</code></pre>
     <p>To uninstall:</p>
     <pre data-lang="powershell"><code>sc.exe stop Jenkins
 sc.exe delete Jenkins</code></pre>

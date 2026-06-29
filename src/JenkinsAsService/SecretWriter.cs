@@ -21,16 +21,21 @@ public static class SecretWriter
     /// <summary>
     /// Processes the secret based on mode, then writes appsettings.json.
     /// Preserves existing fields (CustomArguments, DebugMode, CompactLog, MaxRetries) if the file exists.
+    /// When <paramref name="serviceAccount"/> is supplied, the written file's ACL is hardened so that
+    /// only SYSTEM, Administrators and that account can read it (removes inherited Users access).
     /// </summary>
     public static void WriteConfig(string basePath, string secret, SecretMode mode,
-        string server, string? agentName, string? javaPath)
+        string server, string? agentName, string? javaPath,
+        DpapiScope dpapiScope = DpapiScope.Machine, string? controllerCertThumbprint = null,
+        string? serviceAccount = null)
     {
-        var configSecret = ProcessSecret(secret, mode);
+        var configSecret = ProcessSecret(secret, mode, dpapiScope);
         var configPath = Path.Combine(basePath, ConfigFileName);
 
         var existingRoot = ReadExistingRoot(configPath);
         var existingJenkins = existingRoot?[ConfigSectionName]?.AsObject();
-        var jenkins = BuildJenkinsSection(configSecret, mode, server, agentName, javaPath, existingJenkins);
+        var jenkins = BuildJenkinsSection(
+            configSecret, mode, server, agentName, javaPath, dpapiScope, controllerCertThumbprint, existingJenkins);
 
         var root = new JsonObject();
         if (existingRoot != null)
@@ -51,11 +56,16 @@ public static class SecretWriter
         // no CLI option sets it and the filename is a constant, so there is no path-traversal vector.
         // nosemgrep: csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine
         File.WriteAllText(configPath, root.ToJsonString(options), Encoding.UTF8);
+
+        if (!string.IsNullOrWhiteSpace(serviceAccount))
+        {
+            ConfigAclHardener.Harden(configPath, serviceAccount);
+        }
     }
 
-    private static string ProcessSecret(string secret, SecretMode mode) => mode switch
+    private static string ProcessSecret(string secret, SecretMode mode, DpapiScope dpapiScope) => mode switch
     {
-        SecretMode.Dpapi => ProtectDpapi(secret),
+        SecretMode.Dpapi => ProtectDpapi(secret, dpapiScope),
         SecretMode.EnvironmentVariable => StoreEnvironmentVariable(secret),
         SecretMode.CredentialManager => StoreCredentialManager(secret),
         SecretMode.Unprotected => secret,
@@ -83,14 +93,18 @@ public static class SecretWriter
     }
 
     private static JsonObject BuildJenkinsSection(string configSecret, SecretMode mode,
-        string server, string? agentName, string? javaPath, JsonObject? existingJenkins) => new()
+        string server, string? agentName, string? javaPath, DpapiScope dpapiScope,
+        string? controllerCertThumbprint, JsonObject? existingJenkins) => new()
     {
         ["JenkinsURL"] = server,
         ["AgentSecret"] = configSecret,
         ["SecretMode"] = mode.ToString(),
+        ["DpapiScope"] = dpapiScope.ToString(),
         ["AgentName"] = agentName ?? ExistingString(existingJenkins, "AgentName"),
         ["JavaPath"] = javaPath ?? ExistingString(existingJenkins, "JavaPath"),
         ["CustomArguments"] = ExistingString(existingJenkins, "CustomArguments"),
+        ["ControllerCertThumbprint"] =
+            controllerCertThumbprint ?? ExistingString(existingJenkins, "ControllerCertThumbprint"),
         ["DebugMode"] = ExistingValue(existingJenkins, "DebugMode", false),
         ["CompactLog"] = ExistingValue(existingJenkins, "CompactLog", false),
         ["MaxRetries"] = ExistingValue(existingJenkins, "MaxRetries", 0)
@@ -102,10 +116,13 @@ public static class SecretWriter
     private static T ExistingValue<T>(JsonObject? existing, string key, T fallback) where T : struct =>
         existing?[key]?.GetValue<T>() ?? fallback;
 
-    private static string ProtectDpapi(string secret)
+    private static string ProtectDpapi(string secret, DpapiScope scope)
     {
+        var protectionScope = scope == DpapiScope.User
+            ? DataProtectionScope.CurrentUser
+            : DataProtectionScope.LocalMachine;
         var plainBytes = Encoding.UTF8.GetBytes(secret);
-        var encrypted = ProtectedData.Protect(plainBytes, SecretResolver.DpapiEntropy, DataProtectionScope.LocalMachine);
+        var encrypted = ProtectedData.Protect(plainBytes, SecretResolver.DpapiEntropy, protectionScope);
         return Convert.ToBase64String(encrypted);
     }
 

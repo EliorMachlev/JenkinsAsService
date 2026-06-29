@@ -83,13 +83,19 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int reta
 
     ConfigureFileSink(logConfig, compactLog, retainedLogs, basePath);
 
-    return logConfig
-        .WriteTo.EventLog(
+    // The low-privilege service account cannot create the event source (HKLM write). The installer
+    // pre-creates it as SYSTEM; here we only attach the sink if the source is usable, and never let
+    // the sink attempt creation (manageEventSource: false) so startup can't fail on a registry write.
+    if (EventLogSourceInstaller.Ensure(EventLogSource, EventLogName))
+    {
+        logConfig.WriteTo.EventLog(
             source: EventLogSource,
             logName: EventLogName,
             restrictedToMinimumLevel: LogEventLevel.Warning,
-            manageEventSource: true)
-        .CreateLogger();
+            manageEventSource: false);
+    }
+
+    return logConfig.CreateLogger();
 }
 
 static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, int retainedLogs, string basePath)
@@ -122,8 +128,26 @@ static IHost BuildHost(string[] args)
 
     builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
     builder.Services.Configure<ServiceSettings>(builder.Configuration.GetSection(ConfigSectionName));
-    builder.Services.AddHttpClient(JarDownloaderClientName)
-        .AddStandardResilienceHandler();
+
+    var pinnedThumbprint = builder.Configuration.GetSection(ConfigSectionName)["ControllerCertThumbprint"];
+    var jarClient = builder.Services.AddHttpClient(JarDownloaderClientName);
+    jarClient.AddStandardResilienceHandler();
+
+    if (!string.IsNullOrWhiteSpace(pinnedThumbprint))
+    {
+        Log.Information("Controller certificate pinning enabled for {Jar} download", "agent.jar");
+        jarClient.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                // Pin replaces chain trust: accept the connection only if the server certificate's
+                // SHA-256 thumbprint matches, rejecting any other certificate (incl. chain-trusted MITM).
+                RemoteCertificateValidationCallback = (_, cert, _, _) =>
+                    CertificateThumbprintValidator.Matches(
+                        cert as System.Security.Cryptography.X509Certificates.X509Certificate2, pinnedThumbprint)
+            }
+        });
+    }
     builder.Services.AddSingleton<IJarDownloader, HttpJarDownloader>();
     builder.Services.AddSingleton<IConnectivityChecker, TcpConnectivityChecker>();
     builder.Services.AddSingleton<ISecretResolver, SecretResolver>();

@@ -70,7 +70,7 @@
 
     <h2 id="key-benefits">Key Benefits</h2>
     <ul>
-      <li><strong>Auto-start on boot</strong> &mdash; runs under LocalSystem, no interactive login required</li>
+      <li><strong>Auto-start on boot</strong> &mdash; runs under a least-privilege virtual service account, no interactive login required</li>
       <li><strong>Event-driven watchdog</strong> &mdash; detects agent death instantly via <code>process.Exited</code> / <code>TaskCompletionSource</code>, auto-recovers with exponential backoff (10s&#8594;300s)</li>
       <li><strong>Smart jar caching</strong> &mdash; ETag-based conditional GET (<code>If-None-Match</code> / 304 Not Modified) skips the download when the jar is unchanged</li>
       <li><strong>Secret protection</strong> &mdash; DPAPI machine-scope encryption, Windows Credential Manager, system env var, or plaintext. CLI subcommand <code>update-secret</code> with <code>--impersonate</code> support</li>

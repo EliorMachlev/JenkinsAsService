@@ -43,6 +43,23 @@ public class SecretResolverTests
     }
 
     [Fact]
+    public void Dpapi_decrypts_user_scoped_secret()
+    {
+        const string plaintext = "dpapi-user-secret";
+        var encrypted = ProtectedData.Protect(
+            Encoding.UTF8.GetBytes(plaintext), SecretResolver.DpapiEntropy, DataProtectionScope.CurrentUser);
+
+        var settings = new ServiceSettings
+        {
+            AgentSecret = Convert.ToBase64String(encrypted),
+            SecretMode = SecretMode.Dpapi,
+            DpapiScope = DpapiScope.User
+        };
+
+        _sut.Resolve(settings).Should().Be(plaintext);
+    }
+
+    [Fact]
     public void Dpapi_throws_on_invalid_base64()
     {
         var settings = new ServiceSettings

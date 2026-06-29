@@ -33,4 +33,18 @@ public sealed class ServiceSettings
 
     /// <summary>Secret protection mode: Unprotected, Dpapi, EnvironmentVariable, CredentialManager.</summary>
     public SecretMode SecretMode { get; set; } = SecretMode.Unprotected;
+
+    /// <summary>
+    /// DPAPI protection scope (only used when <see cref="SecretMode"/> is <c>Dpapi</c>):
+    /// <c>Machine</c> (default, any local process can decrypt) or <c>User</c> (only the encrypting
+    /// identity can decrypt). User-scope requires the secret to be written by the service account.
+    /// </summary>
+    public DpapiScope DpapiScope { get; set; } = DpapiScope.Machine;
+
+    /// <summary>
+    /// Optional SHA-256 thumbprint (hex, colons/spaces ignored) of the Jenkins controller's TLS
+    /// certificate. When set, the agent.jar download pins the server certificate to this value,
+    /// rejecting any other certificate even if chain-trusted. Empty = standard chain validation only.
+    /// </summary>
+    public string ControllerCertThumbprint { get; set; } = "";
 }

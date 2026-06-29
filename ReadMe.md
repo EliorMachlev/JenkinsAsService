@@ -18,7 +18,7 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 
 ## Features
 
-- **Auto-start on boot** — runs under LocalSystem, no interactive login required
+- **Auto-start on boot** — runs under a least-privilege virtual service account (`NT SERVICE\Jenkins`), no interactive login required
 - **Event-driven watchdog** — detects agent death instantly (not polling), auto-recovers with exponential backoff (10s to 5min)
 - **Secret protection** — DPAPI machine-scope encryption, Windows Credential Manager, environment variables, or plaintext
 - **Smart jar caching** — ETag-based conditional GET skips the download when `agent.jar` is unchanged
@@ -100,10 +100,13 @@ For environments where MSI installation isn't possible, download the `.7z` or `.
 3. Register and start the service:
 
 ```powershell
-sc.exe create Jenkins binPath= "D:\Jenkins\JenkinsAsService.exe" start= auto obj= LocalSystem
+# Least-privilege virtual service account (matches the MSI default). Use obj= LocalSystem only if required.
+sc.exe create Jenkins binPath= "D:\Jenkins\JenkinsAsService.exe" start= auto obj= "NT SERVICE\Jenkins"
 sc.exe failure Jenkins reset= 86400 actions= restart/10000/restart/10000/restart/10000
 sc.exe start Jenkins
 ```
+
+> A low-privilege account cannot create the Event Log source or write into `Program Files`. Run `update-secret --silent` once from an elevated prompt (it pre-creates the source) and grant the account Modify on the install folder. The service falls back to file-only logging if the Event Log source is unavailable.
 
 To configure secret protection, run the CLI before starting:
 

@@ -17,6 +17,11 @@ public static class UpdateSecretCommand
           --secret-env <var>      Read secret from named environment variable
           --url <value>           Jenkins controller address (include port)
           --mode <value>          Protection mode: Dpapi, EnvironmentVariable, CredentialManager, Unprotected
+          --dpapi-scope <value>   DPAPI scope when --mode Dpapi: Machine (default) or User.
+                                  User-scope requires writing as the service account (see --impersonate).
+          --thumbprint <value>    SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
+          --service-account <acct> Service account (e.g. 'NT SERVICE\Jenkins') granted read on the
+                                  written config; appsettings.json ACL is hardened to deny Users.
           --agent-name <value>    Agent node label (default: hostname)
           --java-path <value>     Java installation directory (default: JAVA_HOME)
           --impersonate           Run Credential Manager write as a different user account.
@@ -32,6 +37,8 @@ public static class UpdateSecretCommand
 
     private const string ConfigFileName = "appsettings.json";
     private const string ConfigSectionName = "Jenkins";
+    private const string EventLogSource = "JenkinsAsService";
+    private const string EventLogName = "Application";
     private const char DomainSeparator = '\\';
     private const string LocalDomain = ".";
 
@@ -47,6 +54,9 @@ public static class UpdateSecretCommand
         public string? SecretEnv;
         public string? Url;
         public SecretMode? Mode;
+        public DpapiScope? DpapiScope;
+        public string? Thumbprint;
+        public string? ServiceAccount;
         public string? AgentName;
         public string? JavaPath;
         public string? Username;
@@ -117,6 +127,15 @@ public static class UpdateSecretCommand
             case "--mode":
                 state.Mode = ParseMode(Next(args, ref i));
                 return true;
+            case "--dpapi-scope":
+                state.DpapiScope = ParseDpapiScope(Next(args, ref i));
+                return true;
+            case "--thumbprint":
+                state.Thumbprint = Next(args, ref i);
+                return true;
+            case "--service-account":
+                state.ServiceAccount = Next(args, ref i);
+                return true;
             case "--agent-name":
                 state.AgentName = Next(args, ref i);
                 return true;
@@ -150,6 +169,10 @@ public static class UpdateSecretCommand
 
     private static int RunSilent(string basePath, ParseState args)
     {
+        // Installer-only path: runs elevated (SYSTEM) during install, so pre-create the event source
+        // here while we have the privilege. The low-privilege service account cannot do this later.
+        EventLogSourceInstaller.Ensure(EventLogSource, EventLogName);
+
         var secret = ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv);
 
         if (string.IsNullOrWhiteSpace(secret))
@@ -175,7 +198,8 @@ public static class UpdateSecretCommand
             return RunSilentImpersonated(basePath, secret, args);
         }
 
-        SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath);
+        SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath,
+            args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
         var configPath = Path.Combine(basePath, ConfigFileName);
         Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode.Value})");
         return 0;
@@ -199,7 +223,8 @@ public static class UpdateSecretCommand
         try
         {
             RunImpersonated(args.Username, password, () =>
-                SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath));
+                SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath,
+                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
         }
         catch (InvalidOperationException ex)
         {
@@ -255,11 +280,13 @@ public static class UpdateSecretCommand
                 }
 
                 RunImpersonated(credentials.Value.Username, credentials.Value.Password, () =>
-                    SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath));
+                    SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
+                        args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
             }
             else
             {
-                SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath);
+                SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
+                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
             }
         }
         catch (InvalidOperationException ex)
@@ -498,6 +525,23 @@ public static class UpdateSecretCommand
         }
 
         Console.Error.WriteLine($"Error: unknown mode '{value}'. Valid: Dpapi, EnvironmentVariable, CredentialManager, Unprotected");
+        return null;
+    }
+
+    // Returns null on invalid input so callers can fail explicitly.
+    internal static DpapiScope? ParseDpapiScope(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (Enum.TryParse<DpapiScope>(value, ignoreCase: true, out var scope))
+        {
+            return scope;
+        }
+
+        Console.Error.WriteLine($"Error: unknown dpapi-scope '{value}'. Valid: Machine, User");
         return null;
     }
 

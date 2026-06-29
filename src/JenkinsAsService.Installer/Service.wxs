@@ -11,6 +11,9 @@
             Source="$(var.PublishDir)JenkinsAsService.exe"
             KeyPath="yes" />
 
+      <!-- Least privilege: defaults to the virtual service account 'NT SERVICE\Jenkins'
+           (no password, auto-managed SID). Override SERVICE_ACCOUNT (+ SERVICE_PASSWORD for a
+           password-based or gMSA account) via the UI or msiexec for domain scenarios. -->
       <ServiceInstall Id="JenkinsServiceInstall"
                       Name="Jenkins"
                       DisplayName="Jenkins Agent Service"
@@ -18,7 +21,8 @@
                       Type="ownProcess"
                       Start="auto"
                       ErrorControl="normal"
-                      Account="LocalSystem">
+                      Account="[SERVICE_ACCOUNT]"
+                      Password="[SERVICE_PASSWORD]">
         <util:ServiceConfig
             FirstFailureActionType="restart"
             SecondFailureActionType="restart"
@@ -33,6 +37,20 @@
                       Stop="both"
                       Remove="uninstall"
                       Wait="yes" />
+    </Component>
+
+    <!-- Grant the (low-privilege) service account write access to its own install folder so it can
+         create log files, download agent.jar and use it as the agent -workDir. Inheritance is kept,
+         so standard Users still get only Read/Execute (OS default) — a different non-admin user
+         cannot replace the .exe. Only the service identity (which already runs the binary) and
+         Administrators/SYSTEM can write. -->
+    <Component Id="ServiceFolderAcl" Directory="INSTALLFOLDER"
+               Guid="9D1F73AD-383E-436A-8F1A-7C83CFC0A5A0">
+      <CreateFolder>
+        <util:PermissionEx User="[SERVICE_ACCOUNT_NAME]" Domain="[SERVICE_ACCOUNT_DOMAIN]"
+                           GenericRead="yes" GenericExecute="yes" GenericWrite="yes"
+                           Delete="yes" Inheritable="yes" />
+      </CreateFolder>
     </Component>
   </Fragment>
 

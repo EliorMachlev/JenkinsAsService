@@ -41,6 +41,32 @@ public class SecretWriterTests : IDisposable
     }
 
     [Fact]
+    public void Dpapi_user_scope_writes_currentuser_encrypted_secret()
+    {
+        SecretWriter.WriteConfig(_tempDir, "user-secret", SecretMode.Dpapi,
+            "https://jenkins:8443", null, null, DpapiScope.User);
+
+        var json = ReadConfig();
+        var jenkins = json.RootElement.GetProperty("Jenkins");
+        jenkins.GetProperty("DpapiScope").GetString().Should().Be("User");
+
+        var encrypted = Convert.FromBase64String(jenkins.GetProperty("AgentSecret").GetString()!);
+        var decrypted = ProtectedData.Unprotect(encrypted, SecretResolver.DpapiEntropy, DataProtectionScope.CurrentUser);
+        Encoding.UTF8.GetString(decrypted).Should().Be("user-secret");
+    }
+
+    [Fact]
+    public void Writes_dpapi_scope_and_controller_thumbprint_fields()
+    {
+        SecretWriter.WriteConfig(_tempDir, "secret", SecretMode.Unprotected,
+            "https://jenkins:8443", null, null, DpapiScope.Machine, "AB:CD:EF");
+
+        var jenkins = ReadConfig().RootElement.GetProperty("Jenkins");
+        jenkins.GetProperty("DpapiScope").GetString().Should().Be("Machine");
+        jenkins.GetProperty("ControllerCertThumbprint").GetString().Should().Be("AB:CD:EF");
+    }
+
+    [Fact]
     public void Unprotected_writes_plaintext_secret()
     {
         SecretWriter.WriteConfig(_tempDir, "plain-secret", SecretMode.Unprotected,

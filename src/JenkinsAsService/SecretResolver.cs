@@ -22,14 +22,14 @@ public sealed class SecretResolver : ISecretResolver
         return settings.SecretMode switch
         {
             SecretMode.Unprotected => settings.AgentSecret,
-            SecretMode.Dpapi => ResolveDpapi(settings.AgentSecret),
+            SecretMode.Dpapi => ResolveDpapi(settings.AgentSecret, settings.DpapiScope),
             SecretMode.EnvironmentVariable => ResolveEnvironmentVariable(settings.AgentSecret),
             SecretMode.CredentialManager => ResolveCredentialManager(settings.AgentSecret),
             _ => throw new InvalidOperationException($"Unknown SecretMode: '{settings.SecretMode}'.")
         };
     }
 
-    private static string ResolveDpapi(string base64Cipher)
+    private static string ResolveDpapi(string base64Cipher, DpapiScope scope)
     {
         byte[] encrypted;
         try
@@ -42,15 +42,22 @@ public sealed class SecretResolver : ISecretResolver
                 "AgentSecret is not valid Base64. Re-run the installer with DPAPI mode to re-encrypt.", ex);
         }
 
+        var protectionScope = scope == DpapiScope.User
+            ? DataProtectionScope.CurrentUser
+            : DataProtectionScope.LocalMachine;
+
         try
         {
-            var plain = ProtectedData.Unprotect(encrypted, DpapiEntropy, DataProtectionScope.LocalMachine);
+            var plain = ProtectedData.Unprotect(encrypted, DpapiEntropy, protectionScope);
             return Encoding.UTF8.GetString(plain);
         }
         catch (CryptographicException ex)
         {
-            throw new InvalidOperationException(
-                "DPAPI decryption failed. The secret was encrypted on a different machine or the key has been rotated.", ex);
+            var hint = scope == DpapiScope.User
+                ? "The secret must be encrypted by the same identity that runs the service (User-scope DPAPI). " +
+                  "Re-run 'update-secret --impersonate' as the service account."
+                : "The secret was encrypted on a different machine or the key has been rotated.";
+            throw new InvalidOperationException($"DPAPI decryption failed. {hint}", ex);
         }
     }
 
