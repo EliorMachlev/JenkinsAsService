@@ -1,12 +1,3 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-#
-# https://github.com/microsoft/action-psscriptanalyzer
-# For more information on PSScriptAnalyzer in general, see
-# https://github.com/PowerShell/PSScriptAnalyzer
-
 name: PSScriptAnalyzer
 
 on:
@@ -16,32 +7,51 @@ on:
     branches: [ "main" ]
   schedule:
     - cron: '23 23 * * 0'
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
-  build:
-    permissions:
-      contents: read # for actions/checkout to fetch code
-      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
-      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+  analyze:
     name: PSScriptAnalyzer
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Run PSScriptAnalyzer
-        uses: microsoft/psscriptanalyzer-action@7a0da25f33985767f15f93140306528900744195 # no tags — pinned to latest main
-        with:
-          # Check https://github.com/microsoft/action-psscriptanalyzer for more info about the options.
-          # The below set up runs PSScriptAnalyzer to your entire repository and runs some basic security rules.
-          path: .\
-          recurse: true
-          output: results.sarif
+        shell: pwsh
+        run: |
+          $root    = $env:GITHUB_WORKSPACE ?? $PWD.Path
+          $results = Invoke-ScriptAnalyzer -Path $root -Recurse
 
-      # Upload the SARIF file generated in the previous step
-      - name: Upload SARIF results file
-        uses: github/codeql-action/upload-sarif@v4
+          $sarifResults = @($results | ForEach-Object {
+            $rel = $_.ScriptPath.Replace($root, '').TrimStart('/\').Replace('\', '/')
+            @{
+              ruleId    = $_.RuleName
+              level     = switch ($_.Severity) { 'Error' { 'error' } 'Warning' { 'warning' } default { 'note' } }
+              message   = @{ text = $_.Message }
+              locations = @(@{
+                physicalLocation = @{
+                  artifactLocation = @{ uri = $rel; uriBaseId = '%SRCROOT%' }
+                  region           = @{ startLine = [int]$_.Line; startColumn = [int]$_.Column }
+                }
+              })
+            }
+          })
+
+          @{
+            '$schema' = 'https://json.schemastore.org/sarif-2.1.0.json'
+            version   = '2.1.0'
+            runs      = @(@{
+              tool    = @{ driver = @{ name = 'PSScriptAnalyzer'; rules = @() } }
+              results = $sarifResults
+            })
+          } | ConvertTo-Json -Depth 20 | Set-Content results.sarif -Encoding utf8
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           sarif_file: results.sarif
+          category: psscriptanalyzer
