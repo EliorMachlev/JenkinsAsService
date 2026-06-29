@@ -97,11 +97,14 @@
 
     <h3 id="codeql">CodeQL Advanced (<code>.github/workflows/codeql.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Vulnerability analysis of GitHub Actions workflow files (<code>language: actions</code>)</li>
+      <li><strong>Purpose:</strong> Vulnerability analysis across two language targets in a matrix:</li>
+      <ul>
+        <li><code>language: actions</code> (<code>build-mode: none</code>) &mdash; GitHub Actions workflow YAML files</li>
+        <li><code>language: csharp</code> (<code>build-mode: autobuild</code>) &mdash; C# source code</li>
+      </ul>
       <li><strong>Tool:</strong> <a href="https://github.com/github/codeql-action">github/codeql-action</a></li>
       <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule (Tuesdays 16:35 UTC)</li>
-      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results</li>
-      <li><strong>Note:</strong> The matrix only contains <code>language: actions</code>. C# code scanning results visible in the Security tab come from GitHub's native default-setup CodeQL, which runs independently of this workflow.</li>
+      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results (one entry per language)</li>
     </ul>
 
     <h3 id="psscriptanalyzer">PSScriptAnalyzer (<code>.github/workflows/powershell.yml</code>)</h3>
@@ -186,16 +189,10 @@
         </thead>
         <tbody>
           <tr>
-            <td>SAST (Actions)</td>
+            <td>SAST (Actions + C#)</td>
             <td>CodeQL Advanced</td>
             <td>Push/PR/weekly</td>
-            <td>GitHub Actions workflow vulnerabilities (<code>language: actions</code>)</td>
-          </tr>
-          <tr>
-            <td>SAST (C# &mdash; native)</td>
-            <td>CodeQL (default setup)</td>
-            <td>GitHub-managed</td>
-            <td>C# source code vulnerabilities; results in Security &rarr; Code scanning</td>
+            <td>GitHub Actions workflow YAML (<code>language: actions</code>) and C# source (<code>language: csharp</code>, autobuild)</td>
           </tr>
           <tr>
             <td>SAST (patterns)</td>
@@ -253,10 +250,9 @@
 
     <p>Two workflows upload SARIF and contribute findings to GitHub Security &rarr; Code scanning:</p>
     <ul>
-      <li><strong>CodeQL Advanced</strong> &mdash; <code>language: actions</code> analysis of GitHub Actions workflow YAML files</li>
+      <li><strong>CodeQL Advanced</strong> &mdash; two matrix jobs: <code>language: actions</code> (workflow YAML) and <code>language: csharp</code> (C# source via autobuild)</li>
       <li><strong>PSScriptAnalyzer</strong> &mdash; static analysis of PowerShell scripts embedded in workflow <code>run:</code> steps</li>
     </ul>
-    <p>C# results visible in Code scanning come from GitHub&rsquo;s <strong>native default-setup CodeQL</strong>, which is a GitHub-managed feature separate from the custom <code>codeql.yml</code> workflow.</p>
 
     <h2 id="nuget-dependency-submission">NuGet Dependency Submission</h2>
 
