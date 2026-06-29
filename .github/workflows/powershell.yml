@@ -23,11 +23,32 @@ jobs:
       - name: Run PSScriptAnalyzer
         shell: pwsh
         run: |
-          # PSScriptAnalyzer is pre-installed on ubuntu-latest runners.
-          # ConvertToSARIF translates its output objects to the SARIF format
-          # required by GitHub Code Scanning.
-          Install-Module -Name ConvertToSARIF -Force -Scope CurrentUser
-          Invoke-ScriptAnalyzer -Path .\ -Recurse | ConvertTo-SARIF -FilePath results.sarif
+          $root    = $env:GITHUB_WORKSPACE ?? $PWD.Path
+          $results = Invoke-ScriptAnalyzer -Path $root -Recurse
+
+          $sarifResults = @($results | ForEach-Object {
+            $rel = $_.ScriptPath.Replace($root, '').TrimStart('/\').Replace('\', '/')
+            @{
+              ruleId    = $_.RuleName
+              level     = switch ($_.Severity) { 'Error' { 'error' } 'Warning' { 'warning' } default { 'note' } }
+              message   = @{ text = $_.Message }
+              locations = @(@{
+                physicalLocation = @{
+                  artifactLocation = @{ uri = $rel; uriBaseId = '%SRCROOT%' }
+                  region           = @{ startLine = [int]$_.Line; startColumn = [int]$_.Column }
+                }
+              })
+            }
+          })
+
+          @{
+            '$schema' = 'https://json.schemastore.org/sarif-2.1.0.json'
+            version   = '2.1.0'
+            runs      = @(@{
+              tool    = @{ driver = @{ name = 'PSScriptAnalyzer'; rules = @() } }
+              results = $sarifResults
+            })
+          } | ConvertTo-Json -Depth 20 | Set-Content results.sarif -Encoding utf8
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
