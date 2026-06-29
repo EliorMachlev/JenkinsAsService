@@ -95,37 +95,38 @@
       <li><strong>Naming:</strong> <code>JenkinsAsService_&lt;version&gt;_&lt;arch&gt;.&lt;ext&gt;</code></li>
     </ul>
 
-    <h3 id="codeql">CodeQL (<code>.github/workflows/codeql.yml</code>)</h3>
+    <h3 id="codeql">CodeQL Advanced (<code>.github/workflows/codeql.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Source code vulnerability analysis (C#)</li>
+      <li><strong>Purpose:</strong> Vulnerability analysis of GitHub Actions workflow files (<code>language: actions</code>)</li>
       <li><strong>Tool:</strong> <a href="https://github.com/github/codeql-action">github/codeql-action</a></li>
-      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule</li>
-      <li><strong>Output:</strong> Findings in GitHub Security tab</li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule (Tuesdays 16:35 UTC)</li>
+      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results</li>
+      <li><strong>Note:</strong> The matrix only contains <code>language: actions</code>. C# code scanning results visible in the Security tab come from GitHub's native default-setup CodeQL, which runs independently of this workflow.</li>
     </ul>
 
     <h3 id="psscriptanalyzer">PSScriptAnalyzer (<code>.github/workflows/powershell.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Static analysis of PowerShell code (full ruleset)</li>
       <li><strong>Tool:</strong> <a href="https://github.com/microsoft/action-psscriptanalyzer">microsoft/psscriptanalyzer-action</a></li>
-      <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
-      <li><strong>Schedule:</strong> Sundays at 23:23 UTC</li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 23:23 UTC, <code>workflow_dispatch</code> (manual)</li>
+      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results</li>
     </ul>
 
     <h3 id="semgrep">Semgrep (<code>.github/workflows/semgrep.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Pattern-based SAST &mdash; vulnerable code patterns, deprecated APIs, common weaknesses</li>
       <li><strong>Tool:</strong> <a href="https://github.com/semgrep/semgrep-action">semgrep/semgrep-action@v1</a></li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 04:38 UTC</li>
       <li><strong>Rules:</strong> <code>p/default</code> + <code>p/csharp</code> + <code>p/secrets</code> (community rulesets, no token required)</li>
       <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
-      <li><strong>Schedule:</strong> Sundays at 04:38 UTC</li>
     </ul>
 
     <h3 id="gitleaks">Gitleaks (<code>.github/workflows/gitleaks.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Secret and credential scanning across full git history</li>
       <li><strong>Tool:</strong> <a href="https://github.com/gitleaks/gitleaks-action">gitleaks/gitleaks-action@v3.0.0</a></li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 05:00 UTC</li>
       <li><strong>Coverage:</strong> <code>fetch-depth: 0</code> &mdash; scans all commits</li>
-      <li><strong>Schedule:</strong> Sundays at 05:00 UTC</li>
     </ul>
 
     <h3 id="dependency-review">Dependency Review (<code>.github/workflows/dependency-review.yml</code>)</h3>
@@ -185,10 +186,16 @@
         </thead>
         <tbody>
           <tr>
-            <td>SAST (C#)</td>
-            <td>CodeQL</td>
+            <td>SAST (Actions)</td>
+            <td>CodeQL Advanced</td>
             <td>Push/PR/weekly</td>
-            <td>Source code vulnerabilities</td>
+            <td>GitHub Actions workflow vulnerabilities (<code>language: actions</code>)</td>
+          </tr>
+          <tr>
+            <td>SAST (C# &mdash; native)</td>
+            <td>CodeQL (default setup)</td>
+            <td>GitHub-managed</td>
+            <td>C# source code vulnerabilities; results in Security &rarr; Code scanning</td>
           </tr>
           <tr>
             <td>SAST (patterns)</td>
@@ -205,8 +212,8 @@
           <tr>
             <td>SAST (PS)</td>
             <td>PSScriptAnalyzer</td>
-            <td>Push/PR/weekly</td>
-            <td>PowerShell scripts</td>
+            <td>Push/PR/weekly/manual</td>
+            <td>PowerShell scripts; SARIF in Security &rarr; Code scanning</td>
           </tr>
           <tr>
             <td>SCA (PR gate)</td>
@@ -218,7 +225,13 @@
             <td>SCA (full)</td>
             <td>Trivy</td>
             <td>Push + weekly</td>
-            <td>All NuGet deps, multi-DB</td>
+            <td>All NuGet deps, multi-DB (NVD + GHSA + OSV)</td>
+          </tr>
+          <tr>
+            <td>Dependency graph</td>
+            <td>GitHub native (dynamic)</td>
+            <td>Always (platform-managed)</td>
+            <td>NuGet dependency submission via GitHub&rsquo;s automatic <code>submit-nuget</code> workflow</td>
           </tr>
           <tr>
             <td>Dependabot alerts</td>
@@ -229,12 +242,25 @@
           <tr>
             <td>Dependabot updates</td>
             <td>GitHub native</td>
-            <td>Weekly PRs</td>
-            <td>NuGet + GitHub Actions version bumps</td>
+            <td>Weekly PRs (grouped)</td>
+            <td>NuGet + GitHub Actions version bumps, organized by package family</td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <h2 id="code-scanning-results">Code Scanning Results (Security Tab)</h2>
+
+    <p>Two workflows upload SARIF and contribute findings to GitHub Security &rarr; Code scanning:</p>
+    <ul>
+      <li><strong>CodeQL Advanced</strong> &mdash; <code>language: actions</code> analysis of GitHub Actions workflow YAML files</li>
+      <li><strong>PSScriptAnalyzer</strong> &mdash; static analysis of PowerShell scripts embedded in workflow <code>run:</code> steps</li>
+    </ul>
+    <p>C# results visible in Code scanning come from GitHub&rsquo;s <strong>native default-setup CodeQL</strong>, which is a GitHub-managed feature separate from the custom <code>codeql.yml</code> workflow.</p>
+
+    <h2 id="nuget-dependency-submission">NuGet Dependency Submission</h2>
+
+    <p>GitHub automatically runs a platform-managed <strong><code>submit-nuget</code></strong> workflow (listed as <em>dynamic</em> in the Actions tab) that submits the resolved NuGet dependency graph to GitHub&rsquo;s dependency graph API. This is not a workflow file in the repository &mdash; GitHub triggers it when a <code>.csproj</code> or <code>packages.lock.json</code> is present. It powers Dependabot alerts and the dependency graph view for this repo.</p>
 
     <h2 id="action-versioning-policy">Action Versioning Policy</h2>
 
