@@ -1,14 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
-  <!-- ─── Public properties (persisted for custom action) ─── -->
-  <Package>
-    <Property Id="JENKINS_URL" Value="" />
-    <Property Id="JENKINS_SECRET" Value="" Hidden="yes" />
-    <Property Id="JENKINS_AGENT_NAME" Value="" />
-    <Property Id="JENKINS_JAVA_PATH" Value="" />
-    <Property Id="JENKINS_SECRET_MODE" Value="EnvironmentVariable" />
-  </Package>
-
+  <!-- Public properties (JENKINS_*) are declared on the Package in Package.wxs. -->
   <Fragment>
 
     <!-- ════════════════════════════════════════════════════════════════════
@@ -101,11 +93,9 @@
 
         <!-- Warning label for Unprotected mode -->
         <Control Id="WarningText" Type="Text" X="20" Y="205" Width="330" Height="26"
-                 NoPrefix="yes"
-                 Text="WARNING: Unprotected mode stores the secret in plaintext in appsettings.json. Use only for development.">
-          <Condition Action="show">JENKINS_SECRET_MODE = "Unprotected"</Condition>
-          <Condition Action="hide">NOT (JENKINS_SECRET_MODE = "Unprotected")</Condition>
-        </Control>
+                 NoPrefix="yes" Hidden="yes"
+                 ShowCondition="JENKINS_SECRET_MODE = &quot;Unprotected&quot;"
+                 Text="WARNING: Unprotected mode stores the secret in plaintext in appsettings.json. Use only for development." />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 
