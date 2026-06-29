@@ -279,7 +279,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       </table>
     </div>
 
-    <div class="callout callout--note">
+    <div class="callout callout-note">
       <div class="callout-title">Note</div>
       <p>All versions are pinned (no floating ranges) and centrally managed in <code>Directory.Packages.props</code>. Both projects include <code>packages.lock.json</code> for deterministic, hash-verified restores via <code>RestoreLockedMode=true</code>.</p>
     </div>
@@ -487,7 +487,7 @@ sc.exe delete Jenkins</code></pre>
       <li>Reset fail count after: <strong>1 day</strong></li>
     </ul>
 
-    <div class="callout callout--note">
+    <div class="callout callout-note">
       <div class="callout-title">Note</div>
       <p>The built-in watchdog handles Java process crashes. Windows-level recovery covers full service host crashes (the .NET process itself dying) &mdash; rare but covered automatically.</p>
     </div>
