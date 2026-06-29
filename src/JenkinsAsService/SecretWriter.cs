@@ -47,6 +47,9 @@ public static class SecretWriter
         root[ConfigSectionName] = jenkins;
 
         var options = new JsonSerializerOptions { WriteIndented = true };
+        // basePath is always the trusted application base directory (AppContext.BaseDirectory);
+        // no CLI option sets it and the filename is a constant, so there is no path-traversal vector.
+        // nosemgrep: csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine
         File.WriteAllText(configPath, root.ToJsonString(options), Encoding.UTF8);
     }
 
