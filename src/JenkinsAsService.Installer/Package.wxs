@@ -17,6 +17,14 @@
     <Property Id="ARPPRODUCTICON" Value="Logo.ico" />
     <Property Id="ARPHELPLINK" Value="https://github.com/EliorMachlev/JenkinsAsService" />
 
+    <!-- ─── Public properties (set via UI or silent msiexec; consumed by WriteConfig).
+         Secure so they survive the non-elevated → elevated handoff during a managed install. ─── -->
+    <Property Id="JENKINS_URL" Secure="yes" />
+    <Property Id="JENKINS_SECRET" Secure="yes" Hidden="yes" />
+    <Property Id="JENKINS_AGENT_NAME" Secure="yes" />
+    <Property Id="JENKINS_JAVA_PATH" Secure="yes" />
+    <Property Id="JENKINS_SECRET_MODE" Value="EnvironmentVariable" Secure="yes" />
+
     <Feature Id="Main" Title="Jenkins Agent Service" Level="1">
       <ComponentGroupRef Id="PublishOutput" />
       <ComponentRef Id="ServiceComponent" />
@@ -32,7 +40,7 @@
                   Execute="deferred" Impersonate="no" />
 
     <InstallExecuteSequence>
-      <Custom Action="WriteConfig" Before="InstallFinalize">NOT Installed</Custom>
+      <Custom Action="WriteConfig" Before="InstallFinalize" Condition="NOT Installed" />
     </InstallExecuteSequence>
 
   </Package>
