@@ -98,11 +98,12 @@
 
     <h3 id="codeql">CodeQL Advanced (<code>.github/workflows/codeql.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Vulnerability analysis across two language targets in a matrix:</li>
-      <ul>
-        <li><code>language: actions</code> (<code>build-mode: none</code>) &mdash; GitHub Actions workflow YAML files</li>
-        <li><code>language: csharp</code> (<code>build-mode: autobuild</code>) &mdash; C# source code</li>
-      </ul>
+      <li><strong>Purpose:</strong> Vulnerability analysis across two language targets in a matrix:
+        <ul>
+          <li><code>language: actions</code> (<code>build-mode: none</code>) &mdash; GitHub Actions workflow YAML files</li>
+          <li><code>language: csharp</code> (<code>build-mode: autobuild</code>) &mdash; C# source code</li>
+        </ul>
+      </li>
       <li><strong>Tool:</strong> <a href="https://github.com/github/codeql-action">github/codeql-action</a></li>
       <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule (Tuesdays 16:35 UTC)</li>
       <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results (one entry per language)</li>
