@@ -1,4 +1,4 @@
-name: HTML Lint
+name: HTML & CSS Lint
 
 on:
   push:
@@ -12,11 +12,18 @@ permissions:
   contents: read
 
 jobs:
-  htmlhint:
-    name: HTMLHint
+  lint:
+    name: Lint Docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Run HTMLHint
-        run: npx --yes htmlhint "docs/**/*.html"
+      - name: Validate HTML (W3C Nu Checker)
+        run: |
+          pip install html5validator --quiet
+          html5validator --root docs/ --match "*.html" --log INFO
+
+      - name: Lint CSS (Stylelint)
+        run: |
+          npm install --no-save stylelint stylelint-config-standard --silent
+          npx stylelint "docs/*.css"
