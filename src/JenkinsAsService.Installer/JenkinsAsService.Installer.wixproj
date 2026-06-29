@@ -1,8 +1,9 @@
 <Project Sdk="WixToolset.Sdk/5.0.2">
 
   <PropertyGroup>
-    <!-- WiX uses floating 5.* versions managed inline; keep it out of central package management. -->
+    <!-- WiX extensions are pinned to the SDK version and locked for deterministic, secure restores. -->
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <OutputType>Package</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
     <!-- Set via -p:PublishDir=... from the build script after dotnet publish -->
@@ -15,8 +16,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="WixToolset.UI.wixext" Version="5.*" />
-    <PackageReference Include="WixToolset.Util.wixext" Version="5.*" />
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
   </ItemGroup>
 
 </Project>

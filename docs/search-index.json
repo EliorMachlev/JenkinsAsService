@@ -33,13 +33,13 @@
     "id": "installation",
     "title": "Installation",
     "url": "installation.html",
-    "keywords": ["installation", "install", "setup", "deploy", "windows", "service", "sc", "publish", "prerequisites", "requirements", "powershell"]
+    "keywords": ["installation", "install", "setup", "deploy", "windows", "service", "sc", "publish", "prerequisites", "requirements", "powershell", "central package management", "cpm", "directory.packages.props", "nuget", "msi", "wix"]
   },
   {
     "id": "ci-cd",
     "title": "CI/CD & Security",
     "url": "ci-cd.html",
-    "keywords": ["ci", "cd", "cicd", "pipeline", "github actions", "security", "scanning", "semgrep", "gitleaks", "trivy", "psscriptanalyzer", "sast", "secrets", "vulnerabilities"]
+    "keywords": ["ci", "cd", "cicd", "pipeline", "github actions", "security", "scanning", "semgrep", "gitleaks", "trivy", "psscriptanalyzer", "sast", "secrets", "vulnerabilities", "release", "workflow dispatch", "manual release", "auto bump", "dependabot", "grouped updates"]
   },
   {
     "id": "troubleshooting",

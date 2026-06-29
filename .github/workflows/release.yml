@@ -116,10 +116,10 @@ jobs:
           /v:q /clp:ErrorsOnly
 
       - name: Build MSI x64
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x64/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x64/
 
       - name: Build MSI x86
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x86/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x86/
 
       - name: Rename MSI files
         run: |

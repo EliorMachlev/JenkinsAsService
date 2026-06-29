@@ -66,12 +66,23 @@
 
     <h3 id="release">Release (<code>.github/workflows/release.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Automated dual-architecture release on version tags</li>
-      <li><strong>Trigger:</strong> Push tag matching <code>v*</code></li>
+      <li><strong>Purpose:</strong> Automated dual-architecture release</li>
+      <li><strong>Triggers:</strong>
+        <ul>
+          <li><strong>Tag push</strong> &mdash; any tag matching <code>v*</code> (e.g. <code>v1.0.5</code>). Version is taken verbatim from the tag name.</li>
+          <li><strong>Manual (<code>workflow_dispatch</code>)</strong> &mdash; optional <code>version</code> input:
+            <ul>
+              <li>If provided (e.g. <code>1.05</code>): used verbatim as the release version.</li>
+              <li>If omitted: auto-bumps the latest published non-prerelease release by +1 on the final segment, preserving zero-padding (e.g. <code>1.03</code> &rarr; <code>1.04</code>).</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
       <li><strong>Steps:</strong>
         <ol>
           <li>Setup .NET 10 &rarr; <code>dotnet test</code></li>
+          <li>Resolve version (from tag, explicit input, or auto-bump via <code>gh api</code>)</li>
           <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
           <li>Build MSI installers for both architectures via <strong>WiX v5</strong></li>
           <li>Create <code>.7z</code> archives (LZMA2, max compression) via 7-Zip</li>
@@ -84,37 +95,41 @@
       <li><strong>Naming:</strong> <code>JenkinsAsService_&lt;version&gt;_&lt;arch&gt;.&lt;ext&gt;</code></li>
     </ul>
 
-    <h3 id="codeql">CodeQL (<code>.github/workflows/codeql.yml</code>)</h3>
+    <h3 id="codeql">CodeQL Advanced (<code>.github/workflows/codeql.yml</code>)</h3>
     <ul>
-      <li><strong>Purpose:</strong> Source code vulnerability analysis (C#)</li>
+      <li><strong>Purpose:</strong> Vulnerability analysis across two language targets in a matrix:</li>
+      <ul>
+        <li><code>language: actions</code> (<code>build-mode: none</code>) &mdash; GitHub Actions workflow YAML files</li>
+        <li><code>language: csharp</code> (<code>build-mode: autobuild</code>) &mdash; C# source code</li>
+      </ul>
       <li><strong>Tool:</strong> <a href="https://github.com/github/codeql-action">github/codeql-action</a></li>
-      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule</li>
-      <li><strong>Output:</strong> Findings in GitHub Security tab</li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, weekly schedule (Tuesdays 16:35 UTC)</li>
+      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results (one entry per language)</li>
     </ul>
 
     <h3 id="psscriptanalyzer">PSScriptAnalyzer (<code>.github/workflows/powershell.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Static analysis of PowerShell code (full ruleset)</li>
       <li><strong>Tool:</strong> <a href="https://github.com/microsoft/action-psscriptanalyzer">microsoft/psscriptanalyzer-action</a></li>
-      <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
-      <li><strong>Schedule:</strong> Sundays at 23:23 UTC</li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 23:23 UTC, <code>workflow_dispatch</code> (manual)</li>
+      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning results</li>
     </ul>
 
     <h3 id="semgrep">Semgrep (<code>.github/workflows/semgrep.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Pattern-based SAST &mdash; vulnerable code patterns, deprecated APIs, common weaknesses</li>
       <li><strong>Tool:</strong> <a href="https://github.com/semgrep/semgrep-action">semgrep/semgrep-action@v1</a></li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 04:38 UTC</li>
       <li><strong>Rules:</strong> <code>p/default</code> + <code>p/csharp</code> + <code>p/secrets</code> (community rulesets, no token required)</li>
       <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
-      <li><strong>Schedule:</strong> Sundays at 04:38 UTC</li>
     </ul>
 
     <h3 id="gitleaks">Gitleaks (<code>.github/workflows/gitleaks.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Secret and credential scanning across full git history</li>
       <li><strong>Tool:</strong> <a href="https://github.com/gitleaks/gitleaks-action">gitleaks/gitleaks-action@v3.0.0</a></li>
+      <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 05:00 UTC</li>
       <li><strong>Coverage:</strong> <code>fetch-depth: 0</code> &mdash; scans all commits</li>
-      <li><strong>Schedule:</strong> Sundays at 05:00 UTC</li>
     </ul>
 
     <h3 id="dependency-review">Dependency Review (<code>.github/workflows/dependency-review.yml</code>)</h3>
@@ -139,15 +154,25 @@
     <ul>
       <li><strong>Trigger:</strong> <code>workflow_call</code> with inputs <code>scan-type</code> (default: <code>fs</code>) and <code>scan-ref</code> (default: <code>.</code>)</li>
       <li><strong>Steps:</strong> checkout &rarr; trivy &rarr; upload-sarif (<code>if: always()</code>)</li>
-      <li><strong>Versioning:</strong> <code>actions/checkout@v6</code>, <code>github/codeql-action/upload-sarif@v4</code>, <code>aquasecurity/trivy-action@v0.36.0</code></li>
+      <li><strong>Versioning:</strong> <code>actions/checkout@v7</code>, <code>github/codeql-action/upload-sarif@v4</code>, <code>aquasecurity/trivy-action@v0.36.0</code></li>
     </ul>
 
     <h2 id="dependabot">Dependabot (<code>.github/dependabot.yml</code>)</h2>
 
-    <p>Weekly automated PRs for:</p>
+    <p>Weekly automated PRs using <strong>grouped updates</strong> to reduce noise:</p>
+
+    <h3 id="dependabot-nuget">NuGet (<code>nuget</code>)</h3>
     <ul>
-      <li><code>nuget</code> &mdash; NuGet package updates</li>
-      <li><code>github-actions</code> &mdash; Action version bumps</li>
+      <li><code>serilog</code> &mdash; all <code>Serilog.*</code> packages in one PR</li>
+      <li><code>microsoft-extensions</code> &mdash; all <code>Microsoft.Extensions.*</code> packages in one PR</li>
+      <li><code>opentelemetry</code> &mdash; all <code>OpenTelemetry*</code> packages in one PR</li>
+      <li><code>xunit</code> &mdash; all <code>xunit*</code> packages in one PR</li>
+      <li><code>test-tooling</code> &mdash; <code>Microsoft.NET.Test.Sdk</code>, <code>coverlet.*</code>, <code>NSubstitute</code>, <code>FluentAssertions</code> in one PR</li>
+    </ul>
+
+    <h3 id="dependabot-actions">GitHub Actions (<code>github-actions</code>)</h3>
+    <ul>
+      <li>All action version bumps grouped into a single weekly PR</li>
     </ul>
 
     <h2 id="security-scanning-stack-summary">Security Scanning Stack Summary</h2>
@@ -164,10 +189,10 @@
         </thead>
         <tbody>
           <tr>
-            <td>SAST (C#)</td>
-            <td>CodeQL</td>
+            <td>SAST (Actions + C#)</td>
+            <td>CodeQL Advanced</td>
             <td>Push/PR/weekly</td>
-            <td>Source code vulnerabilities</td>
+            <td>GitHub Actions workflow YAML (<code>language: actions</code>) and C# source (<code>language: csharp</code>, autobuild)</td>
           </tr>
           <tr>
             <td>SAST (patterns)</td>
@@ -184,8 +209,8 @@
           <tr>
             <td>SAST (PS)</td>
             <td>PSScriptAnalyzer</td>
-            <td>Push/PR/weekly</td>
-            <td>PowerShell scripts</td>
+            <td>Push/PR/weekly/manual</td>
+            <td>PowerShell scripts; SARIF in Security &rarr; Code scanning</td>
           </tr>
           <tr>
             <td>SCA (PR gate)</td>
@@ -197,7 +222,13 @@
             <td>SCA (full)</td>
             <td>Trivy</td>
             <td>Push + weekly</td>
-            <td>All NuGet deps, multi-DB</td>
+            <td>All NuGet deps, multi-DB (NVD + GHSA + OSV)</td>
+          </tr>
+          <tr>
+            <td>Dependency graph</td>
+            <td>GitHub native (dynamic)</td>
+            <td>Always (platform-managed)</td>
+            <td>NuGet dependency submission via GitHub&rsquo;s automatic <code>submit-nuget</code> workflow</td>
           </tr>
           <tr>
             <td>Dependabot alerts</td>
@@ -208,12 +239,24 @@
           <tr>
             <td>Dependabot updates</td>
             <td>GitHub native</td>
-            <td>Weekly PRs</td>
-            <td>NuGet + GitHub Actions version bumps</td>
+            <td>Weekly PRs (grouped)</td>
+            <td>NuGet + GitHub Actions version bumps, organized by package family</td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <h2 id="code-scanning-results">Code Scanning Results (Security Tab)</h2>
+
+    <p>Two workflows upload SARIF and contribute findings to GitHub Security &rarr; Code scanning:</p>
+    <ul>
+      <li><strong>CodeQL Advanced</strong> &mdash; two matrix jobs: <code>language: actions</code> (workflow YAML) and <code>language: csharp</code> (C# source via autobuild)</li>
+      <li><strong>PSScriptAnalyzer</strong> &mdash; static analysis of PowerShell scripts embedded in workflow <code>run:</code> steps</li>
+    </ul>
+
+    <h2 id="nuget-dependency-submission">NuGet Dependency Submission</h2>
+
+    <p>GitHub automatically runs a platform-managed <strong><code>submit-nuget</code></strong> workflow (listed as <em>dynamic</em> in the Actions tab) that submits the resolved NuGet dependency graph to GitHub&rsquo;s dependency graph API. This is not a workflow file in the repository &mdash; GitHub triggers it when a <code>.csproj</code> or <code>packages.lock.json</code> is present. It powers Dependabot alerts and the dependency graph view for this repo.</p>
 
     <h2 id="action-versioning-policy">Action Versioning Policy</h2>
 
@@ -230,7 +273,7 @@
         <tbody>
           <tr>
             <td><code>actions/checkout</code></td>
-            <td><code>@v6</code></td>
+            <td><code>@v7</code></td>
           </tr>
           <tr>
             <td><code>actions/setup-dotnet</code></td>
