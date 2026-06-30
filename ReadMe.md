@@ -154,6 +154,7 @@ JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins
 |---|---|---|
 | `Unprotected` | Plaintext | Returned as-is |
 | `Dpapi` | Base64 DPAPI ciphertext | `ProtectedData.Unprotect` (machine-scoped, non-portable) |
+| `Tpm` | Base64 RSA ciphertext | `RSACng` decrypt via the TPM Platform Crypto Provider (non-exportable, machine-bound key) |
 | `EnvironmentVariable` | Env var name | Reads machine-level environment variable (default: `JENKINS_SECRET`) |
 | `CredentialManager` | Target name | Reads from Windows Credential Manager |
 
@@ -234,7 +235,7 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 ## Security
 
 - TLS 1.2+ enforced by default (.NET 10), with optional controller certificate pinning (`ControllerCertThumbprint`)
-- Secrets encrypted at rest (DPAPI machine/user scope, CredMgr), redacted from all logs, and passed to the agent off the command line via `-secret @<file>` so they never appear in the process table
+- Secrets encrypted at rest (TPM 2.0 hardware-backed key, DPAPI machine/user scope, or CredMgr), redacted from all logs, and passed to the agent off the command line via `-secret @<file>` so they never appear in the process table
 - Least-privilege virtual service account, deny-by-default environment block for the agent child, and Win32 process-mitigation policies (no remote/low-IL/non-System32 DLL loads, extension-point injection disabled)
 - Binary/data separation: read-only binaries in `Program Files`, writable runtime data (jar, logs, secret, work dir) in `ProgramData` — a malicious pipeline running under the agent can't overwrite the service `.exe`
 - Deterministic builds with locked NuGet restore and embedded PDB symbols

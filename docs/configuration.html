@@ -252,6 +252,11 @@
             <td><code>ProtectedData.Unprotect</code> (non-portable; <code>Machine</code> or <code>User</code> scope &mdash; see <a href="#dpapi-scope">below</a>)</td>
           </tr>
           <tr>
+            <td><code>Tpm</code></td>
+            <td>Base64-encoded RSA ciphertext (TPM-resident key)</td>
+            <td><code>RSACng</code> decrypt via the Platform Crypto Provider &mdash; see <a href="#tpm-mode">below</a></td>
+          </tr>
+          <tr>
             <td><code>EnvironmentVariable</code></td>
             <td>Name of a system env var (default: <code>JENKINS_SECRET</code>)</td>
             <td><code>Environment.GetEnvironmentVariable(..., Machine)</code></td>
@@ -304,6 +309,17 @@
       </ul>
     </div>
 
+    <h3 id="tpm-mode">TPM 2.0 mode</h3>
+    <p><code>SecretMode: Tpm</code> encrypts the secret with a non-exportable RSA-2048 key held inside the machine's TPM, via the Microsoft <strong>Platform Crypto Provider</strong>. Unlike DPAPI machine-scope &mdash; whose key is software-derivable by any local admin/SYSTEM &mdash; the TPM private key never leaves the chip, so the ciphertext is bound to this physical machine and cannot be exfiltrated even by a full administrator.</p>
+    <ul>
+      <li><strong>Protect:</strong> the elevated installer (or <code>update-secret</code>) creates a persistent machine-scoped key (<code>JenkinsAsService-AgentSecret</code>) and RSA-OAEP-SHA256 encrypts the secret into <code>AgentSecret</code>.</li>
+      <li><strong>Resolve:</strong> the service opens the same TPM key and decrypts. Because the key is created by SYSTEM but used by the low-privilege service account, the installer grants that account <em>use</em>-rights on the key &mdash; pass <code>--service-account</code> to <code>update-secret</code> (the MSI does this automatically).</li>
+    </ul>
+    <div class="callout callout-note">
+      <div class="callout-title">Requirements &amp; binding</div>
+      <p>Requires a TPM 2.0 with the Platform Crypto Provider present. The key is bound to the machine, <strong>not</strong> to platform/PCR state, so routine firmware and Windows updates do not break decryption. Clearing/resetting the TPM or moving to another machine invalidates the ciphertext &mdash; re-run <code>update-secret --mode Tpm</code> there.</p>
+    </div>
+
     <h3 id="cert-pinning">Certificate Pinning</h3>
     <p>Set <code>ControllerCertThumbprint</code> to the SHA-256 thumbprint of the Jenkins controller's TLS certificate to defend against a MITM that presents a different but chain-trusted certificate (e.g. a rogue internal CA). When set, the <code>agent.jar</code> download accepts the connection <strong>only</strong> if the server certificate's thumbprint matches &mdash; the pin replaces chain trust. Separators (colons, spaces) and case are ignored.</p>
     <div class="callout callout-note">
@@ -349,7 +365,7 @@
   --secret-file &lt;path&gt;   Read from file (deleted after reading)
   --secret-env &lt;var&gt;     Read from named environment variable
   --url &lt;value&gt;          Jenkins controller URL
-  --mode &lt;value&gt;         Dpapi | EnvironmentVariable | CredentialManager | Unprotected
+  --mode &lt;value&gt;         Dpapi | Tpm | EnvironmentVariable | CredentialManager | Unprotected
   --dpapi-scope &lt;value&gt;  Machine (default) | User  (User requires writing as the service account)
   --thumbprint &lt;value&gt;   SHA-256 thumbprint of the controller cert to pin (agent.jar download)
   --service-account &lt;a&gt;  Service account granted read on the config; hardens appsettings.json ACL

@@ -16,7 +16,9 @@ public static class UpdateSecretCommand
           --secret-file <path>    Read secret from file (file is deleted after reading)
           --secret-env <var>      Read secret from named environment variable
           --url <value>           Jenkins controller address (include port)
-          --mode <value>          Protection mode: Dpapi, EnvironmentVariable, CredentialManager, Unprotected
+          --mode <value>          Protection mode: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected
+                                  Tpm encrypts with a non-exportable TPM-resident key (pass --service-account
+                                  so the service can decrypt at runtime).
           --dpapi-scope <value>   DPAPI scope when --mode Dpapi: Machine (default) or User.
                                   User-scope requires writing as the service account (see --impersonate).
           --thumbprint <value>    SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
@@ -374,13 +376,15 @@ public static class UpdateSecretCommand
         Console.WriteLine("  2. Environment Variable — system env var");
         Console.WriteLine("  3. Credential Manager — Windows credential vault");
         Console.WriteLine("  4. Unprotected — plaintext (dev only)");
-        Console.Write($"Select [1-4] (default: {(int)existingMode + 1}): ");
+        Console.WriteLine("  5. TPM — hardware-backed, non-exportable key (strongest; needs TPM 2.0)");
+        Console.Write("Select [1-5]: ");
         return Console.ReadLine()?.Trim() switch
         {
             "1" => SecretMode.Dpapi,
             "2" => SecretMode.EnvironmentVariable,
             "3" => SecretMode.CredentialManager,
             "4" => SecretMode.Unprotected,
+            "5" => SecretMode.Tpm,
             _ => existingMode
         };
     }
@@ -539,7 +543,7 @@ public static class UpdateSecretCommand
             return mode;
         }
 
-        Console.Error.WriteLine($"Error: unknown mode '{value}'. Valid: Dpapi, EnvironmentVariable, CredentialManager, Unprotected");
+        Console.Error.WriteLine($"Error: unknown mode '{value}'. Valid: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected");
         return null;
     }
 

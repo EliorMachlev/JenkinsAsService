@@ -29,7 +29,7 @@ public static class SecretWriter
         DpapiScope dpapiScope = DpapiScope.Machine, string? controllerCertThumbprint = null,
         string? serviceAccount = null)
     {
-        var configSecret = ProcessSecret(secret, mode, dpapiScope);
+        var configSecret = ProcessSecret(secret, mode, dpapiScope, serviceAccount);
         var configPath = Path.Combine(basePath, ConfigFileName);
 
         var existingRoot = ReadExistingRoot(configPath);
@@ -100,11 +100,13 @@ public static class SecretWriter
         File.WriteAllText(configPath, root.ToJsonString(options), Encoding.UTF8);
     }
 
-    private static string ProcessSecret(string secret, SecretMode mode, DpapiScope dpapiScope) => mode switch
+    private static string ProcessSecret(string secret, SecretMode mode, DpapiScope dpapiScope,
+        string? serviceAccount) => mode switch
     {
         SecretMode.Dpapi => ProtectDpapi(secret, dpapiScope),
         SecretMode.EnvironmentVariable => StoreEnvironmentVariable(secret),
         SecretMode.CredentialManager => StoreCredentialManager(secret),
+        SecretMode.Tpm => TpmSecretProtector.Protect(secret, serviceAccount),
         SecretMode.Unprotected => secret,
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown SecretMode.")
     };

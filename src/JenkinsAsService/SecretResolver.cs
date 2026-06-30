@@ -25,6 +25,7 @@ public sealed class SecretResolver : ISecretResolver
             SecretMode.Dpapi => ResolveDpapi(settings.AgentSecret, settings.DpapiScope),
             SecretMode.EnvironmentVariable => ResolveEnvironmentVariable(settings.AgentSecret),
             SecretMode.CredentialManager => ResolveCredentialManager(settings.AgentSecret),
+            SecretMode.Tpm => TpmSecretProtector.Resolve(settings.AgentSecret),
             _ => throw new InvalidOperationException($"Unknown SecretMode: '{settings.SecretMode}'.")
         };
     }

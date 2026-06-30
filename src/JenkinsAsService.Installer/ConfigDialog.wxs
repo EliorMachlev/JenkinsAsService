@@ -84,9 +84,11 @@
                          Text="Environment Variable — read from JENKINS_SECRET (recommended)" />
             <RadioButton Value="Dpapi" X="0" Y="28" Width="330" Height="18"
                          Text="DPAPI — machine-scoped encryption (non-portable)" />
-            <RadioButton Value="CredentialManager" X="0" Y="56" Width="330" Height="18"
+            <RadioButton Value="Tpm" X="0" Y="56" Width="330" Height="18"
+                         Text="TPM 2.0 — hardware-backed, non-exportable key (requires TPM)" />
+            <RadioButton Value="CredentialManager" X="0" Y="84" Width="330" Height="18"
                          Text="Windows Credential Manager — store in OS credential vault" />
-            <RadioButton Value="Unprotected" X="0" Y="84" Width="330" Height="18"
+            <RadioButton Value="Unprotected" X="0" Y="112" Width="330" Height="18"
                          Text="Unprotected — plaintext in config file (development only)" />
           </RadioButtonGroup>
         </Control>
