@@ -225,20 +225,32 @@
 
       if (!q || !searchIndex) return;
 
-      var matches = searchIndex.filter(function (entry) {
-        var haystack = (entry.title + ' ' + (entry.keywords || []).join(' ')).toLowerCase();
-        return q.split(/\s+/).every(function (term) { return haystack.indexOf(term) !== -1; });
-      });
+      var terms = q.split(/\s+/);
 
-      matches.forEach(function (entry, i) {
-        var a = document.createElement('a');
-        a.className = 'search-result';
-        a.href = entry.url;
-        a.innerHTML = '<div class="search-result-title">' + escapeHTML(entry.title) + '</div>'
-          + '<div class="search-result-url">' + escapeHTML(entry.url) + '</div>';
-        a.setAttribute('data-idx', i);
-        a.addEventListener('click', function () { closeSearch(); });
-        results.appendChild(a);
+      // The index is grouped by topic: [{ topic, items: [{ title, url, keywords }] }].
+      // Render each topic that has at least one match under a header; keyboard nav still
+      // operates on the flat list of .search-result anchors (headers are skipped).
+      searchIndex.forEach(function (group) {
+        var groupMatches = (group.items || []).filter(function (entry) {
+          var haystack = (entry.title + ' ' + (entry.keywords || []).join(' ')).toLowerCase();
+          return terms.every(function (term) { return haystack.indexOf(term) !== -1; });
+        });
+        if (!groupMatches.length) return;
+
+        var header = document.createElement('div');
+        header.className = 'search-group-header';
+        header.textContent = group.topic;
+        results.appendChild(header);
+
+        groupMatches.forEach(function (entry) {
+          var a = document.createElement('a');
+          a.className = 'search-result';
+          a.href = entry.url;
+          a.innerHTML = '<div class="search-result-title">' + escapeHTML(entry.title) + '</div>'
+            + '<div class="search-result-url">' + escapeHTML(entry.url) + '</div>';
+          a.addEventListener('click', function () { closeSearch(); });
+          results.appendChild(a);
+        });
       });
     });
 

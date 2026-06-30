@@ -1,50 +1,187 @@
 [
   {
-    "id": "index",
-    "title": "Home",
-    "url": "index.html",
-    "keywords": ["home", "landing", "welcome", "jenkinsasservice", "windows service", "dotnet", "getting started"]
+    "topic": "Getting Started",
+    "items": [
+      {
+        "title": "Home",
+        "url": "index.html",
+        "keywords": ["home", "landing", "welcome", "jenkinsasservice", "getting started"]
+      },
+      {
+        "title": "Overview",
+        "url": "overview.html",
+        "keywords": ["overview", "introduction", "what is", "features", "windows service", "jenkins", "automation", "dotnet"]
+      }
+    ]
   },
   {
-    "id": "overview",
-    "title": "Overview",
-    "url": "overview.html",
-    "keywords": ["overview", "introduction", "what is", "features", "windows service", "jenkins", "automation", "service management", "dotnet"]
+    "topic": "Architecture",
+    "items": [
+      {
+        "title": "Architecture",
+        "url": "architecture.html",
+        "keywords": ["architecture", "design", "diagram", "worker", "service", "pipeline", "components", "structure", "hosting", "dependency injection", "watchdog"]
+      },
+      {
+        "title": "API Reference",
+        "url": "api-reference.html",
+        "keywords": ["api", "reference", "endpoints", "methods", "request", "response", "internals"]
+      }
+    ]
   },
   {
-    "id": "architecture",
-    "title": "Architecture",
-    "url": "architecture.html",
-    "keywords": ["architecture", "design", "diagram", "worker", "service", "pipeline", "components", "structure", "hosting", "dependency injection"]
+    "topic": "Configuration",
+    "items": [
+      {
+        "title": "Settings reference",
+        "url": "configuration.html#settings-reference",
+        "keywords": ["configuration", "appsettings", "settings", "options", "config", "jenkins url", "agent name", "max retries"]
+      },
+      {
+        "title": "appsettings.json format",
+        "url": "configuration.html#json-format",
+        "keywords": ["json", "appsettings", "format", "example", "telemetry section"]
+      },
+      {
+        "title": "Java path resolution",
+        "url": "configuration.html#java-path-resolution",
+        "keywords": ["java", "javapath", "java_home", "jdk", "jre", "resolution"]
+      },
+      {
+        "title": "URL validation",
+        "url": "configuration.html#url-validation",
+        "keywords": ["url", "validation", "port", "uri", "connectivity"]
+      },
+      {
+        "title": "Telemetry (OpenTelemetry)",
+        "url": "configuration.html#telemetry-opentelemetry",
+        "keywords": ["telemetry", "opentelemetry", "otlp", "metrics", "observability", "exporter"]
+      },
+      {
+        "title": "Logging",
+        "url": "configuration.html#settings-reference",
+        "keywords": ["logging", "serilog", "compactlog", "clef", "retainedlogs", "agent.log", "rolling"]
+      }
+    ]
   },
   {
-    "id": "configuration",
-    "title": "Configuration",
-    "url": "configuration.html",
-    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog", "dpapi", "dpapi scope", "machine scope", "user scope", "certificate pinning", "thumbprint", "controller cert", "secret protection", "secret via file", "secret off command line", "environment sanitization", "allowed environment variables", "process table", "env allowlist", "data directory", "programdata", "datafolder", "binary data separation", "writable data dir", "privilege escalation", "tpm", "tpm 2.0", "platform crypto provider", "hardware-backed", "hardware security", "non-exportable key", "rsacng", "post-quantum", "pqc", "ml-kem", "ml-dsa", "cnsa", "quantum-resistant", "experimental crypto"]
+    "topic": "Security",
+    "items": [
+      {
+        "title": "Secret protection modes",
+        "url": "configuration.html#secret-protection-modes",
+        "keywords": ["secret protection", "secretmode", "agent secret", "unprotected", "credential manager", "environment variable", "encrypt at rest"]
+      },
+      {
+        "title": "DPAPI scope (machine vs. user)",
+        "url": "configuration.html#dpapi-scope",
+        "keywords": ["dpapi", "dpapi scope", "machine scope", "user scope", "protecteddata", "impersonate"]
+      },
+      {
+        "title": "TPM 2.0 mode",
+        "url": "configuration.html#tpm-mode",
+        "keywords": ["tpm", "tpm 2.0", "platform crypto provider", "hardware-backed", "hardware security", "non-exportable key", "rsacng"]
+      },
+      {
+        "title": "Secret off the command line",
+        "url": "configuration.html#secret-off-argv",
+        "keywords": ["secret via file", "secret off command line", "process table", "get-process", "wmi commandline", "secret file"]
+      },
+      {
+        "title": "Environment sanitization",
+        "url": "configuration.html#env-sanitization",
+        "keywords": ["environment sanitization", "allowed environment variables", "env allowlist", "deny by default", "pipeline isolation"]
+      },
+      {
+        "title": "Data directory split",
+        "url": "configuration.html#data-dir-split",
+        "keywords": ["data directory", "programdata", "datafolder", "binary data separation", "writable data dir", "privilege escalation", "read-only binaries"]
+      },
+      {
+        "title": "Certificate pinning",
+        "url": "configuration.html#cert-pinning",
+        "keywords": ["certificate pinning", "thumbprint", "controller cert", "sha-256", "mitm", "tls"]
+      },
+      {
+        "title": "Post-quantum cryptography",
+        "url": "configuration.html#post-quantum",
+        "keywords": ["post-quantum", "pqc", "ml-kem", "ml-dsa", "cnsa", "quantum-resistant", "experimental crypto", "deferred"]
+      }
+    ]
   },
   {
-    "id": "api-reference",
-    "title": "API Reference",
-    "url": "api-reference.html",
-    "keywords": ["api", "reference", "endpoints", "rest", "http", "swagger", "controllers", "routes", "methods", "request", "response"]
+    "topic": "Installation & Deployment",
+    "items": [
+      {
+        "title": "Installation",
+        "url": "installation.html#installation",
+        "keywords": ["installation", "install", "setup", "deploy", "windows", "service", "sc", "prerequisites", "requirements", "powershell"]
+      },
+      {
+        "title": "MSI installer",
+        "url": "installation.html#msi-installer",
+        "keywords": ["msi", "wix", "installer", "service account", "virtual account", "gmsa", "least privilege", "acl", "permissions", "hardening", "nt service", "datafolder", "data directory"]
+      },
+      {
+        "title": "Silent install",
+        "url": "installation.html#silent-install",
+        "keywords": ["silent install", "msiexec", "unattended", "properties", "installfolder", "datafolder", "jenkins_secret_mode", "service_account"]
+      },
+      {
+        "title": "Portable (archive)",
+        "url": "installation.html#portable-archive",
+        "keywords": ["portable", "archive", "7z", "rar", "manual", "sc create"]
+      },
+      {
+        "title": "Build & publish",
+        "url": "installation.html#build-publish",
+        "keywords": ["build", "publish", "single-file", "self-contained", "r2r", "ready to run", "central package management", "cpm", "nuget"]
+      }
+    ]
   },
   {
-    "id": "installation",
-    "title": "Installation",
-    "url": "installation.html",
-    "keywords": ["installation", "install", "setup", "deploy", "windows", "service", "sc", "publish", "prerequisites", "requirements", "powershell", "central package management", "cpm", "directory.packages.props", "nuget", "msi", "wix", "service account", "virtual account", "gmsa", "least privilege", "acl", "permissions", "hardening", "nt service", "datafolder", "programdata", "data directory", "install folder", "read-only binaries"]
+    "topic": "CI/CD & Supply Chain",
+    "items": [
+      {
+        "title": "GitHub Actions workflows",
+        "url": "ci-cd.html#github-actions-workflows",
+        "keywords": ["ci", "cd", "cicd", "pipeline", "github actions", "build", "release", "workflow dispatch", "manual release", "auto bump"]
+      },
+      {
+        "title": "Security scanning stack",
+        "url": "ci-cd.html#security-scanning-stack-summary",
+        "keywords": ["security", "scanning", "semgrep", "gitleaks", "trivy", "codeql", "psscriptanalyzer", "sast", "secrets", "vulnerabilities", "dependency review"]
+      },
+      {
+        "title": "SBOM (CycloneDX) & signing",
+        "url": "ci-cd.html#sbom",
+        "keywords": ["sbom", "cyclonedx", "software bill of materials", "supply chain", "code signing", "authenticode", "signpath", "azure trusted signing"]
+      },
+      {
+        "title": "Dependabot",
+        "url": "ci-cd.html#dependabot",
+        "keywords": ["dependabot", "grouped updates", "nuget", "github actions", "dependency updates"]
+      },
+      {
+        "title": "Action versioning policy",
+        "url": "ci-cd.html#action-versioning-policy",
+        "keywords": ["action versioning", "sha pinning", "supply chain", "tag mutation", "pinned actions"]
+      }
+    ]
   },
   {
-    "id": "ci-cd",
-    "title": "CI/CD & Security",
-    "url": "ci-cd.html",
-    "keywords": ["ci", "cd", "cicd", "pipeline", "github actions", "security", "scanning", "semgrep", "gitleaks", "trivy", "psscriptanalyzer", "sast", "secrets", "vulnerabilities", "release", "workflow dispatch", "manual release", "auto bump", "dependabot", "grouped updates", "sbom", "cyclonedx", "software bill of materials", "supply chain", "code signing", "authenticode", "signpath", "azure trusted signing"]
-  },
-  {
-    "id": "troubleshooting",
-    "title": "Troubleshooting",
-    "url": "troubleshooting.html",
-    "keywords": ["troubleshooting", "debug", "errors", "logs", "faq", "common issues", "problems", "fix", "event log", "service", "startup"]
+    "topic": "Operations",
+    "items": [
+      {
+        "title": "Troubleshooting",
+        "url": "troubleshooting.html",
+        "keywords": ["troubleshooting", "debug", "errors", "logs", "faq", "common issues", "problems", "fix", "event log", "startup"]
+      },
+      {
+        "title": "Service recovery",
+        "url": "installation.html#service-recovery",
+        "keywords": ["service recovery", "auto-recovery", "restart", "failure actions", "watchdog", "resilience"]
+      }
+    ]
   }
 ]
