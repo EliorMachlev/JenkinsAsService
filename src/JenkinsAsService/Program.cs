@@ -14,6 +14,7 @@ const string ConfigSectionName = "Jenkins";
 const string DebugModeKey = "DebugMode";
 const string CompactLogKey = "CompactLog";
 const string RetainedLogsKey = "RetainedLogs";
+const string DataDirectoryKey = "DataDirectory";
 const int DefaultRetainedLogs = 3;
 const string ServiceName = "Jenkins";
 const string JarDownloaderClientName = "JarDownloader";
@@ -48,7 +49,11 @@ var debugMode = jenkinsSection.GetValue<bool>(DebugModeKey);
 var compactLog = jenkinsSection.GetValue<bool>(CompactLogKey);
 var retainedLogs = jenkinsSection.GetValue<int?>(RetainedLogsKey) ?? DefaultRetainedLogs;
 
-Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, basePath);
+// Logs go to the writable data directory (separate from the read-only install folder), not next to
+// the binary. Resolved here so the file sink points at the same place the worker writes its artifacts.
+var dataDir = DataPaths.ResolveDataDirectory(jenkinsSection[DataDirectoryKey]);
+
+Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, dataDir);
 
 // Harden the service process: block remote/low-integrity/non-System32 DLL loads and legacy
 // extension-point injection. Affects future LoadLibrary calls in this process only (not the Java
@@ -75,7 +80,7 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int retainedLogs, string basePath)
+static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int retainedLogs, string logDirectory)
 {
     var logConfig = new LoggerConfiguration()
         .MinimumLevel.Is(debugMode ? LogEventLevel.Debug : LogEventLevel.Information)
@@ -86,7 +91,7 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int reta
         .Enrich.WithMachineName()
         .Enrich.WithEnvironmentName();
 
-    ConfigureFileSink(logConfig, compactLog, retainedLogs, basePath);
+    ConfigureFileSink(logConfig, compactLog, retainedLogs, logDirectory);
 
     // The low-privilege service account cannot create the event source (HKLM write). The installer
     // pre-creates it as SYSTEM; here we only attach the sink if the source is usable, and never let
@@ -103,13 +108,13 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int reta
     return logConfig.CreateLogger();
 }
 
-static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, int retainedLogs, string basePath)
+static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, int retainedLogs, string logDirectory)
 {
     if (compactLog)
     {
         logConfig.WriteTo.File(
             formatter: new CompactJsonFormatter(),
-            path: Path.Combine(basePath, CompactLogFileName),
+            path: Path.Combine(logDirectory, CompactLogFileName),
             rollingInterval: RollingInterval.Infinite,
             rollOnFileSizeLimit: true,
             fileSizeLimitBytes: FileSizeLimitBytes,
@@ -118,7 +123,7 @@ static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, in
     else
     {
         logConfig.WriteTo.File(
-            path: Path.Combine(basePath, TextLogFileName),
+            path: Path.Combine(logDirectory, TextLogFileName),
             rollingInterval: RollingInterval.Infinite,
             rollOnFileSizeLimit: true,
             fileSizeLimitBytes: FileSizeLimitBytes,

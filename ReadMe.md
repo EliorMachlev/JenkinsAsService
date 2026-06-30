@@ -136,6 +136,7 @@ All settings live in the `Jenkins` section of `appsettings.json`.
 | `SecretViaFile` | No | `true` | Pass the secret as `-secret @<file>` (ACL-restricted) instead of inline, keeping it out of the process table |
 | `SanitizeEnvironment` | No | `true` | Launch the agent with a deny-by-default environment (curated allow-list only) |
 | `AllowedEnvironmentVariables` | No | *(empty)* | Extra env var names (`;`/`,`-separated) to pass through when `SanitizeEnvironment` is on |
+| `DataDirectory` | No | `%ProgramData%\JenkinsAsService` | Writable dir for runtime data (jar, logs, secret, work dir), separate from the read-only install folder |
 | `DebugMode` | No | `false` | Verbose Java agent output in logs |
 | `CompactLog` | No | `false` | CLEF JSON output (`agent.clef`) instead of human-readable (`agent.log`) |
 | `RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
@@ -235,6 +236,7 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 - TLS 1.2+ enforced by default (.NET 10), with optional controller certificate pinning (`ControllerCertThumbprint`)
 - Secrets encrypted at rest (DPAPI machine/user scope, CredMgr), redacted from all logs, and passed to the agent off the command line via `-secret @<file>` so they never appear in the process table
 - Least-privilege virtual service account, deny-by-default environment block for the agent child, and Win32 process-mitigation policies (no remote/low-IL/non-System32 DLL loads, extension-point injection disabled)
+- Binary/data separation: read-only binaries in `Program Files`, writable runtime data (jar, logs, secret, work dir) in `ProgramData` — a malicious pipeline running under the agent can't overwrite the service `.exe`
 - Deterministic builds with locked NuGet restore and embedded PDB symbols
 - CycloneDX **SBOM** generated in CI and attached to every release (with SHA-256 checksum)
 - Unit tests run on every push and PR

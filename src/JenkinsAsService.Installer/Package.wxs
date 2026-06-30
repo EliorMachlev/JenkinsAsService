@@ -38,7 +38,7 @@
     <Feature Id="Main" Title="Jenkins Agent Service" Level="1">
       <ComponentGroupRef Id="PublishOutput" />
       <ComponentRef Id="ServiceComponent" />
-      <ComponentRef Id="ServiceFolderAcl" />
+      <ComponentRef Id="DataFolderAcl" />
     </Feature>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -50,8 +50,17 @@
                   ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE] --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
                   Execute="deferred" Impersonate="no" />
 
+    <!-- Second CA: persist the data directory. Kept separate because folding the data-dir flag into the
+         command above would exceed the MSI 255-char custom-action Target limit. An EXE custom action's
+         command line is formatted at schedule time (immediate sequence), so [DATAFOLDER] resolves. -->
+    <CustomAction Id="SetDataDir"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='update-secret --silent --set-data-dir "[DATAFOLDER]"'
+                  Execute="deferred" Impersonate="no" />
+
     <InstallExecuteSequence>
-      <Custom Action="WriteConfig" Before="InstallFinalize" Condition="NOT Installed" />
+      <Custom Action="WriteConfig" Before="SetDataDir" Condition="NOT Installed" />
+      <Custom Action="SetDataDir" Before="InstallFinalize" Condition="NOT Installed" />
     </InstallExecuteSequence>
 
   </Package>

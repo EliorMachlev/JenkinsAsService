@@ -285,7 +285,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     <ul>
       <li>Installs to <code>C:\Program Files\Jenkins</code> (customizable via install directory dialog or <code>INSTALLFOLDER</code> property)</li>
       <li>Registers the <code>Jenkins</code> Windows Service under a least-privilege <strong>virtual service account</strong> (<code>NT SERVICE\Jenkins</code>, Automatic start) instead of <code>LocalSystem</code></li>
-      <li>Hardens the install folder ACL: the service account gets write access (for logs / <code>agent.jar</code> / work dir) while standard users keep only Read &amp; Execute &mdash; a non-admin user cannot replace the <code>.exe</code></li>
+      <li>Splits binaries from runtime data: binaries stay <strong>read-only</strong> in <code>C:\Program Files\Jenkins</code> (the agent account cannot overwrite the <code>.exe</code>), while runtime artifacts (<code>agent.jar</code>, logs, secret file, work dir) live in a separate writable data folder <code>C:\ProgramData\JenkinsAsService</code> (overridable via <code>DATAFOLDER</code>) where the service account is granted write</li>
       <li>Locks down <code>appsettings.json</code> so only SYSTEM, Administrators and the service account can read it (the secret-bearing file is removed from <code>Users</code>)</li>
       <li>Pre-creates the Windows Event Log source (the low-privilege account cannot create it at runtime)</li>
       <li>Configures Windows-level service recovery automatically (<code>util:ServiceConfig</code> &mdash; restart on all 3 failures after 10s, reset daily)</li>
@@ -323,11 +323,11 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
           </tr>
           <tr>
             <td><code>Folders.wxs</code></td>
-            <td>Install directory definition (<code>ProgramFiles6432Folder\Jenkins</code>)</td>
+            <td>Directory definitions: install dir (<code>ProgramFiles6432Folder\Jenkins</code>) and writable data dir (<code>CommonAppDataFolder\JenkinsAsService</code> = <code>DATAFOLDER</code>)</td>
           </tr>
           <tr>
             <td><code>Service.wxs</code></td>
-            <td>File components + <code>ServiceInstall</code> (virtual service account) / <code>ServiceControl</code> + <code>util:ServiceConfig</code> (recovery) + <code>util:PermissionEx</code> install-folder ACL grant</td>
+            <td>File components + <code>ServiceInstall</code> (virtual service account) / <code>ServiceControl</code> + <code>util:ServiceConfig</code> (recovery) + <code>util:PermissionEx</code> data-folder ACL grant</td>
           </tr>
           <tr>
             <td><code>ConfigDialog.wxs</code></td>
@@ -356,6 +356,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     <p>For automated deployments, use <code>msiexec</code> with public properties:</p>
     <pre data-lang="powershell"><code>msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
     INSTALLFOLDER="D:\Jenkins" `
+    DATAFOLDER="D:\JenkinsData" `
     JENKINS_URL="https://jenkins.example.com:8443" `
     JENKINS_SECRET="your-secret" `
     JENKINS_SECRET_MODE="EnvironmentVariable" `
@@ -387,7 +388,13 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>INSTALLFOLDER</code></td>
             <td>No</td>
             <td><code>C:\Program Files\Jenkins</code></td>
-            <td>Installation directory</td>
+            <td>Installation directory for the (read-only) binaries</td>
+          </tr>
+          <tr>
+            <td><code>DATAFOLDER</code></td>
+            <td>No</td>
+            <td><code>C:\ProgramData\JenkinsAsService</code></td>
+            <td>Writable data directory (<code>agent.jar</code>, logs, secret file, work dir). The service account is granted write here; persisted to <code>DataDirectory</code> in <code>appsettings.json</code></td>
           </tr>
           <tr>
             <td><code>JENKINS_URL</code></td>
@@ -423,7 +430,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>SERVICE_ACCOUNT_DOMAIN</code> / <code>SERVICE_ACCOUNT_NAME</code></td>
             <td>No</td>
             <td><code>NT SERVICE</code> / <code>Jenkins</code></td>
-            <td>Domain and name halves of <code>SERVICE_ACCOUNT</code>, used for the install-folder ACL grant. Override when changing <code>SERVICE_ACCOUNT</code></td>
+            <td>Domain and name halves of <code>SERVICE_ACCOUNT</code>, used for the data-folder ACL grant. Override when changing <code>SERVICE_ACCOUNT</code></td>
           </tr>
           <tr>
             <td><code>SERVICE_PASSWORD</code></td>

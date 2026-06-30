@@ -154,6 +154,12 @@
             <td><em>(empty)</em></td>
             <td>Extra environment variable names (semicolon/comma-separated, case-insensitive) to pass through to the agent when <code>SanitizeEnvironment</code> is on. Example: <code>GRADLE_USER_HOME;MAVEN_OPTS</code>.</td>
           </tr>
+          <tr>
+            <td><code>DataDirectory</code></td>
+            <td>No</td>
+            <td><code>%ProgramData%\JenkinsAsService</code></td>
+            <td>Writable directory for runtime artifacts (<code>agent.jar</code>, logs, secret file, work dir), kept separate from the read-only install folder. Env vars are expanded. The MSI sets this to the chosen <code>DATAFOLDER</code>. See <a href="#data-dir-split">Data directory split</a>.</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -172,6 +178,7 @@
     "SecretViaFile": true,
     "SanitizeEnvironment": true,
     "AllowedEnvironmentVariables": "",
+    "DataDirectory": "",
     "DebugMode": false,
     "CompactLog": false,
     "RetainedLogs": 3,
@@ -309,6 +316,31 @@
 
     <h3 id="env-sanitization">Environment sanitization</h3>
     <p>With <code>SanitizeEnvironment: true</code> (default) the Java agent is launched with a <strong>deny-by-default</strong> environment: only a curated allow-list of variables the JVM and common Windows build tooling need (<code>SystemRoot</code>, <code>PATH</code>, <code>TEMP</code>, <code>JAVA_HOME</code>, <code>ProgramFiles</code>, &hellip;) is passed through. This stops the service's own environment block &mdash; which may carry host secrets or tokens &mdash; from being inherited by untrusted pipeline scripts that run inside the agent. If a build needs an extra host variable, add it to <code>AllowedEnvironmentVariables</code> (semicolon/comma-separated, case-insensitive) rather than disabling the feature.</p>
+
+    <h3 id="data-dir-split">Data directory split (binaries vs. runtime data)</h3>
+    <p>The service keeps its <strong>read-only binary</strong> and its <strong>writable runtime data</strong> in two separate locations:</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Location</th><th>Default</th><th>Contents</th><th>ACL</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Install folder</td>
+            <td><code>C:\Program Files\Jenkins</code></td>
+            <td><code>JenkinsAsService.exe</code>, <code>appsettings.json</code></td>
+            <td>Read/Execute (default Program Files) &mdash; the agent account <strong>cannot write</strong></td>
+          </tr>
+          <tr>
+            <td>Data folder (<code>DataDirectory</code>)</td>
+            <td><code>C:\ProgramData\JenkinsAsService</code></td>
+            <td><code>agent.jar</code> (+ ETag cache), <code>agent.log</code>/<code>.clef</code>, <code>.agent-secret</code>, agent work dir</td>
+            <td>Service account granted write (set by the MSI)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Because the install folder is not writable by the agent identity, a malicious pipeline running inside the agent cannot overwrite the service binary and wait for a restart &mdash; a local privilege-escalation / persistence vector that a single shared folder can't close (the same identity needs write for data but must not have it for the binary). The MSI sets <code>DataDirectory</code> to the chosen <code>DATAFOLDER</code>; for portable/manual deployments the service defaults to <code>%ProgramData%\JenkinsAsService</code> and creates it on first run.</p>
 
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>

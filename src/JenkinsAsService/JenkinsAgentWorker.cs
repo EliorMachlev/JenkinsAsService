@@ -70,6 +70,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private readonly IConnectivityChecker _connectivityChecker;
     private readonly ISecretResolver _secretResolver;
     private readonly string _basePath;
+    private string _dataDir = "";
     private string _javaExe = "";
     private string _agentName = "";
     private string _resolvedSecret = "";
@@ -114,7 +115,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             ValidateSettings();
             ResolveJavaPath();
             await TestConnectivity(stoppingToken);
-            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _basePath, stoppingToken);
+            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _dataDir, stoppingToken);
 
             _agentProcess = StartAgentProcess();
             await RunWatchdog(stoppingToken);
@@ -193,6 +194,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         _resolvedSecret = _secretResolver.Resolve(_settings);
         _logger.LogInformation("Secret resolved via {Mode} mode", _settings.SecretMode);
+
+        _dataDir = DataPaths.ResolveDataDirectory(_settings.DataDirectory);
+        _logger.LogInformation("Data directory: {DataDir}", _dataDir);
     }
 
     internal static string ResolveJavaPath(string? configuredPath, string? javaHome)
@@ -274,7 +278,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     private ProcessStartInfo BuildProcessStartInfo()
     {
-        var jarPath = Path.Combine(_basePath, JarFilename);
+        var jarPath = Path.Combine(_dataDir, JarFilename);
         var normalizedUrl = $"{_settings.JenkinsUrl.TrimEnd(TrailingSlash)}{UrlPathSeparator}";
 
         var psi = new ProcessStartInfo(_javaExe)
@@ -283,7 +287,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            WorkingDirectory = _basePath
+            WorkingDirectory = _dataDir
         };
 
         psi.ArgumentList.Add(ArgJar);
@@ -295,7 +299,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         psi.ArgumentList.Add(ArgName);
         psi.ArgumentList.Add(_agentName);
         psi.ArgumentList.Add(ArgWorkDir);
-        psi.ArgumentList.Add(_basePath);
+        psi.ArgumentList.Add(_dataDir);
 
         foreach (var arg in ParseArguments(_settings.CustomArguments))
         {
@@ -326,7 +330,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         }
 
         _secretFilePath = AgentSecretFile.Write(
-            _basePath, _resolvedSecret, msg => _logger.LogWarning("{Warning}", msg));
+            _dataDir, _resolvedSecret, msg => _logger.LogWarning("{Warning}", msg));
         return SecretFileArgPrefix + _secretFilePath;
     }
 
@@ -553,7 +557,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         try
         {
-            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _basePath, ct);
+            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _dataDir, ct);
             _agentProcess = StartAgentProcess();
             _logger.LogInformation("Watchdog: Agent restarted (attempt {Count})", retryCount);
             return true;

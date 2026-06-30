@@ -70,4 +70,13 @@ public sealed class ServiceSettings
     /// specific host variables (e.g. <c>GRADLE_USER_HOME;MAVEN_OPTS</c>). Names are case-insensitive.
     /// </summary>
     public string AllowedEnvironmentVariables { get; set; } = "";
+
+    /// <summary>
+    /// Writable data directory for runtime artifacts the service produces — <c>agent.jar</c> (+ ETag
+    /// cache), log files, the secret file, and the agent work directory. Kept separate from the
+    /// read-only install folder so the binary can't be overwritten by the agent identity. Environment
+    /// variables are expanded. Empty (default) resolves to <c>%ProgramData%\JenkinsAsService</c>; the
+    /// MSI sets this to the chosen <c>DATAFOLDER</c> and grants the service account write on it.
+    /// </summary>
+    public string DataDirectory { get; set; } = "";
 }

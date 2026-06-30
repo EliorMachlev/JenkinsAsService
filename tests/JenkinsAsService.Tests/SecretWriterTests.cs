@@ -118,6 +118,47 @@ public class SecretWriterTests : IDisposable
         json.RootElement.GetProperty("Jenkins").GetProperty("SecretMode").GetString().Should().Be("Dpapi");
     }
 
+    [Fact]
+    public void WriteConfig_preserves_existing_data_directory()
+    {
+        const string existingJson =
+            "{\"Jenkins\":{\"JenkinsURL\":\"https://old:8443\",\"AgentSecret\":\"old\"," +
+            "\"SecretMode\":\"Unprotected\",\"DataDirectory\":\"D:\\\\JenkinsData\"}}";
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
+
+        SecretWriter.WriteConfig(_tempDir, "new", SecretMode.Unprotected, "https://new:8443", null, null);
+
+        ReadConfig().RootElement.GetProperty("Jenkins")
+            .GetProperty("DataDirectory").GetString().Should().Be(@"D:\JenkinsData");
+    }
+
+    [Fact]
+    public void SetDataDirectory_sets_field_and_preserves_other_fields_and_sections()
+    {
+        const string existingJson =
+            "{\"Jenkins\":{\"JenkinsURL\":\"https://j:8443\",\"AgentSecret\":\"keep\"," +
+            "\"CustomArguments\":\"-x\"},\"Telemetry\":{\"Enabled\":true}}";
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
+
+        SecretWriter.SetDataDirectory(_tempDir, @"C:\ProgramData\JenkinsAsService");
+
+        var root = ReadConfig().RootElement;
+        var jenkins = root.GetProperty("Jenkins");
+        jenkins.GetProperty("DataDirectory").GetString().Should().Be(@"C:\ProgramData\JenkinsAsService");
+        jenkins.GetProperty("AgentSecret").GetString().Should().Be("keep", "the secret must be untouched");
+        jenkins.GetProperty("CustomArguments").GetString().Should().Be("-x");
+        root.GetProperty("Telemetry").GetProperty("Enabled").GetBoolean().Should().BeTrue("other sections survive");
+    }
+
+    [Fact]
+    public void SetDataDirectory_creates_section_when_file_absent()
+    {
+        SecretWriter.SetDataDirectory(_tempDir, @"C:\Data");
+
+        ReadConfig().RootElement.GetProperty("Jenkins")
+            .GetProperty("DataDirectory").GetString().Should().Be(@"C:\Data");
+    }
+
     private JsonDocument ReadConfig()
     {
         var path = Path.Combine(_tempDir, "appsettings.json");

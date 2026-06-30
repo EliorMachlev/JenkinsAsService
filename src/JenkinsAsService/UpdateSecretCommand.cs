@@ -22,6 +22,8 @@ public static class UpdateSecretCommand
           --thumbprint <value>    SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
           --service-account <acct> Service account (e.g. 'NT SERVICE\Jenkins') granted read on the
                                   written config; appsettings.json ACL is hardened to deny Users.
+          --set-data-dir <path>   Only set Jenkins:DataDirectory in appsettings.json, then exit (used
+                                  by the installer; the writable data dir, separate from the binary).
           --agent-name <value>    Agent node label (default: hostname)
           --java-path <value>     Java installation directory (default: JAVA_HOME)
           --impersonate           Run Credential Manager write as a different user account.
@@ -57,6 +59,7 @@ public static class UpdateSecretCommand
         public DpapiScope? DpapiScope;
         public string? Thumbprint;
         public string? ServiceAccount;
+        public string? SetDataDir;
         public string? AgentName;
         public string? JavaPath;
         public string? Username;
@@ -83,6 +86,15 @@ public static class UpdateSecretCommand
         if (parsed is null)
         {
             return 1;
+        }
+
+        // Focused operation: just persist the data directory and exit. Used by the installer's second
+        // custom action — the value can't be appended to the main write command (MSI 255-char CA limit).
+        if (parsed.SetDataDir is not null)
+        {
+            SecretWriter.SetDataDirectory(basePath, parsed.SetDataDir);
+            Console.WriteLine($"Data directory set to {parsed.SetDataDir}");
+            return 0;
         }
 
         return parsed.Silent
@@ -135,6 +147,9 @@ public static class UpdateSecretCommand
                 return true;
             case "--service-account":
                 state.ServiceAccount = Next(args, ref i);
+                return true;
+            case "--set-data-dir":
+                state.SetDataDir = Next(args, ref i);
                 return true;
             case "--agent-name":
                 state.AgentName = Next(args, ref i);

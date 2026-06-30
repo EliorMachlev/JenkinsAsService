@@ -63,6 +63,43 @@ public static class SecretWriter
         }
     }
 
+    /// <summary>
+    /// Surgically sets <c>Jenkins:DataDirectory</c> in appsettings.json, preserving every other field and
+    /// top-level section. Used by the installer's second custom action (the value can't be appended to the
+    /// main <c>WriteConfig</c> command without exceeding the MSI 255-char custom-action limit). No-op-safe:
+    /// creates the section/file if absent.
+    /// </summary>
+    public static void SetDataDirectory(string basePath, string dataDirectory)
+    {
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        var existingRoot = ReadExistingRoot(configPath);
+        var existingJenkins = existingRoot?[ConfigSectionName]?.AsObject();
+
+        var jenkins = existingJenkins is null
+            ? new JsonObject()
+            : (JsonObject)existingJenkins.DeepClone();
+        jenkins["DataDirectory"] = dataDirectory;
+
+        var root = new JsonObject();
+        if (existingRoot != null)
+        {
+            foreach (var kvp in existingRoot)
+            {
+                if (kvp.Key != ConfigSectionName)
+                {
+                    root[kvp.Key] = kvp.Value?.DeepClone();
+                }
+            }
+        }
+
+        root[ConfigSectionName] = jenkins;
+
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        // basePath is the trusted application base directory; filename is a constant — no traversal vector.
+        // nosemgrep: csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine
+        File.WriteAllText(configPath, root.ToJsonString(options), Encoding.UTF8);
+    }
+
     private static string ProcessSecret(string secret, SecretMode mode, DpapiScope dpapiScope) => mode switch
     {
         SecretMode.Dpapi => ProtectDpapi(secret, dpapiScope),
@@ -105,6 +142,7 @@ public static class SecretWriter
         ["CustomArguments"] = ExistingString(existingJenkins, "CustomArguments"),
         ["ControllerCertThumbprint"] =
             controllerCertThumbprint ?? ExistingString(existingJenkins, "ControllerCertThumbprint"),
+        ["DataDirectory"] = ExistingString(existingJenkins, "DataDirectory"),
         ["DebugMode"] = ExistingValue(existingJenkins, "DebugMode", false),
         ["CompactLog"] = ExistingValue(existingJenkins, "CompactLog", false),
         ["MaxRetries"] = ExistingValue(existingJenkins, "MaxRetries", 0)

@@ -39,12 +39,12 @@
                       Wait="yes" />
     </Component>
 
-    <!-- Grant the (low-privilege) service account write access to its own install folder so it can
-         create log files, download agent.jar and use it as the agent -workDir. Inheritance is kept,
-         so standard Users still get only Read/Execute (OS default) — a different non-admin user
-         cannot replace the .exe. Only the service identity (which already runs the binary) and
-         Administrators/SYSTEM can write. -->
-    <Component Id="ServiceFolderAcl" Directory="INSTALLFOLDER"
+    <!-- Grant the (low-privilege) service account write access to the DATA folder only — the install
+         folder stays read-only (default Program Files ACL), so a malicious pipeline running under the
+         agent identity cannot overwrite the service binary. Inheritance is kept, so the folder also
+         retains the inherited SYSTEM/Administrators full control. This is the writable home for
+         agent.jar, logs, the secret file and the agent -workDir. -->
+    <Component Id="DataFolderAcl" Directory="DATAFOLDER"
                Guid="9D1F73AD-383E-436A-8F1A-7C83CFC0A5A0">
       <CreateFolder>
         <util:PermissionEx User="[SERVICE_ACCOUNT_NAME]" Domain="[SERVICE_ACCOUNT_DOMAIN]"
