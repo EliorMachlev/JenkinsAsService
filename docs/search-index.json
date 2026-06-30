@@ -21,7 +21,7 @@
     "id": "configuration",
     "title": "Configuration",
     "url": "configuration.html",
-    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog", "dpapi", "dpapi scope", "machine scope", "user scope", "certificate pinning", "thumbprint", "controller cert", "secret protection"]
+    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog", "dpapi", "dpapi scope", "machine scope", "user scope", "certificate pinning", "thumbprint", "controller cert", "secret protection", "secret via file", "secret off command line", "environment sanitization", "allowed environment variables", "process table", "env allowlist"]
   },
   {
     "id": "api-reference",
@@ -39,7 +39,7 @@
     "id": "ci-cd",
     "title": "CI/CD & Security",
     "url": "ci-cd.html",
-    "keywords": ["ci", "cd", "cicd", "pipeline", "github actions", "security", "scanning", "semgrep", "gitleaks", "trivy", "psscriptanalyzer", "sast", "secrets", "vulnerabilities", "release", "workflow dispatch", "manual release", "auto bump", "dependabot", "grouped updates"]
+    "keywords": ["ci", "cd", "cicd", "pipeline", "github actions", "security", "scanning", "semgrep", "gitleaks", "trivy", "psscriptanalyzer", "sast", "secrets", "vulnerabilities", "release", "workflow dispatch", "manual release", "auto bump", "dependabot", "grouped updates", "sbom", "cyclonedx", "software bill of materials", "supply chain", "code signing", "authenticode", "signpath", "azure trusted signing"]
   },
   {
     "id": "troubleshooting",

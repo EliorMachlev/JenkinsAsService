@@ -50,6 +50,11 @@ var retainedLogs = jenkinsSection.GetValue<int?>(RetainedLogsKey) ?? DefaultReta
 
 Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, basePath);
 
+// Harden the service process: block remote/low-integrity/non-System32 DLL loads and legacy
+// extension-point injection. Affects future LoadLibrary calls in this process only (not the Java
+// child). Best-effort — never blocks startup. See ProcessMitigations for the rationale on the subset.
+ProcessMitigations.Apply(msg => Log.Warning("{Warning}", msg));
+
 try
 {
     var host = BuildHost(args);

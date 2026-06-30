@@ -127,6 +127,12 @@ jobs:
           Move-Item msi/x64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x64.msi"
           Move-Item msi/x86/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x86.msi"
 
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          $v = "${{ steps.version.outputs.VERSION }}"
+          dotnet tool install --global CycloneDX --version 6.2.0
+          dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output . --output-format Json --filename "JenkinsAsService_${v}_sbom.json" --set-version $v
+
       - name: Create 7z archives
         run: |
           7z a -t7z -mx=9 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z" ./publish/x64/JenkinsAsService.exe ./publish/x64/appsettings.json
@@ -155,6 +161,7 @@ jobs:
             "x64/appsettings.json"           = "publish/x64/appsettings.json"
             "x86/JenkinsAsService.exe"       = "publish/x86/JenkinsAsService.exe"
             "x86/appsettings.json"           = "publish/x86/appsettings.json"
+            "JenkinsAsService_${v}_sbom.json" = "JenkinsAsService_${v}_sbom.json"
           }
           $checksums = [ordered]@{ version = $v; algorithm = "SHA256"; files = [ordered]@{} }
           foreach ($entry in $files.GetEnumerator()) {
@@ -175,4 +182,5 @@ jobs:
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.rar
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.7z
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.rar
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_sbom.json
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_checksums.json

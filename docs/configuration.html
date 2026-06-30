@@ -136,6 +136,24 @@
             <td><em>(empty)</em></td>
             <td>SHA-256 thumbprint to pin the controller's TLS certificate for the <code>agent.jar</code> download. See <a href="#cert-pinning">Certificate Pinning</a>.</td>
           </tr>
+          <tr>
+            <td><code>SecretViaFile</code></td>
+            <td>No</td>
+            <td><code>true</code></td>
+            <td>Pass the resolved secret to the Java agent as <code>-secret @&lt;file&gt;</code> (an ACL-restricted file) instead of inline on the command line, keeping it out of the process table. See <a href="#secret-off-argv">Secret off the command line</a>.</td>
+          </tr>
+          <tr>
+            <td><code>SanitizeEnvironment</code></td>
+            <td>No</td>
+            <td><code>true</code></td>
+            <td>Launch the Java agent with a deny-by-default environment (curated allow-list only), preventing the service's environment block from leaking into pipeline scripts. See <a href="#env-sanitization">Environment sanitization</a>.</td>
+          </tr>
+          <tr>
+            <td><code>AllowedEnvironmentVariables</code></td>
+            <td>No</td>
+            <td><em>(empty)</em></td>
+            <td>Extra environment variable names (semicolon/comma-separated, case-insensitive) to pass through to the agent when <code>SanitizeEnvironment</code> is on. Example: <code>GRADLE_USER_HOME;MAVEN_OPTS</code>.</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -151,6 +169,9 @@
     "JavaPath": "",
     "CustomArguments": "",
     "ControllerCertThumbprint": "",
+    "SecretViaFile": true,
+    "SanitizeEnvironment": true,
+    "AllowedEnvironmentVariables": "",
     "DebugMode": false,
     "CompactLog": false,
     "RetainedLogs": 3,
@@ -282,6 +303,12 @@
       <div class="callout-title">Scope of the pin</div>
       <p>This pins the <strong>.NET <code>agent.jar</code> download only</strong>. The Java agent's own control-channel TLS is handled by the JVM, not .NET. To pin that connection as well, pass the controller certificate to the agent via <code>CustomArguments</code> (the Jenkins remoting agent accepts <code>-cert &lt;PEM&gt;</code>).</p>
     </div>
+
+    <h3 id="secret-off-argv">Secret off the command line</h3>
+    <p>By default (<code>SecretViaFile: true</code>) the resolved JNLP secret is never placed on the Java agent's command line. It is written to an ACL-restricted file (inheritance broken; <code>SYSTEM</code>, <code>Administrators</code>, and the service account only) and handed to the agent as <code>-secret @&lt;file&gt;</code>. This keeps the secret out of the process table &mdash; otherwise any local administrator could read it for the agent's entire lifetime via <code>Get-Process</code> or WMI <code>Win32_Process.CommandLine</code>. The file is overwritten on each restart and deleted on service stop. Set <code>SecretViaFile: false</code> only if your Jenkins remoting version predates <code>@file</code> support.</p>
+
+    <h3 id="env-sanitization">Environment sanitization</h3>
+    <p>With <code>SanitizeEnvironment: true</code> (default) the Java agent is launched with a <strong>deny-by-default</strong> environment: only a curated allow-list of variables the JVM and common Windows build tooling need (<code>SystemRoot</code>, <code>PATH</code>, <code>TEMP</code>, <code>JAVA_HOME</code>, <code>ProgramFiles</code>, &hellip;) is passed through. This stops the service's own environment block &mdash; which may carry host secrets or tokens &mdash; from being inherited by untrusted pipeline scripts that run inside the agent. If a build needs an extra host variable, add it to <code>AllowedEnvironmentVariables</code> (semicolon/comma-separated, case-insensitive) rather than disabling the feature.</p>
 
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>

@@ -35,6 +35,25 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const string WarningPrefix = "WARNING: ";
     private const string SeverePrefix = "SEVERE: ";
 
+    // ─── Secret file / environment hardening ──────────────────────────────────
+    private const string SecretFileArgPrefix = "@";
+    private static readonly char[] AllowListSeparators = [';', ','];
+
+    // Deny-by-default allow-list for the Java agent's environment block. Covers what the JVM and common
+    // Windows build tooling need; everything else (incl. service-injected secrets) is stripped. Extend
+    // per-deployment via ServiceSettings.AllowedEnvironmentVariables rather than editing this list.
+    private static readonly string[] DefaultEnvAllowlist =
+    [
+        "SystemRoot", "windir", "SystemDrive", "ComSpec",
+        "PATH", "PATHEXT",
+        "TEMP", "TMP",
+        "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "PROCESSOR_IDENTIFIER", "OS", "COMPUTERNAME",
+        "USERNAME", "USERPROFILE", "USERDOMAIN", "HOMEDRIVE", "HOMEPATH",
+        "APPDATA", "LOCALAPPDATA", "ProgramData",
+        "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "CommonProgramFiles(x86)",
+        "JAVA_HOME",
+    ];
+
     // ─── Misc ─────────────────────────────────────────────────────────────────
     private const string SecretRedaction = "*****";
     private const string UrlPathSeparator = "/";
@@ -54,6 +73,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private string _javaExe = "";
     private string _agentName = "";
     private string _resolvedSecret = "";
+    private string? _secretFilePath;
     private Process? _agentProcess;
     private TaskCompletionSource? _agentExitTcs;
     private int _severeCount;
@@ -114,6 +134,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     {
         _logger.LogWarning("Service stop requested");
         KillAgent();
+        AgentSecretFile.Delete(_secretFilePath);
         _logger.LogWarning("Jenkins Agent stopped");
         await base.StopAsync(cancellationToken);
     }
@@ -270,7 +291,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         psi.ArgumentList.Add(ArgUrl);
         psi.ArgumentList.Add(normalizedUrl);
         psi.ArgumentList.Add(ArgSecret);
-        psi.ArgumentList.Add(_resolvedSecret);
+        psi.ArgumentList.Add(ResolveSecretArgument());
         psi.ArgumentList.Add(ArgName);
         psi.ArgumentList.Add(_agentName);
         psi.ArgumentList.Add(ArgWorkDir);
@@ -281,8 +302,60 @@ public sealed class JenkinsAgentWorker : BackgroundService
             psi.ArgumentList.Add(arg);
         }
 
+        // Strip the inherited service environment so build secrets can't leak into untrusted pipeline
+        // scripts running inside the agent. UseShellExecute = false pre-populates psi.Environment with
+        // the parent block; we deny-by-default and keep only what Java + tooling need.
+        if (_settings.SanitizeEnvironment)
+        {
+            SanitizeEnvironment(psi.Environment, _settings.AllowedEnvironmentVariables);
+        }
+
         return psi;
     }
+
+    /// <summary>
+    /// Returns the value passed after <c>-secret</c>: either <c>@&lt;file&gt;</c> (default, keeps the secret
+    /// off the process command line) or the raw secret when <see cref="ServiceSettings.SecretViaFile"/>
+    /// is disabled.
+    /// </summary>
+    private string ResolveSecretArgument()
+    {
+        if (!_settings.SecretViaFile)
+        {
+            return _resolvedSecret;
+        }
+
+        _secretFilePath = AgentSecretFile.Write(
+            _basePath, _resolvedSecret, msg => _logger.LogWarning("{Warning}", msg));
+        return SecretFileArgPrefix + _secretFilePath;
+    }
+
+    /// <summary>
+    /// Deny-by-default environment scrub: removes every variable from <paramref name="environment"/> that
+    /// is not in the curated <see cref="DefaultEnvAllowlist"/> or the caller-supplied
+    /// <paramref name="extraAllowed"/> (semicolon/comma-separated, case-insensitive).
+    /// </summary>
+    internal static void SanitizeEnvironment(IDictionary<string, string?> environment, string? extraAllowed)
+    {
+        var allow = new HashSet<string>(DefaultEnvAllowlist, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in SplitAllowList(extraAllowed))
+        {
+            allow.Add(name);
+        }
+
+        foreach (var key in environment.Keys.ToList())
+        {
+            if (!allow.Contains(key))
+            {
+                environment.Remove(key);
+            }
+        }
+    }
+
+    private static IEnumerable<string> SplitAllowList(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split(AllowListSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     internal static List<string> ParseArguments(string? input)
     {

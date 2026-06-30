@@ -47,4 +47,27 @@ public sealed class ServiceSettings
     /// rejecting any other certificate even if chain-trusted. Empty = standard chain validation only.
     /// </summary>
     public string ControllerCertThumbprint { get; set; } = "";
+
+    /// <summary>
+    /// When <c>true</c> (default), the JNLP secret is written to an ACL-restricted file and passed to
+    /// the Java agent as <c>-secret @&lt;file&gt;</c> instead of inline on the command line, keeping it out
+    /// of the process table (<c>Get-Process</c> / WMI <c>CommandLine</c>). Set <c>false</c> to revert to
+    /// passing the secret directly as a command-line argument.
+    /// </summary>
+    public bool SecretViaFile { get; set; } = true;
+
+    /// <summary>
+    /// When <c>true</c> (default), the Java agent child process is launched with a sanitized environment
+    /// containing only a curated allow-list plus <see cref="AllowedEnvironmentVariables"/>. This prevents
+    /// the service's own environment block (and any secrets in it) from leaking into untrusted pipeline
+    /// scripts that run inside the agent. Set <c>false</c> to inherit the full service environment.
+    /// </summary>
+    public bool SanitizeEnvironment { get; set; } = true;
+
+    /// <summary>
+    /// Additional environment variable names (semicolon- or comma-separated) to pass through to the Java
+    /// agent child when <see cref="SanitizeEnvironment"/> is enabled. Use for build tooling that needs
+    /// specific host variables (e.g. <c>GRADLE_USER_HOME;MAVEN_OPTS</c>). Names are case-insensitive.
+    /// </summary>
+    public string AllowedEnvironmentVariables { get; set; } = "";
 }

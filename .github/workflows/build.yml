@@ -27,6 +27,18 @@ jobs:
       - name: Test
         run: dotnet test -c Release --verbosity normal
 
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          dotnet tool install --global CycloneDX --version 6.2.0
+          dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output sbom --output-format Json --filename bom.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom/bom.json
+          if-no-files-found: error
+
       - name: Publish x64
         run: >-
           dotnet publish src/JenkinsAsService
