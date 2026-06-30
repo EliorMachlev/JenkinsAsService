@@ -14,19 +14,19 @@ public sealed class SecretResolver : ISecretResolver
 
     public string Resolve(ServiceSettings settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.AgentSecret))
+        if (string.IsNullOrWhiteSpace(settings.Secret.Value))
         {
-            throw new InvalidOperationException("'AgentSecret' is empty — nothing to resolve.");
+            throw new InvalidOperationException("'Secret:Value' is empty — nothing to resolve.");
         }
 
-        return settings.SecretMode switch
+        return settings.Secret.Mode switch
         {
-            SecretMode.Unprotected => settings.AgentSecret,
-            SecretMode.Dpapi => ResolveDpapi(settings.AgentSecret, settings.DpapiScope),
-            SecretMode.EnvironmentVariable => ResolveEnvironmentVariable(settings.AgentSecret),
-            SecretMode.CredentialManager => ResolveCredentialManager(settings.AgentSecret),
-            SecretMode.Tpm => TpmSecretProtector.Resolve(settings.AgentSecret),
-            _ => throw new InvalidOperationException($"Unknown SecretMode: '{settings.SecretMode}'.")
+            SecretMode.Unprotected => settings.Secret.Value,
+            SecretMode.Dpapi => ResolveDpapi(settings.Secret.Value, settings.Secret.DpapiScope),
+            SecretMode.EnvironmentVariable => ResolveEnvironmentVariable(settings.Secret.Value),
+            SecretMode.CredentialManager => ResolveCredentialManager(settings.Secret.Value),
+            SecretMode.Tpm => TpmSecretProtector.Resolve(settings.Secret.Value),
+            _ => throw new InvalidOperationException($"Unknown SecretMode: '{settings.Secret.Mode}'.")
         };
     }
 

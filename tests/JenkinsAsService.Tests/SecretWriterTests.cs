@@ -25,14 +25,15 @@ public class SecretWriterTests : IDisposable
         }
     }
 
+    private JsonElement Jenkins() => ReadConfig().RootElement.GetProperty("Jenkins");
+
     [Fact]
     public void Dpapi_writes_base64_encrypted_secret()
     {
         SecretWriter.WriteConfig(_tempDir, "my-secret", SecretMode.Dpapi,
             "https://jenkins:8443", null, null);
 
-        var json = ReadConfig();
-        var agentSecret = json.RootElement.GetProperty("Jenkins").GetProperty("AgentSecret").GetString()!;
+        var agentSecret = Jenkins().GetProperty("Secret").GetProperty("Value").GetString()!;
 
         // Verify it's valid base64 and can be decrypted back
         var encrypted = Convert.FromBase64String(agentSecret);
@@ -46,11 +47,10 @@ public class SecretWriterTests : IDisposable
         SecretWriter.WriteConfig(_tempDir, "user-secret", SecretMode.Dpapi,
             "https://jenkins:8443", null, null, DpapiScope.User);
 
-        var json = ReadConfig();
-        var jenkins = json.RootElement.GetProperty("Jenkins");
-        jenkins.GetProperty("DpapiScope").GetString().Should().Be("User");
+        var secret = Jenkins().GetProperty("Secret");
+        secret.GetProperty("DpapiScope").GetString().Should().Be("User");
 
-        var encrypted = Convert.FromBase64String(jenkins.GetProperty("AgentSecret").GetString()!);
+        var encrypted = Convert.FromBase64String(secret.GetProperty("Value").GetString()!);
         var decrypted = ProtectedData.Unprotect(encrypted, SecretResolver.DpapiEntropy, DataProtectionScope.CurrentUser);
         Encoding.UTF8.GetString(decrypted).Should().Be("user-secret");
     }
@@ -61,9 +61,9 @@ public class SecretWriterTests : IDisposable
         SecretWriter.WriteConfig(_tempDir, "secret", SecretMode.Unprotected,
             "https://jenkins:8443", null, null, DpapiScope.Machine, "AB:CD:EF");
 
-        var jenkins = ReadConfig().RootElement.GetProperty("Jenkins");
-        jenkins.GetProperty("DpapiScope").GetString().Should().Be("Machine");
-        jenkins.GetProperty("ControllerCertThumbprint").GetString().Should().Be("AB:CD:EF");
+        var jenkins = Jenkins();
+        jenkins.GetProperty("Secret").GetProperty("DpapiScope").GetString().Should().Be("Machine");
+        jenkins.GetProperty("Connection").GetProperty("ControllerCertThumbprint").GetString().Should().Be("AB:CD:EF");
     }
 
     [Fact]
@@ -72,40 +72,40 @@ public class SecretWriterTests : IDisposable
         SecretWriter.WriteConfig(_tempDir, "plain-secret", SecretMode.Unprotected,
             "https://jenkins:8443", "my-agent", "/usr/lib/jvm");
 
-        var json = ReadConfig();
-        var jenkins = json.RootElement.GetProperty("Jenkins");
+        var jenkins = Jenkins();
 
-        jenkins.GetProperty("AgentSecret").GetString().Should().Be("plain-secret");
-        jenkins.GetProperty("SecretMode").GetString().Should().Be("Unprotected");
-        jenkins.GetProperty("JenkinsURL").GetString().Should().Be("https://jenkins:8443");
-        jenkins.GetProperty("AgentName").GetString().Should().Be("my-agent");
-        jenkins.GetProperty("JavaPath").GetString().Should().Be("/usr/lib/jvm");
+        jenkins.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("plain-secret");
+        jenkins.GetProperty("Secret").GetProperty("Mode").GetString().Should().Be("Unprotected");
+        jenkins.GetProperty("Connection").GetProperty("Url").GetString().Should().Be("https://jenkins:8443");
+        jenkins.GetProperty("Connection").GetProperty("AgentName").GetString().Should().Be("my-agent");
+        jenkins.GetProperty("Agent").GetProperty("JavaPath").GetString().Should().Be("/usr/lib/jvm");
     }
 
     [Fact]
     public void Preserves_existing_config_fields()
     {
-        // Write initial config with custom values
+        // Seed a nested config with custom values in sub-sections the writer does not explicitly set.
         const string existingJson =
-            "{\"Jenkins\":{\"JenkinsURL\":\"https://old:8443\",\"AgentSecret\":\"old-secret\"," +
-            "\"SecretMode\":\"Unprotected\",\"AgentName\":\"\",\"JavaPath\":\"\"," +
-            "\"CustomArguments\":\"-noCertificateCheck\",\"DebugMode\":true," +
-            "\"CompactLog\":true,\"MaxRetries\":5}}";
+            "{\"Jenkins\":{" +
+            "\"Connection\":{\"Url\":\"https://old:8443\",\"AgentName\":\"\"}," +
+            "\"Secret\":{\"Value\":\"old-secret\",\"Mode\":\"Unprotected\"}," +
+            "\"Agent\":{\"CustomArguments\":\"-noCertificateCheck\"}," +
+            "\"Logging\":{\"DebugMode\":true,\"CompactLog\":true}," +
+            "\"Recovery\":{\"MaxRetries\":5}}}";
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
 
         // Update secret — should preserve CustomArguments, DebugMode, CompactLog, MaxRetries
         SecretWriter.WriteConfig(_tempDir, "new-secret", SecretMode.Unprotected,
             "https://new:8443", null, null);
 
-        var json = ReadConfig();
-        var jenkins = json.RootElement.GetProperty("Jenkins");
+        var jenkins = Jenkins();
 
-        jenkins.GetProperty("JenkinsURL").GetString().Should().Be("https://new:8443");
-        jenkins.GetProperty("AgentSecret").GetString().Should().Be("new-secret");
-        jenkins.GetProperty("CustomArguments").GetString().Should().Be("-noCertificateCheck");
-        jenkins.GetProperty("DebugMode").GetBoolean().Should().BeTrue();
-        jenkins.GetProperty("CompactLog").GetBoolean().Should().BeTrue();
-        jenkins.GetProperty("MaxRetries").GetInt32().Should().Be(5);
+        jenkins.GetProperty("Connection").GetProperty("Url").GetString().Should().Be("https://new:8443");
+        jenkins.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("new-secret");
+        jenkins.GetProperty("Agent").GetProperty("CustomArguments").GetString().Should().Be("-noCertificateCheck");
+        jenkins.GetProperty("Logging").GetProperty("DebugMode").GetBoolean().Should().BeTrue();
+        jenkins.GetProperty("Logging").GetProperty("CompactLog").GetBoolean().Should().BeTrue();
+        jenkins.GetProperty("Recovery").GetProperty("MaxRetries").GetInt32().Should().Be(5);
     }
 
     [Fact]
@@ -114,39 +114,39 @@ public class SecretWriterTests : IDisposable
         SecretWriter.WriteConfig(_tempDir, "secret", SecretMode.Dpapi,
             "https://jenkins:8443", null, null);
 
-        var json = ReadConfig();
-        json.RootElement.GetProperty("Jenkins").GetProperty("SecretMode").GetString().Should().Be("Dpapi");
+        Jenkins().GetProperty("Secret").GetProperty("Mode").GetString().Should().Be("Dpapi");
     }
 
     [Fact]
     public void WriteConfig_preserves_existing_data_directory()
     {
         const string existingJson =
-            "{\"Jenkins\":{\"JenkinsURL\":\"https://old:8443\",\"AgentSecret\":\"old\"," +
-            "\"SecretMode\":\"Unprotected\",\"DataDirectory\":\"D:\\\\JenkinsData\"}}";
+            "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\"}," +
+            "\"Secret\":{\"Value\":\"old\",\"Mode\":\"Unprotected\"}," +
+            "\"Agent\":{\"DataDirectory\":\"D:\\\\JenkinsData\"}}}";
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
 
         SecretWriter.WriteConfig(_tempDir, "new", SecretMode.Unprotected, "https://new:8443", null, null);
 
-        ReadConfig().RootElement.GetProperty("Jenkins")
-            .GetProperty("DataDirectory").GetString().Should().Be(@"D:\JenkinsData");
+        Jenkins().GetProperty("Agent").GetProperty("DataDirectory").GetString().Should().Be(@"D:\JenkinsData");
     }
 
     [Fact]
     public void SetDataDirectory_sets_field_and_preserves_other_fields_and_sections()
     {
         const string existingJson =
-            "{\"Jenkins\":{\"JenkinsURL\":\"https://j:8443\",\"AgentSecret\":\"keep\"," +
-            "\"CustomArguments\":\"-x\"},\"Telemetry\":{\"Enabled\":true}}";
+            "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://j:8443\"}," +
+            "\"Secret\":{\"Value\":\"keep\"},\"Agent\":{\"CustomArguments\":\"-x\"}}," +
+            "\"Telemetry\":{\"Enabled\":true}}";
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
 
         SecretWriter.SetDataDirectory(_tempDir, @"C:\ProgramData\JenkinsAsService");
 
         var root = ReadConfig().RootElement;
         var jenkins = root.GetProperty("Jenkins");
-        jenkins.GetProperty("DataDirectory").GetString().Should().Be(@"C:\ProgramData\JenkinsAsService");
-        jenkins.GetProperty("AgentSecret").GetString().Should().Be("keep", "the secret must be untouched");
-        jenkins.GetProperty("CustomArguments").GetString().Should().Be("-x");
+        jenkins.GetProperty("Agent").GetProperty("DataDirectory").GetString().Should().Be(@"C:\ProgramData\JenkinsAsService");
+        jenkins.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("keep", "the secret must be untouched");
+        jenkins.GetProperty("Agent").GetProperty("CustomArguments").GetString().Should().Be("-x");
         root.GetProperty("Telemetry").GetProperty("Enabled").GetBoolean().Should().BeTrue("other sections survive");
     }
 
@@ -155,8 +155,7 @@ public class SecretWriterTests : IDisposable
     {
         SecretWriter.SetDataDirectory(_tempDir, @"C:\Data");
 
-        ReadConfig().RootElement.GetProperty("Jenkins")
-            .GetProperty("DataDirectory").GetString().Should().Be(@"C:\Data");
+        Jenkins().GetProperty("Agent").GetProperty("DataDirectory").GetString().Should().Be(@"C:\Data");
     }
 
     private JsonDocument ReadConfig()

@@ -78,7 +78,13 @@ public static class SecretWriter
         var jenkins = existingJenkins is null
             ? new JsonObject()
             : (JsonObject)existingJenkins.DeepClone();
-        jenkins["DataDirectory"] = dataDirectory;
+
+        if (jenkins["Agent"] is not JsonObject agent)
+        {
+            agent = new JsonObject();
+            jenkins["Agent"] = agent;
+        }
+        agent["DataDirectory"] = dataDirectory;
 
         var root = new JsonObject();
         if (existingRoot != null)
@@ -131,24 +137,61 @@ public static class SecretWriter
         }
     }
 
+    // Builds the nested Jenkins section (Connection / Secret / Agent / Hardening / Logging / Recovery),
+    // preserving any existing values in sub-sections this writer does not explicitly set.
     private static JsonObject BuildJenkinsSection(string configSecret, SecretMode mode,
         string server, string? agentName, string? javaPath, DpapiScope dpapiScope,
-        string? controllerCertThumbprint, JsonObject? existingJenkins) => new()
+        string? controllerCertThumbprint, JsonObject? existingJenkins)
     {
-        ["JenkinsURL"] = server,
-        ["AgentSecret"] = configSecret,
-        ["SecretMode"] = mode.ToString(),
-        ["DpapiScope"] = dpapiScope.ToString(),
-        ["AgentName"] = agentName ?? ExistingString(existingJenkins, "AgentName"),
-        ["JavaPath"] = javaPath ?? ExistingString(existingJenkins, "JavaPath"),
-        ["CustomArguments"] = ExistingString(existingJenkins, "CustomArguments"),
-        ["ControllerCertThumbprint"] =
-            controllerCertThumbprint ?? ExistingString(existingJenkins, "ControllerCertThumbprint"),
-        ["DataDirectory"] = ExistingString(existingJenkins, "DataDirectory"),
-        ["DebugMode"] = ExistingValue(existingJenkins, "DebugMode", false),
-        ["CompactLog"] = ExistingValue(existingJenkins, "CompactLog", false),
-        ["MaxRetries"] = ExistingValue(existingJenkins, "MaxRetries", 0)
-    };
+        var conn = ExistingObject(existingJenkins, "Connection");
+        var secret = ExistingObject(existingJenkins, "Secret");
+        var agent = ExistingObject(existingJenkins, "Agent");
+        var hardening = ExistingObject(existingJenkins, "Hardening");
+        var logging = ExistingObject(existingJenkins, "Logging");
+        var recovery = ExistingObject(existingJenkins, "Recovery");
+
+        return new JsonObject
+        {
+            ["Connection"] = new JsonObject
+            {
+                ["Url"] = server,
+                ["AgentName"] = agentName ?? ExistingString(conn, "AgentName"),
+                ["ControllerCertThumbprint"] =
+                    controllerCertThumbprint ?? ExistingString(conn, "ControllerCertThumbprint")
+            },
+            ["Secret"] = new JsonObject
+            {
+                ["Value"] = configSecret,
+                ["Mode"] = mode.ToString(),
+                ["DpapiScope"] = dpapiScope.ToString(),
+                ["ViaFile"] = ExistingValue(secret, "ViaFile", true)
+            },
+            ["Agent"] = new JsonObject
+            {
+                ["JavaPath"] = javaPath ?? ExistingString(agent, "JavaPath"),
+                ["CustomArguments"] = ExistingString(agent, "CustomArguments"),
+                ["DataDirectory"] = ExistingString(agent, "DataDirectory")
+            },
+            ["Hardening"] = new JsonObject
+            {
+                ["SanitizeEnvironment"] = ExistingValue(hardening, "SanitizeEnvironment", true),
+                ["AllowedEnvironmentVariables"] = ExistingString(hardening, "AllowedEnvironmentVariables")
+            },
+            ["Logging"] = new JsonObject
+            {
+                ["DebugMode"] = ExistingValue(logging, "DebugMode", false),
+                ["CompactLog"] = ExistingValue(logging, "CompactLog", false),
+                ["RetainedLogs"] = ExistingValue(logging, "RetainedLogs", 3)
+            },
+            ["Recovery"] = new JsonObject
+            {
+                ["MaxRetries"] = ExistingValue(recovery, "MaxRetries", 0)
+            }
+        };
+    }
+
+    private static JsonObject? ExistingObject(JsonObject? existing, string key) =>
+        existing?[key] as JsonObject;
 
     private static string ExistingString(JsonObject? existing, string key) =>
         existing?[key]?.GetValue<string>() ?? "";

@@ -115,7 +115,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             ValidateSettings();
             ResolveJavaPath();
             await TestConnectivity(stoppingToken);
-            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _dataDir, stoppingToken);
+            await _jarDownloader.Download(new Uri(_settings.Connection.Url), _dataDir, stoppingToken);
 
             _agentProcess = StartAgentProcess();
             await RunWatchdog(stoppingToken);
@@ -153,21 +153,21 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     internal static void ValidateSettings(ServiceSettings settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.JenkinsUrl))
+        if (string.IsNullOrWhiteSpace(settings.Connection.Url))
         {
-            throw new InvalidOperationException("'JenkinsUrl' is a mandatory field.");
+            throw new InvalidOperationException("'Connection:Url' is a mandatory field.");
         }
 
-        if (string.IsNullOrWhiteSpace(settings.AgentSecret))
+        if (string.IsNullOrWhiteSpace(settings.Secret.Value))
         {
-            throw new InvalidOperationException("'AgentSecret' is a mandatory field.");
+            throw new InvalidOperationException("'Secret:Value' is a mandatory field.");
         }
 
-        var uri = new Uri(settings.JenkinsUrl);
+        var uri = new Uri(settings.Connection.Url);
         if (uri.IsDefaultPort)
         {
             throw new InvalidOperationException(
-                $"JenkinsUrl must include an explicit port: '{settings.JenkinsUrl}'. " +
+                $"Connection:Url must include an explicit port: '{settings.Connection.Url}'. " +
                 "Example: https://jenkins.example.com:8443");
         }
     }
@@ -176,26 +176,26 @@ public sealed class JenkinsAgentWorker : BackgroundService
     {
         ValidateSettings(_settings);
 
-        var uri = new Uri(_settings.JenkinsUrl);
+        var uri = new Uri(_settings.Connection.Url);
         if (uri.Scheme != Uri.UriSchemeHttps)
         {
-            _logger.LogWarning("JenkinsUrl uses {Scheme} — agent secret will be sent unencrypted. Consider HTTPS.", uri.Scheme);
+            _logger.LogWarning("Connection:Url uses {Scheme} — agent secret will be sent unencrypted. Consider HTTPS.", uri.Scheme);
         }
 
-        if (string.IsNullOrWhiteSpace(_settings.AgentName))
+        if (string.IsNullOrWhiteSpace(_settings.Connection.AgentName))
         {
             _agentName = Environment.MachineName;
             _logger.LogDebug("AgentName is empty. Using hostname '{Name}'", _agentName);
         }
         else
         {
-            _agentName = _settings.AgentName;
+            _agentName = _settings.Connection.AgentName;
         }
 
         _resolvedSecret = _secretResolver.Resolve(_settings);
-        _logger.LogInformation("Secret resolved via {Mode} mode", _settings.SecretMode);
+        _logger.LogInformation("Secret resolved via {Mode} mode", _settings.Secret.Mode);
 
-        _dataDir = DataPaths.ResolveDataDirectory(_settings.DataDirectory);
+        _dataDir = DataPaths.ResolveDataDirectory(_settings.Agent.DataDirectory);
         _logger.LogInformation("Data directory: {DataDir}", _dataDir);
     }
 
@@ -229,13 +229,13 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     private void ResolveJavaPath()
     {
-        _javaExe = ResolveJavaPath(_settings.JavaPath, Environment.GetEnvironmentVariable("JAVA_HOME"));
+        _javaExe = ResolveJavaPath(_settings.Agent.JavaPath, Environment.GetEnvironmentVariable("JAVA_HOME"));
         _logger.LogDebug("Resolved Java at: '{Path}'", Path.GetDirectoryName(_javaExe));
     }
 
     private async Task TestConnectivity(CancellationToken ct)
     {
-        var uri = new Uri(_settings.JenkinsUrl);
+        var uri = new Uri(_settings.Connection.Url);
         await _connectivityChecker.Check(uri.Host, uri.Port, ConnectivityTimeoutMs, ct);
     }
 
@@ -279,7 +279,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private ProcessStartInfo BuildProcessStartInfo()
     {
         var jarPath = Path.Combine(_dataDir, JarFilename);
-        var normalizedUrl = $"{_settings.JenkinsUrl.TrimEnd(TrailingSlash)}{UrlPathSeparator}";
+        var normalizedUrl = $"{_settings.Connection.Url.TrimEnd(TrailingSlash)}{UrlPathSeparator}";
 
         var psi = new ProcessStartInfo(_javaExe)
         {
@@ -301,7 +301,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         psi.ArgumentList.Add(ArgWorkDir);
         psi.ArgumentList.Add(_dataDir);
 
-        foreach (var arg in ParseArguments(_settings.CustomArguments))
+        foreach (var arg in ParseArguments(_settings.Agent.CustomArguments))
         {
             psi.ArgumentList.Add(arg);
         }
@@ -309,9 +309,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
         // Strip the inherited service environment so build secrets can't leak into untrusted pipeline
         // scripts running inside the agent. UseShellExecute = false pre-populates psi.Environment with
         // the parent block; we deny-by-default and keep only what Java + tooling need.
-        if (_settings.SanitizeEnvironment)
+        if (_settings.Hardening.SanitizeEnvironment)
         {
-            SanitizeEnvironment(psi.Environment, _settings.AllowedEnvironmentVariables);
+            SanitizeEnvironment(psi.Environment, _settings.Hardening.AllowedEnvironmentVariables);
         }
 
         return psi;
@@ -319,12 +319,12 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     /// <summary>
     /// Returns the value passed after <c>-secret</c>: either <c>@&lt;file&gt;</c> (default, keeps the secret
-    /// off the process command line) or the raw secret when <see cref="ServiceSettings.SecretViaFile"/>
+    /// off the process command line) or the raw secret when <see cref="SecretSettings.ViaFile"/>
     /// is disabled.
     /// </summary>
     private string ResolveSecretArgument()
     {
-        if (!_settings.SecretViaFile)
+        if (!_settings.Secret.ViaFile)
         {
             return _resolvedSecret;
         }
@@ -460,7 +460,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             _severeEventCounter.Add(1);
             _logger.LogError(OutputMessageTemplate, line[SeverePrefix.Length..]);
         }
-        else if (_settings.DebugMode)
+        else if (_settings.Logging.DebugMode)
         {
             _logger.LogDebug(OutputMessageTemplate, line);
         }
@@ -513,7 +513,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
             if (HasExceededMaxRetries(retryCount))
             {
-                _logger.LogError("Watchdog: Max retries ({Max}) exceeded. Giving up.", _settings.MaxRetries);
+                _logger.LogError("Watchdog: Max retries ({Max}) exceeded. Giving up.", _settings.Recovery.MaxRetries);
                 return;
             }
 
@@ -534,7 +534,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _agentProcess is { HasExited: true } ? _agentProcess.ExitCode : UnknownExitCode;
 
     private bool HasExceededMaxRetries(int retryCount) =>
-        _settings.MaxRetries > 0 && retryCount > _settings.MaxRetries;
+        _settings.Recovery.MaxRetries > 0 && retryCount > _settings.Recovery.MaxRetries;
 
     private static int ComputeBackoffDelaySeconds(int retryCount) =>
         (int)Math.Min(BackoffBaseSec * Math.Pow(BackoffMultiplier, retryCount - 1), BackoffMaxSec);
@@ -557,7 +557,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         try
         {
-            await _jarDownloader.Download(new Uri(_settings.JenkinsUrl), _dataDir, ct);
+            await _jarDownloader.Download(new Uri(_settings.Connection.Url), _dataDir, ct);
             _agentProcess = StartAgentProcess();
             _logger.LogInformation("Watchdog: Agent restarted (attempt {Count})", retryCount);
             return true;

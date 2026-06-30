@@ -91,22 +91,22 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>Mandatory fields (JenkinsURL, AgentSecret) are empty</code></td>
+            <td><code>Mandatory fields (Connection:Url, Secret:Value) are empty</code></td>
             <td>Config not filled in</td>
             <td>Edit <code>appsettings.json</code> and fill the <code>Jenkins</code> section</td>
           </tr>
           <tr>
-            <td><code>'JenkinsURL' is a mandatory field</code></td>
-            <td><code>JenkinsURL</code> empty</td>
+            <td><code>'Connection:Url' is a mandatory field</code></td>
+            <td><code>Connection:Url</code> empty</td>
             <td>Set the Jenkins URL in <code>appsettings.json</code></td>
           </tr>
           <tr>
-            <td><code>'AgentSecret' is a mandatory field</code></td>
-            <td><code>AgentSecret</code> empty</td>
+            <td><code>'Secret:Value' is a mandatory field</code></td>
+            <td><code>Secret:Value</code> empty</td>
             <td>Copy the secret from Jenkins node configuration</td>
           </tr>
           <tr>
-            <td><code>JenkinsURL must include an explicit port</code></td>
+            <td><code>Connection:Url must include an explicit port</code></td>
             <td>URL uses default port (80/443)</td>
             <td>Add an explicit port, e.g. <code>https://jenkins.example.com:8443</code></td>
           </tr>
@@ -176,7 +176,7 @@
           <tr>
             <td>HTTP error in log during download</td>
             <td>Jenkins URL wrong or controller down</td>
-            <td>Verify <code>JenkinsURL</code> is correct and Jenkins is running</td>
+            <td>Verify <code>Connection:Url</code> is correct and Jenkins is running</td>
           </tr>
           <tr>
             <td><code>agent.jar</code> download hangs</td>
@@ -194,8 +194,8 @@
       <li>The watchdog will auto-recover with exponential backoff</li>
       <li>If <code>Watchdog: Max retries (N) exceeded</code> appears, the issue is persistent &mdash; check:
         <ul>
-          <li><code>AgentName</code> matches the node name in Jenkins <strong>exactly</strong> (case-sensitive)</li>
-          <li><code>AgentSecret</code> is correct (regenerate in Jenkins if unsure)</li>
+          <li><code>Connection:AgentName</code> matches the node name in Jenkins <strong>exactly</strong> (case-sensitive)</li>
+          <li><code>Secret:Value</code> is correct (regenerate in Jenkins if unsure)</li>
           <li>Jenkins controller logs for rejection reasons</li>
           <li>Network stability between the agent and controller</li>
         </ul>
@@ -206,9 +206,9 @@
 
     <p>If the agent repeatedly dies and recovers:</p>
     <ul>
-      <li>Enable <code>DebugMode: true</code> for detailed Java output</li>
+      <li>Enable <code>Logging:DebugMode: true</code> for detailed Java output</li>
       <li>Look for patterns in <code>agent.log</code> &mdash; the watchdog logs exit codes before each restart</li>
-      <li>Common causes: Java OOM (increase heap via <code>CustomArguments</code>), Jenkins controller restarts, network drops</li>
+      <li>Common causes: Java OOM (increase heap via <code>Agent:CustomArguments</code>), Jenkins controller restarts, network drops</li>
     </ul>
 
     <h2 id="debug-mode">Debug Mode</h2>

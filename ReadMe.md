@@ -96,7 +96,7 @@ msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
 For environments where MSI installation isn't possible, download the `.7z` or `.rar` archive from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases):
 
 1. Extract to a folder of your choice (e.g. `D:\Jenkins`)
-2. Edit `appsettings.json` — fill in `JenkinsURL`, `AgentSecret`, and any other settings
+2. Edit `appsettings.json` — fill in `Connection:Url`, `Secret:Value`, and any other settings
 3. Register and start the service:
 
 ```powershell
@@ -123,24 +123,26 @@ sc.exe delete Jenkins
 
 ## Configuration
 
-All settings live in the `Jenkins` section of `appsettings.json`.
+All settings live in the `Jenkins` section of `appsettings.json`, grouped into topic sub-sections (`Connection`, `Secret`, `Agent`, `Hardening`, `Logging`, `Recovery`). Keys below are written as `Section:Key`.
 
 | Setting | Required | Default | Description |
 |---|:---:|---|---|
-| `JenkinsURL` | Yes | — | Full URL with explicit port (default ports 80/443 are rejected) |
-| `AgentSecret` | Yes | — | JNLP secret from Jenkins node config (case-sensitive) |
-| `SecretMode` | No | `Unprotected` | `Unprotected`, `Dpapi`, `EnvironmentVariable`, or `CredentialManager` |
-| `AgentName` | No | Hostname | Node name in Jenkins (case-sensitive) |
-| `JavaPath` | No | `JAVA_HOME` | Path to JDK `bin` folder |
-| `CustomArguments` | No | *(empty)* | Extra `java.exe` args (supports quoted values and escaped quotes) |
-| `SecretViaFile` | No | `true` | Pass the secret as `-secret @<file>` (ACL-restricted) instead of inline, keeping it out of the process table |
-| `SanitizeEnvironment` | No | `true` | Launch the agent with a deny-by-default environment (curated allow-list only) |
-| `AllowedEnvironmentVariables` | No | *(empty)* | Extra env var names (`;`/`,`-separated) to pass through when `SanitizeEnvironment` is on |
-| `DataDirectory` | No | `%ProgramData%\JenkinsAsService` | Writable dir for runtime data (jar, logs, secret, work dir), separate from the read-only install folder |
-| `DebugMode` | No | `false` | Verbose Java agent output in logs |
-| `CompactLog` | No | `false` | CLEF JSON output (`agent.clef`) instead of human-readable (`agent.log`) |
-| `RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
-| `MaxRetries` | No | `0` | Max recovery attempts before giving up (`0` = infinite) |
+| `Connection:Url` | Yes | — | Full URL with explicit port (default ports 80/443 are rejected) |
+| `Connection:AgentName` | No | Hostname | Node name in Jenkins (case-sensitive) |
+| `Connection:ControllerCertThumbprint` | No | *(empty)* | SHA-256 thumbprint to pin the controller TLS cert (empty = chain validation) |
+| `Secret:Value` | Yes | — | JNLP secret (or ciphertext / env-var name / credential target, per `Secret:Mode`) |
+| `Secret:Mode` | No | `Unprotected` | `Unprotected`, `Dpapi`, `Tpm`, `EnvironmentVariable`, or `CredentialManager` |
+| `Secret:DpapiScope` | No | `Machine` | `Machine` or `User` (only when `Secret:Mode` is `Dpapi`) |
+| `Secret:ViaFile` | No | `true` | Pass the secret as `-secret @<file>` (ACL-restricted) instead of inline, keeping it out of the process table |
+| `Agent:JavaPath` | No | `JAVA_HOME` | Path to JDK `bin` folder |
+| `Agent:CustomArguments` | No | *(empty)* | Extra `java.exe` args (supports quoted values and escaped quotes) |
+| `Agent:DataDirectory` | No | `%ProgramData%\JenkinsAsService` | Writable dir for runtime data (jar, logs, secret, work dir), separate from the read-only install folder |
+| `Hardening:SanitizeEnvironment` | No | `true` | Launch the agent with a deny-by-default environment (curated allow-list only) |
+| `Hardening:AllowedEnvironmentVariables` | No | *(empty)* | Extra env var names (`;`/`,`-separated) to pass through when sanitizing |
+| `Logging:DebugMode` | No | `false` | Verbose Java agent output in logs |
+| `Logging:CompactLog` | No | `false` | CLEF JSON output (`agent.clef`) instead of human-readable (`agent.log`) |
+| `Logging:RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
+| `Recovery:MaxRetries` | No | `0` | Max recovery attempts before giving up (`0` = infinite) |
 
 ### Secret Protection
 
@@ -150,7 +152,7 @@ Avoid storing plaintext secrets in config. Use `update-secret` to write the secr
 JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins:8443" --mode Dpapi --silent
 ```
 
-| Mode | What `AgentSecret` contains | Resolution |
+| Mode | What `Secret:Value` contains | Resolution |
 |---|---|---|
 | `Unprotected` | Plaintext | Returned as-is |
 | `Dpapi` | Base64 DPAPI ciphertext | `ProtectedData.Unprotect` (machine-scoped, non-portable) |
@@ -206,11 +208,11 @@ The MSI installer configures Windows-level service recovery automatically: first
 
 | Symptom | Fix |
 |---|---|
-| Service starts and stops immediately | Check `agent.log` — mandatory fields (`JenkinsURL`, `AgentSecret`) are likely empty |
+| Service starts and stops immediately | Check `agent.log` — mandatory fields (`Connection:Url`, `Secret:Value`) are likely empty |
 | "must include an explicit port" | Add the port explicitly: `https://jenkins:8443` (80/443 are rejected) |
 | "Cannot reach Jenkins" | Verify URL, port, firewall, DNS, and that Jenkins is running |
 | "Cannot find java.exe" | Set `JavaPath` to the JDK `bin` folder, or set `JAVA_HOME` |
-| Agent connects then disconnects | `AgentName` and `AgentSecret` must match Jenkins node config exactly |
+| Agent connects then disconnects | `Connection:AgentName` and `Secret:Value` must match Jenkins node config exactly |
 | Watchdog keeps restarting | Enable `DebugMode: true` and look for patterns in exit codes |
 
 ## Building From Source

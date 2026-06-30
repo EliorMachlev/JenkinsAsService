@@ -57,9 +57,9 @@
 &#x2502;       &#x251C;&#x2500;&#x2500; JenkinsAsService.csproj    # .NET 10 Worker Service
 &#x2502;       &#x251C;&#x2500;&#x2500; Program.cs                 # Host builder, Serilog config, DI, OTel
 &#x2502;       &#x251C;&#x2500;&#x2500; Properties/AssemblyInfo.cs # Explicit assembly attributes (for Codacy)
-&#x2502;       &#x251C;&#x2500;&#x2500; ServiceSettings.cs         # Jenkins config POCO
+&#x2502;       &#x251C;&#x2500;&#x2500; ServiceSettings.cs         # Jenkins config POCOs (Connection/Secret/Agent/Hardening/Logging/Recovery)
 &#x2502;       &#x251C;&#x2500;&#x2500; TelemetrySettings.cs       # OpenTelemetry config POCO
-&#x2502;       &#x251C;&#x2500;&#x2500; SecretMode.cs              # Enum: Unprotected, Dpapi, EnvironmentVariable, CredentialManager
+&#x2502;       &#x251C;&#x2500;&#x2500; SecretMode.cs              # Enum: Unprotected, Dpapi, Tpm, EnvironmentVariable, CredentialManager
 &#x2502;       &#x251C;&#x2500;&#x2500; ISecretResolver.cs         # Secret resolution abstraction
 &#x2502;       &#x251C;&#x2500;&#x2500; SecretResolver.cs          # DPAPI / CredMgr / EnvVar / plaintext resolver
 &#x2502;       &#x251C;&#x2500;&#x2500; SecretWriter.cs            # Writes appsettings.json; stores secret per mode
@@ -316,7 +316,7 @@
           <tr>
             <td><code>ValidateSettingsTests</code></td>
             <td>6</td>
-            <td>Empty URL/secret, default port, malformed URL, valid settings, SecretMode backward compat</td>
+            <td>Empty URL/secret, default port, malformed URL, valid settings, SecretMode default</td>
           </tr>
           <tr>
             <td><code>ParseArgumentsTests</code></td>

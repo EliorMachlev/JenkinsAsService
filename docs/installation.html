@@ -394,7 +394,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>DATAFOLDER</code></td>
             <td>No</td>
             <td><code>C:\ProgramData\JenkinsAsService</code></td>
-            <td>Writable data directory (<code>agent.jar</code>, logs, secret file, work dir). The service account is granted write here; persisted to <code>DataDirectory</code> in <code>appsettings.json</code></td>
+            <td>Writable data directory (<code>agent.jar</code>, logs, secret file, work dir). The service account is granted write here; persisted to <code>Agent:DataDirectory</code> in <code>appsettings.json</code></td>
           </tr>
           <tr>
             <td><code>JENKINS_URL</code></td>
@@ -458,7 +458,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     <p>For environments where MSI installation isn't possible, download the <code>.7z</code> or <code>.rar</code> archive from <a href="https://github.com/EliorMachlev/JenkinsAsService/releases">Releases</a>:</p>
     <ol>
       <li>Extract to a folder of your choice (e.g. <code>D:\Jenkins</code>)</li>
-      <li>Edit <code>appsettings.json</code> &mdash; fill in <code>JenkinsURL</code>, <code>AgentSecret</code>, and any other settings</li>
+      <li>Edit <code>appsettings.json</code> &mdash; fill in <code>Connection:Url</code>, <code>Secret:Value</code>, and any other settings</li>
       <li>Register and start the service:</li>
     </ol>
     <pre data-lang="powershell"><code># Least-privilege virtual service account (matches the MSI default). Use obj= LocalSystem only if required.

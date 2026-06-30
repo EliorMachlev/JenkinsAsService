@@ -11,10 +11,11 @@ using Serilog.Formatting.Compact;
 const string UpdateSecretCommandName = "update-secret";
 const string ConfigFileName = "appsettings.json";
 const string ConfigSectionName = "Jenkins";
-const string DebugModeKey = "DebugMode";
-const string CompactLogKey = "CompactLog";
-const string RetainedLogsKey = "RetainedLogs";
-const string DataDirectoryKey = "DataDirectory";
+const string DebugModeKey = "Logging:DebugMode";
+const string CompactLogKey = "Logging:CompactLog";
+const string RetainedLogsKey = "Logging:RetainedLogs";
+const string DataDirectoryKey = "Agent:DataDirectory";
+const string ControllerCertThumbprintKey = "Connection:ControllerCertThumbprint";
 const int DefaultRetainedLogs = 3;
 const string ServiceName = "Jenkins";
 const string JarDownloaderClientName = "JarDownloader";
@@ -139,7 +140,7 @@ static IHost BuildHost(string[] args)
     builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
     builder.Services.Configure<ServiceSettings>(builder.Configuration.GetSection(ConfigSectionName));
 
-    var pinnedThumbprint = builder.Configuration.GetSection(ConfigSectionName)["ControllerCertThumbprint"];
+    var pinnedThumbprint = builder.Configuration.GetSection(ConfigSectionName)[ControllerCertThumbprintKey];
     var jarClient = builder.Services.AddHttpClient(JarDownloaderClientName);
     jarClient.AddStandardResilienceHandler();
 
@@ -192,10 +193,10 @@ static IHost BuildHost(string[] args)
 static bool ValidateBoundSettings(IHost host, string basePath)
 {
     var settings = host.Services.GetRequiredService<IOptions<ServiceSettings>>().Value;
-    if (string.IsNullOrWhiteSpace(settings.JenkinsUrl) || string.IsNullOrWhiteSpace(settings.AgentSecret))
+    if (string.IsNullOrWhiteSpace(settings.Connection.Url) || string.IsNullOrWhiteSpace(settings.Secret.Value))
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
-        Log.Error("Mandatory fields (JenkinsUrl, AgentSecret) are empty. Fill in: {Path}", configPath);
+        Log.Error("Mandatory fields (Connection:Url, Secret:Value) are empty. Fill in: {Path}", configPath);
         return false;
     }
 

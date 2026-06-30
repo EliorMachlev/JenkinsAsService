@@ -454,10 +454,10 @@ public static class UpdateSecretCommand
                 .AddJsonFile(ConfigFileName, optional: true)
                 .Build();
             var section = config.GetSection(ConfigSectionName);
-            existingServer = section["JenkinsURL"] ?? "";
-            existingAgentName = section["AgentName"] ?? "";
-            existingJavaPath = section["JavaPath"] ?? "";
-            if (Enum.TryParse<SecretMode>(section["SecretMode"], out var parsed))
+            existingServer = section["Connection:Url"] ?? "";
+            existingAgentName = section["Connection:AgentName"] ?? "";
+            existingJavaPath = section["Agent:JavaPath"] ?? "";
+            if (Enum.TryParse<SecretMode>(section["Secret:Mode"], out var parsed))
             {
                 existingMode = parsed;
             }

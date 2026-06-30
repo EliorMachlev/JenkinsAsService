@@ -16,8 +16,7 @@ public class SecretResolverTests
     {
         var settings = new ServiceSettings
         {
-            AgentSecret = "my-plain-secret",
-            SecretMode = SecretMode.Unprotected
+            Secret = new() { Value = "my-plain-secret", Mode = SecretMode.Unprotected }
         };
 
         _sut.Resolve(settings).Should().Be("my-plain-secret");
@@ -35,8 +34,7 @@ public class SecretResolverTests
 
         var settings = new ServiceSettings
         {
-            AgentSecret = base64,
-            SecretMode = SecretMode.Dpapi
+            Secret = new() { Value = base64, Mode = SecretMode.Dpapi }
         };
 
         _sut.Resolve(settings).Should().Be(plaintext);
@@ -51,9 +49,12 @@ public class SecretResolverTests
 
         var settings = new ServiceSettings
         {
-            AgentSecret = Convert.ToBase64String(encrypted),
-            SecretMode = SecretMode.Dpapi,
-            DpapiScope = DpapiScope.User
+            Secret = new()
+            {
+                Value = Convert.ToBase64String(encrypted),
+                Mode = SecretMode.Dpapi,
+                DpapiScope = DpapiScope.User
+            }
         };
 
         _sut.Resolve(settings).Should().Be(plaintext);
@@ -64,8 +65,7 @@ public class SecretResolverTests
     {
         var settings = new ServiceSettings
         {
-            AgentSecret = "not-valid-base64!!!",
-            SecretMode = SecretMode.Dpapi
+            Secret = new() { Value = "not-valid-base64!!!", Mode = SecretMode.Dpapi }
         };
 
         var act = () => _sut.Resolve(settings);
@@ -81,8 +81,7 @@ public class SecretResolverTests
     {
         var settings = new ServiceSettings
         {
-            AgentSecret = "NONEXISTENT_VAR_12345",
-            SecretMode = SecretMode.EnvironmentVariable
+            Secret = new() { Value = "NONEXISTENT_VAR_12345", Mode = SecretMode.EnvironmentVariable }
         };
 
         var act = () => _sut.Resolve(settings);
@@ -98,8 +97,11 @@ public class SecretResolverTests
     {
         var settings = new ServiceSettings
         {
-            AgentSecret = "JenkinsAsService/NonExistent_" + Guid.NewGuid().ToString("N")[..8],
-            SecretMode = SecretMode.CredentialManager
+            Secret = new()
+            {
+                Value = "JenkinsAsService/NonExistent_" + Guid.NewGuid().ToString("N")[..8],
+                Mode = SecretMode.CredentialManager
+            }
         };
 
         var act = () => _sut.Resolve(settings);
@@ -115,8 +117,7 @@ public class SecretResolverTests
     {
         var settings = new ServiceSettings
         {
-            AgentSecret = "",
-            SecretMode = SecretMode.Dpapi
+            Secret = new() { Value = "", Mode = SecretMode.Dpapi }
         };
 
         var act = () => _sut.Resolve(settings);
