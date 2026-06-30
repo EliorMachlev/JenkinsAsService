@@ -71,6 +71,12 @@
             <td>Full Jenkins URL including port. Must include an explicit port &mdash; default ports (80/443) are rejected. Example: <code>https://jenkins.example.com:8443</code></td>
           </tr>
           <tr>
+            <td><code>Connection:Method</code></td>
+            <td>No</td>
+            <td><code>Auto</code></td>
+            <td>Agent transport: <code>Auto</code>, <code>WebSocket</code>, or <code>Https</code> (direct TCP inbound). See <a href="#connection-method">Connection method</a>.</td>
+          </tr>
+          <tr>
             <td><code>Connection:AgentName</code></td>
             <td>No</td>
             <td>Machine hostname</td>
@@ -169,6 +175,7 @@
   "Jenkins": {
     "Connection": {
       "Url": "https://jenkins.example.com:8443",
+      "Method": "Auto",
       "AgentName": "",
       "ControllerCertThumbprint": ""
     },
@@ -240,6 +247,34 @@
       <li>Must include an explicit port &mdash; <code>Uri.IsDefaultPort</code> rejects 80/443 since Jenkins typically runs on non-standard ports</li>
       <li>TCP connectivity is tested asynchronously with a 2-second timeout</li>
     </ul>
+
+    <h2 id="connection-method">Connection Method</h2>
+    <p><code>Connection:Method</code> selects the transport the inbound agent uses to reach the controller:</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Value</th><th>Behaviour</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Auto</code> <em>(default)</em></td>
+            <td>Start on WebSocket; if a run dies before reaching the 60s stability window, fall back to the other transport on the next restart (WebSocket &harr; Https). Whichever transport stabilises is kept. Self-correcting if one transport is blocked.</td>
+          </tr>
+          <tr>
+            <td><code>WebSocket</code></td>
+            <td>Always connect via WebSocket (<code>agent.jar -webSocket</code>). Tunnels over the controller's HTTP(S) port &mdash; proxy/firewall friendly and the modern Jenkins-recommended transport. Requires WebSocket agents to be enabled on the controller.</td>
+          </tr>
+          <tr>
+            <td><code>Https</code></td>
+            <td>Always use the <strong>direct TCP inbound</strong> port (no <code>-webSocket</code>) &mdash; the classic JNLP inbound behaviour. Requires the controller's "TCP port for inbound agents" to be enabled and reachable. <em>(Named <code>Https</code> for brevity; the actual transport is a direct TCP connection, not literal HTTPS.)</em></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-note">
+      <div class="callout-title">Auto fallback heuristic</div>
+      <p>Fallback toggles only on a <em>fast</em> failure (a run that never reaches the stability window). A transport that connected and ran for a while before dying is not treated as a transport problem &mdash; the watchdog just restarts it on the same transport.</p>
+    </div>
 
     <h2 id="secret-protection-modes">Secret Protection Modes</h2>
     <p><code>Secret:Mode</code> controls how the <code>Secret:Value</code> is stored and resolved at runtime.</p>

@@ -128,6 +128,7 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 | Setting | Required | Default | Description |
 |---|:---:|---|---|
 | `Connection:Url` | Yes | — | Full URL with explicit port (default ports 80/443 are rejected) |
+| `Connection:Method` | No | `Auto` | Agent transport: `Auto` (WebSocket first, fall back to direct TCP inbound), `WebSocket`, or `Https` (direct TCP inbound) |
 | `Connection:AgentName` | No | Hostname | Node name in Jenkins (case-sensitive) |
 | `Connection:ControllerCertThumbprint` | No | *(empty)* | SHA-256 thumbprint to pin the controller TLS cert (empty = chain validation) |
 | `Secret:Value` | Yes | — | JNLP secret (or ciphertext / env-var name / credential target, per `Secret:Mode`) |

@@ -109,6 +109,28 @@ public class SecretWriterTests : IDisposable
     }
 
     [Fact]
+    public void Writes_default_connection_method_when_absent()
+    {
+        SecretWriter.WriteConfig(_tempDir, "secret", SecretMode.Unprotected,
+            "https://jenkins:8443", null, null);
+
+        Jenkins().GetProperty("Connection").GetProperty("Method").GetString().Should().Be("Auto");
+    }
+
+    [Fact]
+    public void Preserves_existing_connection_method()
+    {
+        const string existingJson =
+            "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\",\"Method\":\"WebSocket\"}," +
+            "\"Secret\":{\"Value\":\"old\",\"Mode\":\"Unprotected\"}}}";
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
+
+        SecretWriter.WriteConfig(_tempDir, "new", SecretMode.Unprotected, "https://new:8443", null, null);
+
+        Jenkins().GetProperty("Connection").GetProperty("Method").GetString().Should().Be("WebSocket");
+    }
+
+    [Fact]
     public void Writes_correct_SecretMode_string()
     {
         SecretWriter.WriteConfig(_tempDir, "secret", SecretMode.Dpapi,

@@ -53,6 +53,11 @@
         "keywords": ["url", "validation", "port", "uri", "connectivity"]
       },
       {
+        "title": "Connection method",
+        "url": "configuration.html#connection-method",
+        "keywords": ["connection method", "websocket", "tcp inbound", "jnlp", "transport", "auto fallback", "webSocket"]
+      },
+      {
         "title": "Telemetry (OpenTelemetry)",
         "url": "configuration.html#telemetry-opentelemetry",
         "keywords": ["telemetry", "opentelemetry", "otlp", "metrics", "observability", "exporter"]

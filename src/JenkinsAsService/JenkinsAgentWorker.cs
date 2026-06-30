@@ -29,6 +29,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const string ArgSecret = "-secret";
     private const string ArgName = "-name";
     private const string ArgWorkDir = "-workDir";
+    private const string ArgWebSocket = "-webSocket";
 
     // ─── Agent stdout/stderr log-level prefixes ───────────────────────────────
     private const string InfoPrefix = "INFO: ";
@@ -75,6 +76,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private string _agentName = "";
     private string _resolvedSecret = "";
     private string? _secretFilePath;
+    private ConnectionMethod _effectiveMethod;
+    private bool _currentRunReachedStability;
     private Process? _agentProcess;
     private TaskCompletionSource? _agentExitTcs;
     private int _severeCount;
@@ -197,7 +200,20 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         _dataDir = DataPaths.ResolveDataDirectory(_settings.Agent.DataDirectory);
         _logger.LogInformation("Data directory: {DataDir}", _dataDir);
+
+        _effectiveMethod = InitialEffectiveMethod(_settings.Connection.Method);
+        _logger.LogInformation("Connection method: {Configured} (starting transport: {Effective})",
+            _settings.Connection.Method, _effectiveMethod);
     }
+
+    /// <summary>The transport to attempt first: <c>Https</c> stays direct TCP inbound; <c>Auto</c> and
+    /// <c>WebSocket</c> both start on WebSocket (only <c>Auto</c> later falls back).</summary>
+    internal static ConnectionMethod InitialEffectiveMethod(ConnectionMethod configured) =>
+        configured == ConnectionMethod.Https ? ConnectionMethod.Https : ConnectionMethod.WebSocket;
+
+    /// <summary>Flips between the two transports for <c>Auto</c> fallback.</summary>
+    internal static ConnectionMethod ToggleMethod(ConnectionMethod current) =>
+        current == ConnectionMethod.WebSocket ? ConnectionMethod.Https : ConnectionMethod.WebSocket;
 
     internal static string ResolveJavaPath(string? configuredPath, string? javaHome)
     {
@@ -244,6 +260,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private Process StartAgentProcess()
     {
         var psi = BuildProcessStartInfo();
+        _currentRunReachedStability = false;
 
         _agentExitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -300,6 +317,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
         psi.ArgumentList.Add(_agentName);
         psi.ArgumentList.Add(ArgWorkDir);
         psi.ArgumentList.Add(_dataDir);
+
+        if (_effectiveMethod == ConnectionMethod.WebSocket)
+        {
+            psi.ArgumentList.Add(ArgWebSocket);
+        }
 
         foreach (var arg in ParseArguments(_settings.Agent.CustomArguments))
         {
@@ -488,6 +510,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             if (!exitTask.IsCompleted && _agentProcess is { HasExited: false })
             {
                 // Stability window elapsed, agent still running
+                _currentRunReachedStability = true;
                 if (retryCount > 0)
                 {
                     retryCount = 0;
@@ -506,6 +529,17 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
             var exitCode = GetAgentExitCode();
             KillAgent();
+
+            // Auto fallback: if a transport died before stabilising, switch to the other one for the
+            // next attempt. A transport that reached the stability window is kept (its death isn't a
+            // transport-support problem). No-op unless the configured method is Auto.
+            if (_settings.Connection.Method == ConnectionMethod.Auto && !_currentRunReachedStability)
+            {
+                var previous = _effectiveMethod;
+                _effectiveMethod = ToggleMethod(_effectiveMethod);
+                _logger.LogWarning("Watchdog: {Previous} transport failed to stabilise — falling back to {Next}.",
+                    previous, _effectiveMethod);
+            }
 
             retryCount++;
             _logger.LogWarning("Watchdog: Agent exited (code: {Code}). Recovery attempt {Count}.",

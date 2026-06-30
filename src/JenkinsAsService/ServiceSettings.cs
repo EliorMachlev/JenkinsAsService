@@ -23,6 +23,12 @@ public sealed class ConnectionSettings
     /// <summary>Full Jenkins URL including port. Example: https://jenkins.example.com:8443</summary>
     public string Url { get; set; } = "";
 
+    /// <summary>
+    /// Agent transport: <c>Auto</c> (default — WebSocket first, fall back to direct TCP inbound),
+    /// <c>WebSocket</c> (always <c>-webSocket</c>), or <c>Https</c> (always direct TCP inbound).
+    /// </summary>
+    public ConnectionMethod Method { get; set; } = ConnectionMethod.Auto;
+
     /// <summary>Agent/node name in Jenkins (case-sensitive). Defaults to machine hostname.</summary>
     public string AgentName { get; set; } = "";
 

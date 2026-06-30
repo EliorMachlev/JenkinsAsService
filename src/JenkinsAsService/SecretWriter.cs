@@ -155,6 +155,7 @@ public static class SecretWriter
             ["Connection"] = new JsonObject
             {
                 ["Url"] = server,
+                ["Method"] = ExistingMethod(conn),
                 ["AgentName"] = agentName ?? ExistingString(conn, "AgentName"),
                 ["ControllerCertThumbprint"] =
                     controllerCertThumbprint ?? ExistingString(conn, "ControllerCertThumbprint")
@@ -192,6 +193,13 @@ public static class SecretWriter
 
     private static JsonObject? ExistingObject(JsonObject? existing, string key) =>
         existing?[key] as JsonObject;
+
+    // Preserve an existing Connection:Method, else default to Auto (so the enum binds to a valid value).
+    private static string ExistingMethod(JsonObject? connection)
+    {
+        var value = ExistingString(connection, "Method");
+        return string.IsNullOrEmpty(value) ? nameof(ConnectionMethod.Auto) : value;
+    }
 
     private static string ExistingString(JsonObject? existing, string key) =>
         existing?[key]?.GetValue<string>() ?? "";
