@@ -320,6 +320,19 @@
       <p>Requires a TPM 2.0 with the Platform Crypto Provider present. The key is bound to the machine, <strong>not</strong> to platform/PCR state, so routine firmware and Windows updates do not break decryption. Clearing/resetting the TPM or moving to another machine invalidates the ciphertext &mdash; re-run <code>update-secret --mode Tpm</code> there.</p>
     </div>
 
+    <h3 id="post-quantum">Post-quantum cryptography (deliberately deferred)</h3>
+    <p><strong>For maintainers:</strong> a post-quantum secret-protection mode (ML-KEM/ML-DSA) has been evaluated and intentionally <strong>not</strong> implemented. Do not add one until the technology matures &mdash; the current trade-offs make it cost without benefit here. The reasoning:</p>
+    <ul>
+      <li><strong>Wrong primitive / no in-process signatures.</strong> ML-DSA is a <em>signature</em> algorithm; this service signs nothing in-process. The encryption-side primitive is ML-KEM, but a KEM needs a private key.</li>
+      <li><strong>Key custody defeats the point on a single node.</strong> The ML-KEM private key would have to live on the same machine, wrapped by TPM/DPAPI &mdash; so the root of trust stays TPM/DPAPI and PQC adds nothing against a local attacker. The secret is local, machine-bound and <em>rotatable</em>, so it is not a &ldquo;harvest-now-decrypt-later&rdquo; target.</li>
+      <li><strong>No TPM-resident ML-KEM yet.</strong> Current TPM 2.0 chips can&rsquo;t store an ML-KEM key, so the PQC private key falls back to software wrapping &mdash; reintroducing the classic weak link.</li>
+      <li><strong>APIs are experimental.</strong> .NET&rsquo;s <code>System.Security.Cryptography.MLKem</code> / <code>MLDsa</code> are marked <code>[Experimental]</code> (SYSLIB5006) and require very recent OS crypto providers (Windows 11 24H2 / Server 2025 CNG, or OpenSSL 3.5+). Baking an experimental, narrow-availability API into a portable, locked-restore, SBOM-pinned service is a regression in posture.</li>
+    </ul>
+    <div class="callout callout-note">
+      <div class="callout-title">When to revisit</div>
+      <p>Reconsider once the PQC APIs leave <code>[Experimental]</code> and OS/TPM support is broad &mdash; or if the architecture ever gains <strong>off-box key custody</strong> (an ML-KEM private key held in a remote HSM/KMS), which is the only design that genuinely defeats harvest-now-decrypt-later. The real quantum surfaces for this system are the <strong>controller TLS channel</strong> (ML-KEM-hybrid TLS &mdash; the Jenkins controller / JVM / OS&rsquo;s responsibility) and <strong>code signing</strong> (Authenticode, pending ML-DSA support in the CA ecosystem). Until then: rotate the JNLP secret at the PQC transition.</p>
+    </div>
+
     <h3 id="cert-pinning">Certificate Pinning</h3>
     <p>Set <code>ControllerCertThumbprint</code> to the SHA-256 thumbprint of the Jenkins controller's TLS certificate to defend against a MITM that presents a different but chain-trusted certificate (e.g. a rogue internal CA). When set, the <code>agent.jar</code> download accepts the connection <strong>only</strong> if the server certificate's thumbprint matches &mdash; the pin replaces chain trust. Separators (colons, spaces) and case are ignored.</p>
     <div class="callout callout-note">

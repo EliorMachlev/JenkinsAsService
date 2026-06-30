@@ -21,7 +21,7 @@
     "id": "configuration",
     "title": "Configuration",
     "url": "configuration.html",
-    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog", "dpapi", "dpapi scope", "machine scope", "user scope", "certificate pinning", "thumbprint", "controller cert", "secret protection", "secret via file", "secret off command line", "environment sanitization", "allowed environment variables", "process table", "env allowlist", "data directory", "programdata", "datafolder", "binary data separation", "writable data dir", "privilege escalation", "tpm", "tpm 2.0", "platform crypto provider", "hardware-backed", "hardware security", "non-exportable key", "rsacng"]
+    "keywords": ["configuration", "appsettings", "json", "settings", "options", "environment", "variables", "config", "logging", "serilog", "dpapi", "dpapi scope", "machine scope", "user scope", "certificate pinning", "thumbprint", "controller cert", "secret protection", "secret via file", "secret off command line", "environment sanitization", "allowed environment variables", "process table", "env allowlist", "data directory", "programdata", "datafolder", "binary data separation", "writable data dir", "privilege escalation", "tpm", "tpm 2.0", "platform crypto provider", "hardware-backed", "hardware security", "non-exportable key", "rsacng", "post-quantum", "pqc", "ml-kem", "ml-dsa", "cnsa", "quantum-resistant", "experimental crypto"]
   },
   {
     "id": "api-reference",
