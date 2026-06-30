@@ -12,6 +12,13 @@ namespace JenkinsAsService;
 /// </summary>
 public static class EventLogSourceInstaller
 {
+    /// <summary>The application's Event Log source name. Used by both the installer-time CLI write and
+    /// the service at startup, so the source the installer creates is the one the service attaches to.</summary>
+    public const string DefaultSource = "JenkinsAsService";
+
+    /// <summary>The Event Log to write to.</summary>
+    public const string DefaultLogName = "Application";
+
     /// <summary>
     /// Returns <c>true</c> if the event source exists or was successfully created. Creation is only
     /// attempted when the caller is elevated; any failure is swallowed and returns <c>false</c>

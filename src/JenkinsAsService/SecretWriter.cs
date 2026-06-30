@@ -16,7 +16,7 @@ public static class SecretWriter
     private const string CredTargetName = "JenkinsAsService/AgentSecret";
     private const string CredUserName = "JenkinsAgent";
     private const string ConfigFileName = "appsettings.json";
-    private const string ConfigSectionName = "Jenkins";
+    private const string ConfigSectionName = ConfigKeys.Section;
 
     /// <summary>
     /// Processes the secret based on mode, then writes appsettings.json.
@@ -79,12 +79,12 @@ public static class SecretWriter
             ? new JsonObject()
             : (JsonObject)existingJenkins.DeepClone();
 
-        if (jenkins["Agent"] is not JsonObject agent)
+        if (jenkins[ConfigKeys.Agent.Name] is not JsonObject agent)
         {
             agent = new JsonObject();
-            jenkins["Agent"] = agent;
+            jenkins[ConfigKeys.Agent.Name] = agent;
         }
-        agent["DataDirectory"] = dataDirectory;
+        agent[ConfigKeys.Agent.DataDirectory] = dataDirectory;
 
         var root = new JsonObject();
         if (existingRoot != null)
@@ -143,50 +143,50 @@ public static class SecretWriter
         string server, string? agentName, string? javaPath, DpapiScope dpapiScope,
         string? controllerCertThumbprint, JsonObject? existingJenkins)
     {
-        var conn = ExistingObject(existingJenkins, "Connection");
-        var secret = ExistingObject(existingJenkins, "Secret");
-        var agent = ExistingObject(existingJenkins, "Agent");
-        var hardening = ExistingObject(existingJenkins, "Hardening");
-        var logging = ExistingObject(existingJenkins, "Logging");
-        var recovery = ExistingObject(existingJenkins, "Recovery");
+        var conn = ExistingObject(existingJenkins, ConfigKeys.Connection.Name);
+        var secret = ExistingObject(existingJenkins, ConfigKeys.Secret.Name);
+        var agent = ExistingObject(existingJenkins, ConfigKeys.Agent.Name);
+        var hardening = ExistingObject(existingJenkins, ConfigKeys.Hardening.Name);
+        var logging = ExistingObject(existingJenkins, ConfigKeys.Logging.Name);
+        var recovery = ExistingObject(existingJenkins, ConfigKeys.Recovery.Name);
 
         return new JsonObject
         {
-            ["Connection"] = new JsonObject
+            [ConfigKeys.Connection.Name] = new JsonObject
             {
-                ["Url"] = server,
-                ["Method"] = ExistingMethod(conn),
-                ["AgentName"] = agentName ?? ExistingString(conn, "AgentName"),
-                ["ControllerCertThumbprint"] =
-                    controllerCertThumbprint ?? ExistingString(conn, "ControllerCertThumbprint")
+                [ConfigKeys.Connection.Url] = server,
+                [ConfigKeys.Connection.Method] = ExistingMethod(conn),
+                [ConfigKeys.Connection.AgentName] = agentName ?? ExistingString(conn, ConfigKeys.Connection.AgentName),
+                [ConfigKeys.Connection.ControllerCertThumbprint] =
+                    controllerCertThumbprint ?? ExistingString(conn, ConfigKeys.Connection.ControllerCertThumbprint)
             },
-            ["Secret"] = new JsonObject
+            [ConfigKeys.Secret.Name] = new JsonObject
             {
-                ["Value"] = configSecret,
-                ["Mode"] = mode.ToString(),
-                ["DpapiScope"] = dpapiScope.ToString(),
-                ["ViaFile"] = ExistingValue(secret, "ViaFile", true)
+                [ConfigKeys.Secret.Value] = configSecret,
+                [ConfigKeys.Secret.Mode] = mode.ToString(),
+                [ConfigKeys.Secret.DpapiScope] = dpapiScope.ToString(),
+                [ConfigKeys.Secret.ViaFile] = ExistingValue(secret, ConfigKeys.Secret.ViaFile, true)
             },
-            ["Agent"] = new JsonObject
+            [ConfigKeys.Agent.Name] = new JsonObject
             {
-                ["JavaPath"] = javaPath ?? ExistingString(agent, "JavaPath"),
-                ["CustomArguments"] = ExistingString(agent, "CustomArguments"),
-                ["DataDirectory"] = ExistingString(agent, "DataDirectory")
+                [ConfigKeys.Agent.JavaPath] = javaPath ?? ExistingString(agent, ConfigKeys.Agent.JavaPath),
+                [ConfigKeys.Agent.CustomArguments] = ExistingString(agent, ConfigKeys.Agent.CustomArguments),
+                [ConfigKeys.Agent.DataDirectory] = ExistingString(agent, ConfigKeys.Agent.DataDirectory)
             },
-            ["Hardening"] = new JsonObject
+            [ConfigKeys.Hardening.Name] = new JsonObject
             {
-                ["SanitizeEnvironment"] = ExistingValue(hardening, "SanitizeEnvironment", true),
-                ["AllowedEnvironmentVariables"] = ExistingString(hardening, "AllowedEnvironmentVariables")
+                [ConfigKeys.Hardening.SanitizeEnvironment] = ExistingValue(hardening, ConfigKeys.Hardening.SanitizeEnvironment, true),
+                [ConfigKeys.Hardening.AllowedEnvironmentVariables] = ExistingString(hardening, ConfigKeys.Hardening.AllowedEnvironmentVariables)
             },
-            ["Logging"] = new JsonObject
+            [ConfigKeys.Logging.Name] = new JsonObject
             {
-                ["DebugMode"] = ExistingValue(logging, "DebugMode", false),
-                ["CompactLog"] = ExistingValue(logging, "CompactLog", false),
-                ["RetainedLogs"] = ExistingValue(logging, "RetainedLogs", 3)
+                [ConfigKeys.Logging.DebugMode] = ExistingValue(logging, ConfigKeys.Logging.DebugMode, false),
+                [ConfigKeys.Logging.CompactLog] = ExistingValue(logging, ConfigKeys.Logging.CompactLog, false),
+                [ConfigKeys.Logging.RetainedLogs] = ExistingValue(logging, ConfigKeys.Logging.RetainedLogs, 3)
             },
-            ["Recovery"] = new JsonObject
+            [ConfigKeys.Recovery.Name] = new JsonObject
             {
-                ["MaxRetries"] = ExistingValue(recovery, "MaxRetries", 0)
+                [ConfigKeys.Recovery.MaxRetries] = ExistingValue(recovery, ConfigKeys.Recovery.MaxRetries, 0)
             }
         };
     }
@@ -197,7 +197,7 @@ public static class SecretWriter
     // Preserve an existing Connection:Method, else default to Auto (so the enum binds to a valid value).
     private static string ExistingMethod(JsonObject? connection)
     {
-        var value = ExistingString(connection, "Method");
+        var value = ExistingString(connection, ConfigKeys.Connection.Method);
         return string.IsNullOrEmpty(value) ? nameof(ConnectionMethod.Auto) : value;
     }
 

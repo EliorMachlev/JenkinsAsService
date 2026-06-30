@@ -10,17 +10,17 @@ using Serilog.Formatting.Compact;
 
 const string UpdateSecretCommandName = "update-secret";
 const string ConfigFileName = "appsettings.json";
-const string ConfigSectionName = "Jenkins";
-const string DebugModeKey = "Logging:DebugMode";
-const string CompactLogKey = "Logging:CompactLog";
-const string RetainedLogsKey = "Logging:RetainedLogs";
-const string DataDirectoryKey = "Agent:DataDirectory";
-const string ControllerCertThumbprintKey = "Connection:ControllerCertThumbprint";
+const string ConfigSectionName = ConfigKeys.Section;
+const string DebugModeKey = ConfigKeys.Logging.DebugModePath;
+const string CompactLogKey = ConfigKeys.Logging.CompactLogPath;
+const string RetainedLogsKey = ConfigKeys.Logging.RetainedLogsPath;
+const string DataDirectoryKey = ConfigKeys.Agent.DataDirectoryPath;
+const string ControllerCertThumbprintKey = ConfigKeys.Connection.ControllerCertThumbprintPath;
 const int DefaultRetainedLogs = 3;
 const string ServiceName = "Jenkins";
-const string JarDownloaderClientName = "JarDownloader";
-const string EventLogSource = "JenkinsAsService";
-const string EventLogName = "Application";
+const string JarDownloaderClientName = HttpJarDownloader.ClientName;
+const string EventLogSource = EventLogSourceInstaller.DefaultSource;
+const string EventLogName = EventLogSourceInstaller.DefaultLogName;
 const string TextLogFileName = "agent.log";
 const string CompactLogFileName = "agent.clef";
 const long FileSizeLimitBytes = 10 * 1024 * 1024;
@@ -180,7 +180,7 @@ static IHost BuildHost(string[] args)
                 .ConfigureResource(r => r.AddService(telemetry.ServiceName))
                 .WithMetrics(metrics =>
                 {
-                    metrics.AddMeter("JenkinsAsService");
+                    metrics.AddMeter(JenkinsAgentWorker.MeterName);
                     metrics.AddRuntimeInstrumentation();
                     metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetry.OtlpEndpoint));
                 });

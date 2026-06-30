@@ -34,4 +34,21 @@ public class ConnectionMethodTests
     {
         new ServiceSettings().Connection.Method.Should().Be(ConnectionMethod.Auto);
     }
+
+    [Theory]
+    // Auto + a real fast exit (didn't stabilise) → fall back.
+    [InlineData(ConnectionMethod.Auto, false, true, true)]
+    // Auto but the run reached stability → keep the transport.
+    [InlineData(ConnectionMethod.Auto, true, true, false)]
+    // Auto but no real exit (recovery skipped — controller unreachable) → no toggle. Regression guard.
+    [InlineData(ConnectionMethod.Auto, false, false, false)]
+    // Explicit transports never fall back.
+    [InlineData(ConnectionMethod.WebSocket, false, true, false)]
+    [InlineData(ConnectionMethod.Https, false, true, false)]
+    public void ShouldFallbackTransport_only_on_real_unstable_auto_exit(
+        ConnectionMethod configured, bool reachedStability, bool agentActuallyExited, bool expected)
+    {
+        JenkinsAgentWorker.ShouldFallbackTransport(configured, reachedStability, agentActuallyExited)
+            .Should().Be(expected);
+    }
 }

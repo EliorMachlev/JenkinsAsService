@@ -65,6 +65,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const char BannerChar = '=';
     private const string OutputMessageTemplate = "{Output}";
 
+    /// <summary>OpenTelemetry Meter name. Referenced by <c>Program.cs</c> when registering the meter,
+    /// so both sides stay in sync.</summary>
+    public const string MeterName = "JenkinsAsService";
+    private const string MeterVersion = "1.0.0";
+
     private readonly ILogger<JenkinsAgentWorker> _logger;
     private readonly ServiceSettings _settings;
     private readonly IJarDownloader _jarDownloader;
@@ -100,7 +105,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _secretResolver = secretResolver;
         _basePath = AppContext.BaseDirectory;
 
-        _meter = new Meter("JenkinsAsService", "1.0.0");
+        _meter = new Meter(MeterName, MeterVersion);
         _restartCounter = _meter.CreateCounter<long>(
             "jenkins_agent_restarts_total",
             description: "Number of agent restart attempts since service start");
@@ -307,6 +312,22 @@ public sealed class JenkinsAgentWorker : BackgroundService
             WorkingDirectory = _dataDir
         };
 
+        AddAgentArguments(psi, jarPath, normalizedUrl);
+
+        // Strip the inherited service environment so build secrets can't leak into untrusted pipeline
+        // scripts running inside the agent. UseShellExecute = false pre-populates psi.Environment with
+        // the parent block; we deny-by-default and keep only what Java + tooling need.
+        if (_settings.Hardening.SanitizeEnvironment)
+        {
+            SanitizeEnvironment(psi.Environment, _settings.Hardening.AllowedEnvironmentVariables);
+        }
+
+        LogLaunchCommand(psi);
+        return psi;
+    }
+
+    private void AddAgentArguments(ProcessStartInfo psi, string jarPath, string normalizedUrl)
+    {
         psi.ArgumentList.Add(ArgJar);
         psi.ArgumentList.Add(jarPath);
         psi.ArgumentList.Add(ArgUrl);
@@ -327,16 +348,23 @@ public sealed class JenkinsAgentWorker : BackgroundService
         {
             psi.ArgumentList.Add(arg);
         }
+    }
 
-        // Strip the inherited service environment so build secrets can't leak into untrusted pipeline
-        // scripts running inside the agent. UseShellExecute = false pre-populates psi.Environment with
-        // the parent block; we deny-by-default and keep only what Java + tooling need.
-        if (_settings.Hardening.SanitizeEnvironment)
+    // Logs the full java command line at Debug level for diagnostics, with the resolved secret redacted.
+    private void LogLaunchCommand(ProcessStartInfo psi)
+    {
+        if (!_logger.IsEnabled(LogLevel.Debug))
         {
-            SanitizeEnvironment(psi.Environment, _settings.Hardening.AllowedEnvironmentVariables);
+            return;
         }
 
-        return psi;
+        var command = $"{psi.FileName} {string.Join(' ', psi.ArgumentList)}";
+        if (!string.IsNullOrEmpty(_resolvedSecret))
+        {
+            command = command.Replace(_resolvedSecret, SecretRedaction, StringComparison.Ordinal);
+        }
+
+        _logger.LogDebug("Launching agent ({Transport}): {Command}", _effectiveMethod, command);
     }
 
     /// <summary>
@@ -530,16 +558,9 @@ public sealed class JenkinsAgentWorker : BackgroundService
             var exitCode = GetAgentExitCode();
             KillAgent();
 
-            // Auto fallback: if a transport died before stabilising, switch to the other one for the
-            // next attempt. A transport that reached the stability window is kept (its death isn't a
-            // transport-support problem). No-op unless the configured method is Auto.
-            if (_settings.Connection.Method == ConnectionMethod.Auto && !_currentRunReachedStability)
-            {
-                var previous = _effectiveMethod;
-                _effectiveMethod = ToggleMethod(_effectiveMethod);
-                _logger.LogWarning("Watchdog: {Previous} transport failed to stabilise — falling back to {Next}.",
-                    previous, _effectiveMethod);
-            }
+            // Pass whether a real agent process exited this cycle (vs. the pseudo-exit after a recovery
+            // that was skipped because the controller was unreachable) so fallback isn't misattributed.
+            ApplyAutoTransportFallback(agentActuallyExited: exitTask.IsCompleted);
 
             retryCount++;
             _logger.LogWarning("Watchdog: Agent exited (code: {Code}). Recovery attempt {Count}.",
@@ -563,6 +584,34 @@ public sealed class JenkinsAgentWorker : BackgroundService
             }
         }
     }
+
+    /// <summary>
+    /// Auto-mode transport fallback: when a <em>real</em> agent process exits before reaching the
+    /// stability window, switch to the other transport for the next attempt (WebSocket ↔ Https).
+    /// No-op unless the configured method is <c>Auto</c>, the run reached stability, or the "exit" was
+    /// the pseudo-exit raised after a recovery skipped due to an unreachable controller.
+    /// </summary>
+    private void ApplyAutoTransportFallback(bool agentActuallyExited)
+    {
+        if (!ShouldFallbackTransport(_settings.Connection.Method, _currentRunReachedStability, agentActuallyExited))
+        {
+            return;
+        }
+
+        var previous = _effectiveMethod;
+        _effectiveMethod = ToggleMethod(_effectiveMethod);
+        _logger.LogWarning("Watchdog: {Previous} transport failed to stabilise — falling back to {Next}.",
+            previous, _effectiveMethod);
+    }
+
+    /// <summary>
+    /// True only for <c>Auto</c> when a <em>real</em> agent process exited before reaching the stability
+    /// window. A run that stabilised, or a pseudo-exit from a recovery skipped due to an unreachable
+    /// controller (<paramref name="agentActuallyExited"/> = false), must not trigger a transport switch.
+    /// </summary>
+    internal static bool ShouldFallbackTransport(
+        ConnectionMethod configured, bool reachedStability, bool agentActuallyExited) =>
+        configured == ConnectionMethod.Auto && agentActuallyExited && !reachedStability;
 
     private int GetAgentExitCode() =>
         _agentProcess is { HasExited: true } ? _agentProcess.ExitCode : UnknownExitCode;
@@ -614,6 +663,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         {
             if (!_agentProcess.HasExited)
             {
+                _logger.LogDebug("Killing agent process tree (PID: {Pid})", _agentProcess.Id);
                 _agentProcess.Kill(entireProcessTree: true);
             }
         }

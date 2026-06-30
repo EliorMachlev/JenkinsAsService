@@ -9,7 +9,9 @@ public sealed class HttpJarDownloader : IJarDownloader
     private const string JarFilename = "agent.jar"; // intentional: decoupled from JenkinsAgentWorker
     private const string ETagFilename = "agent.jar.etag";
     private const string JnlpJarsPath = "jnlpJars";
-    private const string HttpClientName = "JarDownloader";
+    /// <summary>Named <see cref="System.Net.Http.HttpClient"/> key. Referenced by <c>Program.cs</c> when
+    /// registering the client (with resilience + optional cert pinning), so both sides stay in sync.</summary>
+    public const string ClientName = "JarDownloader";
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<HttpJarDownloader> _logger;
@@ -28,7 +30,7 @@ public sealed class HttpJarDownloader : IJarDownloader
 
         _logger.LogInformation("Downloading {Jar} from {Uri}", JarFilename, jarUri);
 
-        using var client = _httpFactory.CreateClient(HttpClientName);
+        using var client = _httpFactory.CreateClient(ClientName);
         using var request = new HttpRequestMessage(HttpMethod.Get, jarUri);
 
         // Only send If-None-Match when the jar file itself exists — an orphaned .etag with no jar

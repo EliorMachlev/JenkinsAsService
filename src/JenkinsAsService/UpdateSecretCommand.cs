@@ -40,9 +40,9 @@ public static class UpdateSecretCommand
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
 
     private const string ConfigFileName = "appsettings.json";
-    private const string ConfigSectionName = "Jenkins";
-    private const string EventLogSource = "JenkinsAsService";
-    private const string EventLogName = "Application";
+    private const string ConfigSectionName = ConfigKeys.Section;
+    private const string EventLogSource = EventLogSourceInstaller.DefaultSource;
+    private const string EventLogName = EventLogSourceInstaller.DefaultLogName;
     private const char DomainSeparator = '\\';
     private const string LocalDomain = ".";
 
@@ -454,10 +454,10 @@ public static class UpdateSecretCommand
                 .AddJsonFile(ConfigFileName, optional: true)
                 .Build();
             var section = config.GetSection(ConfigSectionName);
-            existingServer = section["Connection:Url"] ?? "";
-            existingAgentName = section["Connection:AgentName"] ?? "";
-            existingJavaPath = section["Agent:JavaPath"] ?? "";
-            if (Enum.TryParse<SecretMode>(section["Secret:Mode"], out var parsed))
+            existingServer = section[ConfigKeys.Connection.UrlPath] ?? "";
+            existingAgentName = section[ConfigKeys.Connection.AgentNamePath] ?? "";
+            existingJavaPath = section[ConfigKeys.Agent.JavaPathPath] ?? "";
+            if (Enum.TryParse<SecretMode>(section[ConfigKeys.Secret.ModePath], out var parsed))
             {
                 existingMode = parsed;
             }
