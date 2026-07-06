@@ -91,28 +91,42 @@
 
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
 
-        <!-- Radio button group -->
-        <Control Id="SecretModeGroup" Type="RadioButtonGroup" X="20" Y="60" Width="330" Height="140"
+        <Control Id="SecretModeGroup" Type="RadioButtonGroup" X="20" Y="54" Width="330" Height="120"
                  Property="JENKINS_SECRET_MODE">
           <RadioButtonGroup Property="JENKINS_SECRET_MODE">
-            <RadioButton Value="Dpapi" X="0" Y="0" Width="330" Height="18"
+            <RadioButton Value="Dpapi" X="0" Y="0" Width="330" Height="17"
                          Text="DPAPI — machine-scoped encryption at rest (recommended)" />
-            <RadioButton Value="Tpm" X="0" Y="28" Width="330" Height="18"
+            <RadioButton Value="Tpm" X="0" Y="24" Width="330" Height="17"
                          Text="TPM 2.0 — hardware-backed, non-exportable key (strongest; requires TPM)" />
-            <RadioButton Value="CredentialManager" X="0" Y="56" Width="330" Height="18"
+            <RadioButton Value="CredentialManager" X="0" Y="48" Width="330" Height="17"
                          Text="Windows Credential Manager — store in OS credential vault" />
-            <RadioButton Value="EnvironmentVariable" X="0" Y="84" Width="330" Height="18"
+            <RadioButton Value="EnvironmentVariable" X="0" Y="72" Width="330" Height="17"
                          Text="Environment Variable — machine var, readable by all local users" />
-            <RadioButton Value="Unprotected" X="0" Y="112" Width="330" Height="18"
+            <RadioButton Value="Unprotected" X="0" Y="96" Width="330" Height="17"
                          Text="Unprotected — plaintext in config file (development only)" />
           </RadioButtonGroup>
         </Control>
 
-        <!-- Warning label for Unprotected mode -->
-        <Control Id="WarningText" Type="Text" X="20" Y="205" Width="330" Height="26"
+        <Control Id="WarningText" Type="Text" X="20" Y="178" Width="330" Height="18"
                  NoPrefix="yes" Hidden="yes"
                  ShowCondition="JENKINS_SECRET_MODE = &quot;Unprotected&quot;"
-                 Text="WARNING: Unprotected mode stores the secret in plaintext in appsettings.json. Use only for development." />
+                 Text="WARNING: Unprotected mode stores the secret in plaintext in appsettings.json." />
+
+        <!-- DPAPI scope (only meaningful when Mode = Dpapi; harmless otherwise) -->
+        <Control Id="ScopeLabel" Type="Text" X="20" Y="200" Width="90" Height="13" NoPrefix="yes"
+                 Text="DPAPI scope:" />
+        <Control Id="ScopeGroup" Type="RadioButtonGroup" X="112" Y="198" Width="240" Height="16"
+                 Property="JENKINS_DPAPI_SCOPE">
+          <RadioButtonGroup Property="JENKINS_DPAPI_SCOPE">
+            <RadioButton Value="Machine" X="0" Y="0" Width="80" Height="16" Text="Machine" />
+            <RadioButton Value="User" X="84" Y="0" Width="150" Height="16" Text="User (service acct)" />
+          </RadioButtonGroup>
+        </Control>
+
+        <!-- Pass secret to the agent via an ACL-restricted file instead of the command line -->
+        <Control Id="ViaFileCheck" Type="CheckBox" X="20" Y="217" Width="330" Height="16"
+                 Property="JENKINS_VIA_FILE" CheckBoxValue="1"
+                 Text="Pass secret to agent via file (keeps it off the process table)" />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 
