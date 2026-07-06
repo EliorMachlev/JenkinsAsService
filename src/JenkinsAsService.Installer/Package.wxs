@@ -29,6 +29,19 @@
     <Property Id="JENKINS_SECRET_MODE" Value="Dpapi" Secure="yes" />
     <Property Id="JENKINS_THUMBPRINT" Secure="yes" />
 
+    <!-- Optional-field properties. Each carries its ServiceSettings default so an untouched field
+         reproduces current behaviour. Bool fields use "1" (checked) / "" (unchecked) from checkboxes. -->
+    <Property Id="JENKINS_METHOD" Value="Auto" Secure="yes" />
+    <Property Id="JENKINS_DPAPI_SCOPE" Value="Machine" Secure="yes" />
+    <Property Id="JENKINS_VIA_FILE" Value="1" Secure="yes" />
+    <Property Id="JENKINS_CUSTOM_ARGS" Secure="yes" />
+    <Property Id="JENKINS_ALLOWED_ENV" Secure="yes" />
+    <Property Id="JENKINS_SANITIZE_ENV" Value="1" Secure="yes" />
+    <Property Id="JENKINS_DEBUG" Secure="yes" />
+    <Property Id="JENKINS_COMPACT_LOG" Secure="yes" />
+    <Property Id="JENKINS_RETAINED_LOGS" Value="3" Secure="yes" />
+    <Property Id="JENKINS_MAX_RETRIES" Value="0" Secure="yes" />
+
     <!-- ─── Service identity (least privilege). Default: virtual service account 'NT SERVICE\Jenkins'.
          For a password-based or gMSA account, override all three: SERVICE_ACCOUNT='DOMAIN\svc' (+ '$'
          for gMSA), SERVICE_ACCOUNT_DOMAIN/SERVICE_ACCOUNT_NAME (for the folder ACL), and
