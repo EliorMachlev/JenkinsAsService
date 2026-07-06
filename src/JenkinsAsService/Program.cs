@@ -24,7 +24,7 @@ const string EventLogName = EventLogSourceInstaller.DefaultLogName;
 const string TextLogFileName = "agent.log";
 const string CompactLogFileName = "agent.clef";
 const long FileSizeLimitBytes = 10 * 1024 * 1024;
-const string TelemetrySectionName = "Telemetry";
+const string TelemetrySectionName = ConfigKeys.TelemetrySection;
 const string LogOutputTemplate =
     "{ProcessId} | {Timestamp:yyyy-MM-dd HH:mm:ss} | {Level} | {Message:lj}{NewLine}{Exception}";
 
@@ -162,6 +162,7 @@ static IHost BuildHost(string[] args)
     builder.Services.AddSingleton<IJarDownloader, HttpJarDownloader>();
     builder.Services.AddSingleton<IConnectivityChecker, TcpConnectivityChecker>();
     builder.Services.AddSingleton<ISecretResolver, SecretResolver>();
+    builder.Services.AddSingleton<IAgentProcessLauncher, AgentProcessLauncher>();
     builder.Services.AddHostedService<JenkinsAgentWorker>();
 
     builder.Logging.ClearProviders();
@@ -193,12 +194,17 @@ static IHost BuildHost(string[] args)
 static bool ValidateBoundSettings(IHost host, string basePath)
 {
     var settings = host.Services.GetRequiredService<IOptions<ServiceSettings>>().Value;
-    if (string.IsNullOrWhiteSpace(settings.Connection.Url) || string.IsNullOrWhiteSpace(settings.Secret.Value))
+    try
+    {
+        // Single source of truth for mandatory-field/URL rules (empty Url/Secret, explicit port, valid URL),
+        // so a bad config fails the clean pre-flight here instead of faulting later inside the worker.
+        ServiceSettingsValidator.Validate(settings);
+        return true;
+    }
+    catch (InvalidOperationException ex)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
-        Log.Error("Mandatory fields (Connection:Url, Secret:Value) are empty. Fill in: {Path}", configPath);
+        Log.Error("Invalid configuration: {Reason} Fix: {Path}", ex.Message, configPath);
         return false;
     }
-
-    return true;
 }

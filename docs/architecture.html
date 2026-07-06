@@ -102,25 +102,25 @@
 
     <ol>
       <li><strong>Log session banner</strong> &mdash; <code>=== SERVICE STARTING (PID: ...) ===</code></li>
-      <li><strong><code>ValidateSettings()</code></strong> &mdash; Checks mandatory fields, rejects default-port URLs</li>
+      <li><strong><code>ValidateSettings()</code></strong> &mdash; Checks mandatory fields; requires the URL to carry an explicit port</li>
       <li><strong><code>ResolveJavaPath()</code></strong> &mdash; Checks <code>JavaPath</code> config &rarr; <code>JAVA_HOME</code> &rarr; <code>JAVA_HOME\bin</code></li>
-      <li><strong><code>TestConnectivityAsync()</code></strong> &mdash; Delegates to <code>IConnectivityChecker</code> (TCP with 2s timeout)</li>
-      <li><strong><code>IJarDownloader.DownloadAsync()</code></strong> &mdash; Conditional GET with Polly resilience</li>
-      <li><strong><code>StartAgentProcess()</code></strong> &mdash; Launches Java via <code>Process</code> with async output parsing</li>
-      <li><strong><code>RunWatchdogAsync()</code></strong> &mdash; Enters monitoring loop</li>
+      <li><strong><code>RunSupervisionLoop()</code></strong> &mdash; Brings the agent up (connectivity &rarr; jar download &rarr; start) <em>and</em> supervises it. Because bring-up lives inside the loop, a transient outage at boot (DNS/network not up, controller mid-restart) retries with backoff instead of faulting the service.</li>
     </ol>
+
+    <p>A non-transient failure (bad config, unresolvable secret, missing Java) is caught and the host is shut down cleanly via <code>IHostApplicationLifetime.StopApplication()</code> &mdash; SCM recovery, if configured, then restarts the service.</p>
 
     <h3 id="stopasync">StopAsync</h3>
 
     <ol>
       <li>Logs the stop request</li>
-      <li>Kills the Java process tree (<code>Process.Kill(entireProcessTree: true)</code>)</li>
+      <li>Sets a <code>_stopping</code> flag <strong>before</strong> killing, so the supervision loop treats the kill-induced exit as an intentional stop, not a crash to be counted/recovered</li>
+      <li>Kills the agent process tree and deletes the on-disk secret file</li>
       <li>Logs confirmation</li>
     </ol>
 
     <h2 id="execution-model">Execution Model</h2>
 
-    <p>The Java process is managed directly via <code>System.Diagnostics.Process</code>:</p>
+    <p>The Java process is created behind an <code>IAgentProcessLauncher</code> seam (production impl wraps <code>System.Diagnostics.Process</code>; a fake drives the supervision loop in tests without spawning <code>java.exe</code>):</p>
 
     <ul>
       <li><code>ProcessStartInfo.ArgumentList</code> for safe argument passing (no shell interpretation)</li>
@@ -137,34 +137,33 @@
 
     <h2 id="watchdog-auto-recovery">Watchdog &amp; Auto-Recovery</h2>
 
-    <p><code>RunWatchdogAsync()</code> is <strong>event-driven</strong> &mdash; it awaits <code>Task.WhenAny(exitTask, Task.Delay(StabilityMs))</code> where <code>exitTask</code> is a <code>TaskCompletionSource</code> completed by the <code>process.Exited</code> event. No polling.</p>
+    <p><code>RunSupervisionLoop()</code> is <strong>event-driven</strong> (no polling) and has two states. When <strong>no agent is running</strong> it is in <em>bring-up</em>: connectivity &rarr; jar download &rarr; start, with exponential backoff between attempts. When an <strong>agent is running</strong> it awaits <code>Task.WhenAny(agent.Exited, Task.Delay(StabilityMs))</code>, where the exit signal is a <code>TaskCompletionSource</code> completed by the launcher's process-exit event.</p>
+
+    <p>The key distinction is <strong>crash vs. unreachable</strong>: only real agent <em>crashes</em> count toward <code>MaxRetries</code>. A controller that is simply unreachable is retried in bring-up indefinitely and never trips give-up, so a maintenance window can't permanently stop the service. When consecutive crashes <em>do</em> exceed <code>MaxRetries</code>, the loop calls <code>IHostApplicationLifetime.StopApplication()</code> so the service actually stops (and Windows Service Recovery / SCM can act) instead of leaving a dead agent behind a still-<code>RUNNING</code> service.</p>
 
     <pre class="mermaid">flowchart TD
-    A[Watchdog Loop] -->|Await exit signal OR 60s stability timer| B{exitTask completed?}
-    B -->|No — 60s elapsed, agent still alive| C{retryCount > 0?}
-    C -->|Yes| D[Reset retry counter, log stability]
-    C -->|No| A
-    D --> A
-    B -->|Yes — process exited| E[Log SEVERE count, capture exit code, KillAgent]
-    E --> F{MaxRetries exceeded?}
-    F -->|Yes| G[Log error and stop]
-    F -->|No| H["Wait with exponential backoff (10s to 300s)"]
-    H --> I[Test TCP connectivity]
-    I -->|Unreachable| J[Log warning, reset TCS, loop]
-    J --> A
-    I -->|OK| K["ETag conditional GET agent.jar"]
-    K --> L[Start new process, subscribe Exited before Start]
-    L --> M["_restartCounter.Add(1)"]
-    M --> A</pre>
+    S[Supervision Loop] --> Q{Agent running?}
+    Q -->|No — bring-up| BU["Backoff, then: TCP connectivity → ETag conditional GET agent.jar → start"]
+    BU -->|Unreachable or start failed| R1[Retry indefinitely — does NOT count toward MaxRetries]
+    R1 --> S
+    BU -->|Started| S
+    Q -->|Yes| W[Await exit signal OR 60s stability timer]
+    W -->|Shutting down _stopping| X[Return — StopAsync handles cleanup]
+    W -->|60s elapsed, still alive| D[Reset crash counter on stability]
+    D --> S
+    W -->|Process exited| E[Log SEVERE count, capture exit code, kill, Auto-transport fallback]
+    E --> F{Consecutive crashes exceed MaxRetries?}
+    F -->|Yes| G["StopApplication() — service stops so SCM can recover"]
+    F -->|No| S</pre>
 
     <ul>
-      <li><strong>Exit detection:</strong> instant via <code>process.Exited</code> &rarr; <code>TCS.TrySetResult()</code>, subscribed <strong>before</strong> <code>process.Start()</code></li>
-      <li><strong>Fast-crash guard:</strong> After <code>Start()</code>, if <code>process.HasExited</code> is already true, <code>TCS.TrySetResult()</code> is called defensively</li>
-      <li><strong>Failed recovery:</strong> If connectivity check or download fails, a fresh uncompleted TCS is assigned so the loop waits properly instead of spinning</li>
-      <li><strong>Backoff:</strong> 10s &rarr; 20s &rarr; 40s &rarr; 80s &rarr; ... capped at 300s</li>
-      <li><strong>Retry reset:</strong> After 60s of stability, retry counter resets to 0</li>
-      <li><strong>MaxRetries:</strong> <code>0</code> = infinite (default)</li>
-      <li><strong>SEVERE counter:</strong> <code>_severeCount</code> is <code>Interlocked.Increment</code>-ed per SEVERE line; read and reset via <code>Interlocked.Exchange</code> on each exit</li>
+      <li><strong>Bring-up vs. live:</strong> connectivity, download and start all happen in the loop's bring-up state, so both first launch and recovery share one code path (and one backoff).</li>
+      <li><strong>Crash counter:</strong> incremented only on a real agent exit; reset to <code>0</code> after 60s of stability. <code>MaxRetries = 0</code> means infinite (default).</li>
+      <li><strong>Unreachable controller:</strong> retried forever in bring-up without incrementing the crash counter &mdash; outages never cause a permanent give-up.</li>
+      <li><strong>Exit signal:</strong> the launcher captures its exit <code>TaskCompletionSource</code> in a local (not a shared field), so a late exit from a killed process can't complete a newer process's signal and trigger a spurious restart.</li>
+      <li><strong>Backoff:</strong> 10s &rarr; 20s &rarr; 40s &rarr; 80s &rarr; ... capped at 300s.</li>
+      <li><strong>Auto-transport fallback:</strong> on a fast crash in <code>Auto</code> mode, the next bring-up toggles WebSocket &harr; direct-TCP.</li>
+      <li><strong>SEVERE counter:</strong> <code>_severeCount</code> is <code>Interlocked.Increment</code>-ed per SEVERE line; read and reset via <code>Interlocked.Exchange</code> on each exit.</li>
     </ul>
 
     <h2 id="logging-serilog">Logging (Serilog)</h2>
@@ -316,7 +315,7 @@
           <tr>
             <td><code>ValidateSettingsTests</code></td>
             <td>6</td>
-            <td>Empty URL/secret, default port, malformed URL, valid settings, SecretMode default</td>
+            <td>Empty URL/secret, missing port, explicit standard port accepted, malformed URL (friendly error), valid settings, SecretMode default</td>
           </tr>
           <tr>
             <td><code>ParseArgumentsTests</code></td>

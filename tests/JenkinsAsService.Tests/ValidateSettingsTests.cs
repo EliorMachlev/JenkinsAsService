@@ -10,7 +10,7 @@ public class ValidateSettingsTests
     {
         var settings = new ServiceSettings { Secret = new() { Value = "secret" } };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*Connection:Url*");
@@ -21,7 +21,7 @@ public class ValidateSettingsTests
     {
         var settings = new ServiceSettings { Connection = new() { Url = "https://jenkins:8443" } };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*Secret:Value*");
@@ -36,14 +36,31 @@ public class ValidateSettingsTests
             Secret = new() { Value = "secret" }
         };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*explicit port*");
     }
 
+    [Theory]
+    [InlineData("https://jenkins.example.com:443")]   // explicit standard HTTPS port (reverse proxy)
+    [InlineData("http://jenkins.example.com:80")]      // explicit standard HTTP port
+    [InlineData("https://[2001:db8::1]:443")]          // explicit port on an IPv6 literal
+    public void Passes_when_URL_specifies_an_explicit_port_even_if_it_is_the_scheme_default(string url)
+    {
+        var settings = new ServiceSettings
+        {
+            Connection = new() { Url = url },
+            Secret = new() { Value = "secret" }
+        };
+
+        var act = () => ServiceSettingsValidator.Validate(settings);
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
-    public void Throws_when_URL_is_malformed()
+    public void Throws_a_friendly_error_when_URL_is_malformed()
     {
         var settings = new ServiceSettings
         {
@@ -51,9 +68,10 @@ public class ValidateSettingsTests
             Secret = new() { Value = "secret" }
         };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
-        act.Should().Throw<UriFormatException>();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*not a valid absolute URL*");
     }
 
     [Fact]
@@ -65,7 +83,7 @@ public class ValidateSettingsTests
             Secret = new() { Value = "secret123" }
         };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().NotThrow();
     }
@@ -82,7 +100,7 @@ public class ValidateSettingsTests
         };
 
         settings.Secret.Mode.Should().Be(SecretMode.Unprotected);
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
         act.Should().NotThrow();
     }
 }

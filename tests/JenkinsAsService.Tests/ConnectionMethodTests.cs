@@ -11,7 +11,7 @@ public class ConnectionMethodTests
     [InlineData(ConnectionMethod.Https, ConnectionMethod.Https)]
     public void InitialEffectiveMethod_picks_the_starting_transport(ConnectionMethod configured, ConnectionMethod expected)
     {
-        JenkinsAgentWorker.InitialEffectiveMethod(configured).Should().Be(expected);
+        AgentTransport.InitialMethod(configured).Should().Be(expected);
     }
 
     [Theory]
@@ -19,14 +19,14 @@ public class ConnectionMethodTests
     [InlineData(ConnectionMethod.Https, ConnectionMethod.WebSocket)]
     public void ToggleMethod_flips_between_the_two_transports(ConnectionMethod current, ConnectionMethod expected)
     {
-        JenkinsAgentWorker.ToggleMethod(current).Should().Be(expected);
+        AgentTransport.Toggle(current).Should().Be(expected);
     }
 
     [Fact]
     public void Toggling_twice_returns_to_the_original()
     {
-        var once = JenkinsAgentWorker.ToggleMethod(ConnectionMethod.WebSocket);
-        JenkinsAgentWorker.ToggleMethod(once).Should().Be(ConnectionMethod.WebSocket);
+        var once = AgentTransport.Toggle(ConnectionMethod.WebSocket);
+        AgentTransport.Toggle(once).Should().Be(ConnectionMethod.WebSocket);
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public class ConnectionMethodTests
     public void ShouldFallbackTransport_only_on_real_unstable_auto_exit(
         ConnectionMethod configured, bool reachedStability, bool agentActuallyExited, bool expected)
     {
-        JenkinsAgentWorker.ShouldFallbackTransport(configured, reachedStability, agentActuallyExited)
+        AgentTransport.ShouldFallback(configured, reachedStability, agentActuallyExited)
             .Should().Be(expected);
     }
 }

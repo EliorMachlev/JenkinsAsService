@@ -292,7 +292,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       <li>Starts the service after install</li>
       <li>Stops and removes the service on uninstall</li>
       <li>Supports in-place upgrades (same <code>UpgradeCode</code> across versions)</li>
-      <li>Default secret protection mode: <code>EnvironmentVariable</code> (reads from <code>JENKINS_SECRET</code>)</li>
+      <li>Default secret protection mode: <code>Dpapi</code> (machine-scoped encryption at rest)</li>
     </ul>
 
     <div class="callout callout-note">
@@ -359,7 +359,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     DATAFOLDER="D:\JenkinsData" `
     JENKINS_URL="https://jenkins.example.com:8443" `
     JENKINS_SECRET="your-secret" `
-    JENKINS_SECRET_MODE="EnvironmentVariable" `
+    JENKINS_SECRET_MODE="Dpapi" `
     JENKINS_THUMBPRINT="" `
     JENKINS_AGENT_NAME="" `
     JENKINS_JAVA_PATH=""</code></pre>
@@ -411,8 +411,8 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
           <tr>
             <td><code>JENKINS_SECRET_MODE</code></td>
             <td>No</td>
-            <td><code>EnvironmentVariable</code></td>
-            <td><code>EnvironmentVariable</code>, <code>Dpapi</code>, <code>Tpm</code> (hardware-backed), <code>CredentialManager</code>, or <code>Unprotected</code></td>
+            <td><code>Dpapi</code></td>
+            <td><code>Dpapi</code> (default), <code>Tpm</code> (hardware-backed), <code>CredentialManager</code>, <code>EnvironmentVariable</code>, or <code>Unprotected</code></td>
           </tr>
           <tr>
             <td><code>JENKINS_THUMBPRINT</code></td>

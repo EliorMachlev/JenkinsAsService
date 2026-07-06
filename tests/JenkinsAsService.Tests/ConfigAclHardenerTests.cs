@@ -57,4 +57,37 @@ public class ConfigAclHardenerTests : IDisposable
         sids.Should().Contain(admins);
         sids.Should().NotContain(users, "the Users group must no longer have access to the secret-bearing file");
     }
+
+    [Fact]
+    public void Harden_removes_a_pre_existing_Users_grant()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return; // ACL hardening is a Windows-only operation
+        }
+
+        var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+
+        // Seed an explicit Users:Read ACE (mimicking the inherited Program Files access) so that a later
+        // "Users absent" assertion proves hardening actually REMOVED it — %TEMP% grants no Users access, so
+        // without seeding the assertion would pass even if Harden silently no-op'd.
+        var seeded = new FileInfo(_file).GetAccessControl();
+        seeded.AddAccessRule(new FileSystemAccessRule(users, FileSystemRights.Read, AccessControlType.Allow));
+        new FileInfo(_file).SetAccessControl(seeded);
+
+        // Sanity: the Users ACE is present before hardening.
+        SidsOf(_file).Should().Contain(users.Value);
+
+        ConfigAclHardener.Harden(_file, WindowsIdentity.GetCurrent().Name);
+
+        new FileInfo(_file).GetAccessControl().AreAccessRulesProtected.Should().BeTrue();
+        SidsOf(_file).Should().NotContain(users.Value, "hardening must strip the seeded Users grant");
+    }
+
+    private static List<string> SidsOf(string file) =>
+        new FileInfo(file).GetAccessControl()
+            .GetAccessRules(true, false, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .Select(r => ((SecurityIdentifier)r.IdentityReference).Value)
+            .ToList();
 }

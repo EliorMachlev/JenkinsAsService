@@ -154,6 +154,27 @@ public class SecretWriterTests : IDisposable
     }
 
     [Fact]
+    public void WriteConfig_survives_a_wrong_typed_existing_field()
+    {
+        // A hand-edited config where RetainedLogs is a string and CustomArguments is a number. WriteConfig
+        // must fall back to defaults for the bad-typed fields rather than throwing and aborting the write.
+        const string existingJson =
+            "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\"}," +
+            "\"Secret\":{\"Value\":\"old\",\"Mode\":\"Unprotected\"}," +
+            "\"Agent\":{\"CustomArguments\":123}," +
+            "\"Logging\":{\"RetainedLogs\":\"three\"}}}";
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
+
+        var act = () => SecretWriter.WriteConfig(_tempDir, "new", SecretMode.Unprotected, "https://new:8443", null, null);
+
+        act.Should().NotThrow();
+        var jenkins = Jenkins();
+        jenkins.GetProperty("Logging").GetProperty("RetainedLogs").GetInt32().Should().Be(3, "the bad value falls back to the default");
+        jenkins.GetProperty("Agent").GetProperty("CustomArguments").GetString().Should().Be("");
+        jenkins.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("new");
+    }
+
+    [Fact]
     public void SetDataDirectory_sets_field_and_preserves_other_fields_and_sections()
     {
         const string existingJson =

@@ -1,5 +1,6 @@
 // Copyright (c) 2024 All rights reserved
 using FluentAssertions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -27,7 +28,9 @@ public class ParseAgentOutputTests
             Options.Create(settings),
             Substitute.For<IJarDownloader>(),
             Substitute.For<IConnectivityChecker>(),
-            Substitute.For<ISecretResolver>());
+            Substitute.For<ISecretResolver>(),
+            Substitute.For<IAgentProcessLauncher>(),
+            Substitute.For<IHostApplicationLifetime>());
     }
 
     [Fact]
@@ -105,7 +108,9 @@ public class ParseAgentOutputTests
             Options.Create(settings),
             Substitute.For<IJarDownloader>(),
             Substitute.For<IConnectivityChecker>(),
-            Substitute.For<ISecretResolver>());
+            Substitute.For<ISecretResolver>(),
+            Substitute.For<IAgentProcessLauncher>(),
+            Substitute.For<IHostApplicationLifetime>());
 
         worker.ParseAgentOutput(RawJavaOutput);
 

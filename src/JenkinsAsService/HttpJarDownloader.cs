@@ -8,6 +8,7 @@ public sealed class HttpJarDownloader : IJarDownloader
 {
     private const string JarFilename = "agent.jar"; // intentional: decoupled from JenkinsAgentWorker
     private const string ETagFilename = "agent.jar.etag";
+    private const string TempSuffix = ".tmp";
     private const string JnlpJarsPath = "jnlpJars";
     /// <summary>Named <see cref="System.Net.Http.HttpClient"/> key. Referenced by <c>Program.cs</c> when
     /// registering the client (with resilience + optional cert pinning), so both sides stay in sync.</summary>
@@ -71,11 +72,48 @@ public sealed class HttpJarDownloader : IJarDownloader
         return string.IsNullOrEmpty(value) ? null : value;
     }
 
+    // Stream to a temp file then atomically move it into place, so a failure mid-download (network drop,
+    // cancellation) can never leave a truncated agent.jar behind the still-valid previous .etag — which
+    // would 304 on the next start and launch a corrupt jar.
     private static async Task<long> StreamToFile(HttpResponseMessage response, string jarPath, CancellationToken ct)
     {
-        await using var fs = new FileStream(jarPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await response.Content.CopyToAsync(fs, ct);
-        return fs.Length;
+        var tempPath = jarPath + TempSuffix;
+        try
+        {
+            long length;
+            await using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await response.Content.CopyToAsync(fs, ct);
+                length = fs.Length;
+            }
+
+            File.Move(tempPath, jarPath, overwrite: true);
+            return length;
+        }
+        catch
+        {
+            TryDeleteTemp(tempPath);
+            throw;
+        }
+    }
+
+    private static void TryDeleteTemp(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (IOException)
+        {
+            // Best-effort cleanup of the partial download; a leftover .tmp is harmless (never used).
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Same — the stale temp file is never read.
+        }
     }
 
     private void SaveEtag(HttpResponseMessage response, string etagPath)

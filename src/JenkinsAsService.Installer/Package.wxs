@@ -23,7 +23,10 @@
     <Property Id="JENKINS_SECRET" Secure="yes" Hidden="yes" />
     <Property Id="JENKINS_AGENT_NAME" Secure="yes" />
     <Property Id="JENKINS_JAVA_PATH" Secure="yes" />
-    <Property Id="JENKINS_SECRET_MODE" Value="EnvironmentVariable" Secure="yes" />
+    <!-- Default to DPAPI (encrypted at rest, machine-scoped): universally available and does not expose the
+         secret to every local user the way a machine-scoped env var (readable by BUILTIN\Users) would. TPM is
+         stronger where hardware allows; both are offered on the Security Options page. -->
+    <Property Id="JENKINS_SECRET_MODE" Value="Dpapi" Secure="yes" />
     <Property Id="JENKINS_THUMBPRINT" Secure="yes" />
 
     <!-- ─── Service identity (least privilege). Default: virtual service account 'NT SERVICE\Jenkins'.
@@ -44,7 +47,14 @@
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)License.rtf" />
 
-    <!-- ─── Custom Action: call installed exe to write appsettings.json ─── -->
+    <!-- ─── Custom Action: call installed exe to write appsettings.json ───
+         The secret is formatted into the deferred command line here. This is a known MSI trade-off: an EXE
+         custom action receives no CustomActionData, so a secret cannot be handed to it off the command line.
+         It is mitigated by (a) JENKINS_SECRET being Hidden (kept out of the property table in logs) and
+         (b) Impersonate="no" — the CA runs as SYSTEM, so the process command line is not readable by non-admin
+         local users. Residual exposure is a verbose MSI log (/l*v) on the installing machine. Scripted installs
+         that must avoid even that should call update-secret directly with the secret-env or secret-file input
+         options (which take the secret from an env var or a self-deleting file instead of the command line). -->
     <CustomAction Id="WriteConfig"
                   FileRef="JenkinsAsService.exe"
                   ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE] --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'

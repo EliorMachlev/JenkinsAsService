@@ -20,7 +20,7 @@ public class SanitizeEnvironmentTests
     {
         var env = SampleEnv();
 
-        JenkinsAgentWorker.SanitizeEnvironment(env, extraAllowed: null);
+        EnvironmentSanitizer.Apply(env, extraAllowed: null);
 
         env.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
         env.Should().NotContainKey("JENKINS_SECRET");
@@ -31,7 +31,7 @@ public class SanitizeEnvironmentTests
     {
         var env = SampleEnv();
 
-        JenkinsAgentWorker.SanitizeEnvironment(env, extraAllowed: null);
+        EnvironmentSanitizer.Apply(env, extraAllowed: null);
 
         env.Should().ContainKey("PATH");
         env.Should().ContainKey("SystemRoot");
@@ -43,7 +43,7 @@ public class SanitizeEnvironmentTests
     {
         var env = SampleEnv();
 
-        JenkinsAgentWorker.SanitizeEnvironment(env, extraAllowed: "GRADLE_USER_HOME;MAVEN_OPTS");
+        EnvironmentSanitizer.Apply(env, extraAllowed: "GRADLE_USER_HOME;MAVEN_OPTS");
 
         env.Should().ContainKey("GRADLE_USER_HOME");
         env.Should().NotContainKey("JENKINS_SECRET");
@@ -57,7 +57,7 @@ public class SanitizeEnvironmentTests
     {
         var env = SampleEnv();
 
-        JenkinsAgentWorker.SanitizeEnvironment(env, allowed);
+        EnvironmentSanitizer.Apply(env, allowed);
 
         env.Should().ContainKey("GRADLE_USER_HOME");
     }
@@ -67,7 +67,7 @@ public class SanitizeEnvironmentTests
     {
         var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
-        JenkinsAgentWorker.SanitizeEnvironment(env, extraAllowed: null);
+        EnvironmentSanitizer.Apply(env, extraAllowed: null);
 
         env.Should().BeEmpty();
     }

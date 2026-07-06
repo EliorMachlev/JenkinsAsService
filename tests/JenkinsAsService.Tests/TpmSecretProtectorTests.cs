@@ -5,7 +5,10 @@ using FluentAssertions;
 namespace JenkinsAsService.Tests;
 
 // Round-trips use a USER-scoped TPM key so the tests need no elevation; production uses machine-scoped
-// keys. All tests skip cleanly when no usable TPM / Platform Crypto Provider is present (e.g. CI runners).
+// keys. TPM-dependent tests early-return when no usable TPM / Platform Crypto Provider is present (e.g. CI
+// runners) — note they then report as *passed*, not skipped (xUnit 2.9 has no dynamic Assert.Skip; visible
+// skips would need Xunit.SkippableFact or an xUnit v3 upgrade). Treat green here as "did not regress", not
+// "TPM verified", unless the run is on TPM-capable hardware.
 public class TpmSecretProtectorTests : IDisposable
 {
     private readonly bool _tpm = TpmSecretProtector.IsAvailable();
@@ -35,7 +38,7 @@ public class TpmSecretProtectorTests : IDisposable
     {
         if (!_tpm)
         {
-            return; // no TPM / Platform Crypto Provider on this host
+            return; // no TPM / Platform Crypto Provider on this host (reports as passed — see class note)
         }
 
         const string secret = "jnlp-secret-1234567890abcdef";

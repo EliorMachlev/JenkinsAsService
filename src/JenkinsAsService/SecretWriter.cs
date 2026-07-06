@@ -201,11 +201,31 @@ public static class SecretWriter
         return string.IsNullOrEmpty(value) ? nameof(ConnectionMethod.Auto) : value;
     }
 
-    private static string ExistingString(JsonObject? existing, string key) =>
-        existing?[key]?.GetValue<string>() ?? "";
+    private static string ExistingString(JsonObject? existing, string key)
+    {
+        try
+        {
+            return existing?[key]?.GetValue<string>() ?? "";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        {
+            // Wrong JSON type for this key in a hand-edited config — fall back rather than crash the write.
+            return "";
+        }
+    }
 
-    private static T ExistingValue<T>(JsonObject? existing, string key, T fallback) where T : struct =>
-        existing?[key]?.GetValue<T>() ?? fallback;
+    private static T ExistingValue<T>(JsonObject? existing, string key, T fallback) where T : struct
+    {
+        try
+        {
+            return existing?[key]?.GetValue<T>() ?? fallback;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        {
+            // e.g. "RetainedLogs": "three" in a hand-edited config — use the fallback instead of throwing.
+            return fallback;
+        }
+    }
 
     private static string ProtectDpapi(string secret, DpapiScope scope)
     {

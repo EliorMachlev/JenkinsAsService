@@ -85,4 +85,36 @@ public class AgentSecretFileTests : IDisposable
         sids.Should().Contain(admins);
         sids.Should().NotContain(users, "the Users group must not be able to read the JNLP secret");
     }
+
+    [Fact]
+    public void Write_grants_the_writing_identity_write_and_delete_rights()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return; // ACL hardening is a Windows-only operation
+        }
+
+        var path = AgentSecretFile.Write(_tempDir, "secret");
+
+        var current = WindowsIdentity.GetCurrent().User!;
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+
+        // When the writer is its own (non-SYSTEM, non-Admins) identity, it must be able to overwrite the
+        // file on the next agent restart and delete it at shutdown — otherwise a low-privilege service
+        // account (e.g. NT SERVICE\Jenkins) is locked out after the first launch.
+        if (current == system || current == admins)
+        {
+            return; // FullControl already covers write/delete via the SYSTEM/Admins ACEs
+        }
+
+        var rule = new FileInfo(path).GetAccessControl()
+            .GetAccessRules(true, false, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .Single(r => ((SecurityIdentifier)r.IdentityReference) == current);
+
+        const FileSystemRights required = FileSystemRights.WriteData | FileSystemRights.Delete;
+        (rule.FileSystemRights & required).Should().Be(required,
+            "the writing identity must be able to overwrite and delete its own secret file");
+    }
 }

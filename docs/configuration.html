@@ -68,7 +68,7 @@
             <td><code>Connection:Url</code></td>
             <td><strong>Yes</strong></td>
             <td>&mdash;</td>
-            <td>Full Jenkins URL including port. Must include an explicit port &mdash; default ports (80/443) are rejected. Example: <code>https://jenkins.example.com:8443</code></td>
+            <td>Full Jenkins URL including port. The port must be written explicitly &mdash; a URL with no port is rejected, but an explicitly-specified standard port (<code>:443</code>/<code>:80</code>, e.g. a reverse-proxied controller) is accepted. Example: <code>https://jenkins.example.com:8443</code></td>
           </tr>
           <tr>
             <td><code>Connection:Method</code></td>
@@ -164,7 +164,7 @@
             <td><code>Recovery:MaxRetries</code></td>
             <td>No</td>
             <td><code>0</code></td>
-            <td>Maximum auto-recovery attempts before the watchdog gives up. <code>0</code> = infinite retries (recommended).</td>
+            <td>Maximum consecutive agent <em>crashes</em> before the watchdog gives up and stops the service (so Windows Service Recovery / SCM can act, instead of leaving a dead agent behind a still-running service). A controller that is merely unreachable is retried indefinitely and does <strong>not</strong> count toward this limit. <code>0</code> = infinite (recommended).</td>
           </tr>
         </tbody>
       </table>
@@ -223,13 +223,12 @@
     C -->|Yes| E{Secret:Value filled?}
     E -->|No| D
     E -->|Yes| F["Parse URL via System.Uri"]
-    F --> G{Explicit port?}
-    G -->|No / default port| D
+    F --> G{Port written explicitly?}
+    G -->|No port specified| D
     G -->|Yes| H[Resolve Java path]
-    H --> I["Test TCP connectivity (2s timeout)"]
-    I -->|Fail| D
-    I -->|Pass| J["Download agent.jar (ETag cached)"]
-    J --> K[Start agent + watchdog]</pre>
+    H -->|Not found| D
+    H -->|Found| J["Enter supervision loop: connect &rarr; download agent.jar (ETag) &rarr; start, retrying with backoff"]
+    J --> K[Supervise: restart on crash; give up only after MaxRetries consecutive crashes]</pre>
 
     <h2 id="java-path-resolution">Java Path Resolution</h2>
     <p>The service resolves the Java executable in this order:</p>
@@ -243,8 +242,8 @@
     <h2 id="url-validation">URL Validation</h2>
     <p>The <code>Connection:Url</code> is parsed using <code>System.Uri</code>:</p>
     <ul>
-      <li>Must be a valid URI (parse failure &rarr; error)</li>
-      <li>Must include an explicit port &mdash; <code>Uri.IsDefaultPort</code> rejects 80/443 since Jenkins typically runs on non-standard ports</li>
+      <li>Must be a valid absolute URI (parse failure &rarr; a clear configuration error)</li>
+      <li>The port must be written explicitly in the URL. A URL with no port is rejected; an explicitly-specified port is accepted even when it equals the scheme default (<code>:443</code>/<code>:80</code>), so a reverse-proxied controller on a standard port works.</li>
       <li>TCP connectivity is tested asynchronously with a 2-second timeout</li>
     </ul>
 

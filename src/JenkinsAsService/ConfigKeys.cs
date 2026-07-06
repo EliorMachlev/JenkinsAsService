@@ -12,6 +12,9 @@ internal static class ConfigKeys
 {
     internal const string Section = "Jenkins";
 
+    /// <summary>Top-level telemetry section (sibling of <see cref="Section"/>, binds to <c>TelemetrySettings</c>).</summary>
+    internal const string TelemetrySection = "Telemetry";
+
     internal static class Connection
     {
         internal const string Name = "Connection";

@@ -146,6 +146,44 @@ public class HttpJarDownloaderTests : IDisposable
         File.Exists(JarPath).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task Download_throws_on_500_and_leaves_previous_jar_and_etag_intact()
+    {
+        File.WriteAllText(JarPath, "GOODJAR");
+        File.WriteAllText(ETagPath, ETagV1);
+
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+        var act = () => CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+        File.ReadAllText(JarPath).Should().Be("GOODJAR", "a failed download must not overwrite the good jar");
+        File.ReadAllText(ETagPath).Should().Be(ETagV1);
+        File.Exists(JarPath + ".tmp").Should().BeFalse("no partial temp file should be left behind");
+    }
+
+    [Fact]
+    public async Task Download_mid_stream_failure_does_not_corrupt_the_existing_jar()
+    {
+        // A jar the JVM has been launching happily is already on disk.
+        File.WriteAllText(JarPath, "GOODJAR");
+        File.WriteAllText(ETagPath, ETagV1);
+
+        // Server responds 200 but the body stream faults partway through the copy.
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new ThrowingStream(Encoding.UTF8.GetBytes("PARTIAL"), throwAfter: 3))
+        });
+
+        var act = () => CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        // StreamContent.CopyToAsync wraps the underlying IOException in HttpRequestException.
+        (await act.Should().ThrowAsync<HttpRequestException>()).WithInnerException<IOException>();
+        File.ReadAllText(JarPath).Should().Be("GOODJAR",
+            "a truncated download must never replace the previous, complete jar");
+        File.Exists(JarPath + ".tmp").Should().BeFalse("the partial temp file must be cleaned up");
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
@@ -154,5 +192,42 @@ public class HttpJarDownloaderTests : IDisposable
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(_responder(request));
+    }
+
+    // Yields a few bytes then throws, to simulate a network drop partway through the body.
+    private sealed class ThrowingStream : Stream
+    {
+        private readonly byte[] _data;
+        private readonly int _throwAfter;
+        private int _position;
+
+        public ThrowingStream(byte[] data, int throwAfter)
+        {
+            _data = data;
+            _throwAfter = throwAfter;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_position >= _throwAfter)
+            {
+                throw new IOException("simulated connection reset");
+            }
+
+            var toCopy = Math.Min(count, _throwAfter - _position);
+            Array.Copy(_data, _position, buffer, offset, toCopy);
+            _position += toCopy;
+            return toCopy;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _data.Length;
+        public override long Position { get => _position; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

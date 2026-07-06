@@ -72,19 +72,28 @@ internal static class AgentSecretFile
             var security = new FileSecurity();
             // Break inheritance and drop inherited rights so only the explicit grants below apply.
             security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-            security.SetOwner(admins);
+
+            // NB: do NOT reassign the owner here. This file is created at runtime by the low-privilege
+            // service account (NT SERVICE\Jenkins), which owns it. Setting the owner to Administrators
+            // requires SeRestorePrivilege (or Administrators membership) that the service account lacks —
+            // SetAccessControl would throw and the entire DACL below (Users-denial + the writer's Modify
+            // grant) would be silently lost via the catch. Breaking inheritance + the explicit ACEs below
+            // already isolate the secret; owner staying as the trusted service account is acceptable.
 
             security.AddAccessRule(new FileSystemAccessRule(
                 system, FileSystemRights.FullControl, AccessControlType.Allow));
             security.AddAccessRule(new FileSystemAccessRule(
                 admins, FileSystemRights.FullControl, AccessControlType.Allow));
 
-            // The writing identity (the service account) must be able to read the file it just wrote.
+            // The writing identity (the service account) rewrites this file on every agent (re)start and
+            // deletes it at shutdown, so it needs Modify — not just Read. A low-privilege virtual account
+            // (e.g. NT SERVICE\Jenkins) is not in Administrators, so without an explicit write/delete grant
+            // the truncate-overwrite on the first watchdog restart fails with UnauthorizedAccessException.
             using var current = WindowsIdentity.GetCurrent();
             if (current.User is not null && current.User != system && current.User != admins)
             {
                 security.AddAccessRule(new FileSystemAccessRule(
-                    current.User, FileSystemRights.Read, AccessControlType.Allow));
+                    current.User, FileSystemRights.Modify, AccessControlType.Allow));
             }
 
             new FileInfo(path).SetAccessControl(security);

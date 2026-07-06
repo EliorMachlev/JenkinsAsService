@@ -107,7 +107,7 @@
           </tr>
           <tr>
             <td><code>Connection:Url must include an explicit port</code></td>
-            <td>URL uses default port (80/443)</td>
+            <td>URL has no port at all (an explicit <code>:443</code>/<code>:80</code> is accepted)</td>
             <td>Add an explicit port, e.g. <code>https://jenkins.example.com:8443</code></td>
           </tr>
         </tbody>
@@ -191,8 +191,8 @@
 
     <ul>
       <li>Check watchdog log entries: search for <code>Watchdog:</code> in <code>agent.log</code></li>
-      <li>The watchdog will auto-recover with exponential backoff</li>
-      <li>If <code>Watchdog: Max retries (N) exceeded</code> appears, the issue is persistent &mdash; check:
+      <li>The watchdog will auto-recover with exponential backoff. Note a controller that is merely <em>unreachable</em> is retried indefinitely and does not count toward <code>MaxRetries</code> &mdash; only real agent crashes do.</li>
+      <li>If <code>Watchdog: Max retries (N) exceeded &mdash; the agent keeps crashing. Stopping the service.</code> appears, consecutive crashes hit the limit and the service <strong>stops itself</strong> so Windows Service Recovery can restart it (see <a href="#service-recovery-windows-level">Service Recovery</a>). Set <code>Recovery:MaxRetries</code> to <code>0</code> for infinite retries. The issue is persistent &mdash; check:
         <ul>
           <li><code>Connection:AgentName</code> matches the node name in Jenkins <strong>exactly</strong> (case-sensitive)</li>
           <li><code>Secret:Value</code> is correct (regenerate in Jenkins if unsure)</li>
