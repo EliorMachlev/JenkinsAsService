@@ -36,7 +36,17 @@ internal sealed class AgentProcessLauncher : IAgentProcessLauncher
     public IAgentProcess Start(ProcessStartInfo startInfo, Action<string> onOutputLine)
     {
         var handle = new SystemAgentProcess(startInfo, onOutputLine);
-        handle.Start();
+        try
+        {
+            handle.Start();
+        }
+        catch
+        {
+            // Start failed (bad path, access denied) — don't leak the undisposed Process handle.
+            handle.Dispose();
+            throw;
+        }
+
         return handle;
     }
 
