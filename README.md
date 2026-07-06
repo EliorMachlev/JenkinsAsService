@@ -27,7 +27,7 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **CLEF JSON mode** — machine-parseable compact log format for Seq, Datadog, or any log aggregator
 - **OpenTelemetry metrics** — opt-in OTLP export: restart counter, SEVERE event counter, .NET runtime metrics
 - **Secret redaction** — agent secrets are scrubbed from all log output
-- **142 unit tests** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness), CI on every push
+- **143 unit tests** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness), CI on every push
 - **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy; all actions SHA-pinned
 - **Single-file deploy** — self-contained `.exe` with R2R, compression, and embedded PDB symbols
 - **Dual-arch releases** — x64 + x86 MSI installers, 7z/RAR archives, SHA256 checksums

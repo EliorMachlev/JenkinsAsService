@@ -142,7 +142,9 @@
     <p>The key distinction is <strong>crash vs. unreachable</strong>: only real agent <em>crashes</em> count toward <code>MaxRetries</code>. A controller that is simply unreachable is retried in bring-up indefinitely and never trips give-up, so a maintenance window can't permanently stop the service. When consecutive crashes <em>do</em> exceed <code>MaxRetries</code>, the loop calls <code>IHostApplicationLifetime.StopApplication()</code> so the service actually stops (and Windows Service Recovery / SCM can act) instead of leaving a dead agent behind a still-<code>RUNNING</code> service.</p>
 
     <pre class="mermaid">flowchart TD
-    S[Supervision Loop] --> Q{Agent running?}
+    S[Supervision Loop] --> SG{Stopping or cancelled?}
+    SG -->|Yes| SX["Kill any live agent (reaps a late-started one), return"]
+    SG -->|No| Q{Agent running?}
     Q -->|No — bring-up| BU["Backoff, then: TCP connectivity → ETag conditional GET agent.jar → start"]
     BU -->|Unreachable or start failed| R1[Retry indefinitely — does NOT count toward MaxRetries]
     R1 --> S
@@ -161,6 +163,7 @@
       <li><strong>Crash counter:</strong> incremented only on a real agent exit; reset to <code>0</code> after 60s of stability. <code>MaxRetries = 0</code> means infinite (default).</li>
       <li><strong>Unreachable controller:</strong> retried forever in bring-up without incrementing the crash counter &mdash; outages never cause a permanent give-up.</li>
       <li><strong>Exit signal:</strong> the launcher captures its exit <code>TaskCompletionSource</code> in a local (not a shared field), so a late exit from a killed process can't complete a newer process's signal and trigger a spurious restart.</li>
+      <li><strong>Shutdown gate:</strong> every pass through the loop top checks <code>_stopping</code>/cancellation and kills (idempotently) before returning. This reaps an agent that bring-up started <em>after</em> <code>StopAsync</code>'s own kill ran (which was a no-op while nothing was running yet), so a stop during bring-up can't orphan a freshly launched <code>java.exe</code>. The loop also snapshots the agent handle per iteration &mdash; <code>StopAsync</code> runs on another thread and nulls the shared field.</li>
       <li><strong>Backoff:</strong> 10s &rarr; 20s &rarr; 40s &rarr; 80s &rarr; ... capped at 300s.</li>
       <li><strong>Auto-transport fallback:</strong> on a fast crash in <code>Auto</code> mode, the next bring-up toggles WebSocket &harr; direct-TCP.</li>
       <li><strong>SEVERE counter:</strong> <code>_severeCount</code> is <code>Interlocked.Increment</code>-ed per SEVERE line; read and reset via <code>Interlocked.Exchange</code> on each exit.</li>
@@ -300,57 +303,76 @@
 
     <h2 id="testing">Testing</h2>
 
-    <p>59 unit tests in <code>tests/JenkinsAsService.Tests/</code>:</p>
+    <p>143 unit tests across 19 test classes in <code>tests/JenkinsAsService.Tests/</code> (count grows with the suite &mdash; trust the test runner over this page). One class per unit under test:</p>
 
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>Test Class</th>
-            <th>Tests</th>
             <th>Coverage</th>
           </tr>
         </thead>
         <tbody>
           <tr>
+            <td><code>SupervisionLoopTests</code></td>
+            <td>End-to-end watchdog via a fake process launcher with millisecond timing: restart-on-crash, give-up-and-stop after MaxRetries, unreachable-controller never gives up, stop-during-bring-up reaps a late-started agent</td>
+          </tr>
+          <tr>
+            <td><code>WatchdogTimingTests</code></td>
+            <td>Exponential backoff curve + 300s cap; MaxRetries boundary semantics (0 = infinite)</td>
+          </tr>
+          <tr>
+            <td><code>ConnectionMethodTests</code></td>
+            <td>Auto/WebSocket/Https initial transport, fallback toggling, ShouldFallback decision matrix</td>
+          </tr>
+          <tr>
+            <td><code>ConfigBindingTests</code></td>
+            <td>Real IConfiguration binding of the nested Jenkins schema (all three enums) and the shipped appsettings.json</td>
+          </tr>
+          <tr>
             <td><code>ValidateSettingsTests</code></td>
-            <td>6</td>
             <td>Empty URL/secret, missing port, explicit standard port accepted, malformed URL (friendly error), valid settings, SecretMode default</td>
           </tr>
           <tr>
             <td><code>ParseArgumentsTests</code></td>
-            <td>7</td>
-            <td>Null, whitespace, simple split, quoted args, extra whitespace, single arg, escaped quotes</td>
+            <td>CustomArguments splitting: quoted args, escaped quotes, whitespace, null/empty</td>
           </tr>
           <tr>
             <td><code>ResolveJavaPathTests</code></td>
-            <td>5</td>
-            <td>No java, bad paths, configured path, JAVA_HOME/bin, priority order</td>
+            <td>Configured path &rarr; JAVA_HOME &rarr; JAVA_HOME\bin priority order and failure</td>
           </tr>
           <tr>
             <td><code>ParseAgentOutputTests</code></td>
-            <td>6</td>
-            <td>INFO/WARNING/SEVERE prefix parsing, debug mode, non-debug mode, whitespace lines</td>
+            <td>INFO/WARNING/SEVERE prefix parsing, debug mode routing, whitespace lines</td>
+          </tr>
+          <tr>
+            <td><code>SanitizeEnvironmentTests</code></td>
+            <td>Deny-by-default env scrub, allow-list survival, extra-allowed pass-through</td>
           </tr>
           <tr>
             <td><code>UpdateSecretCommandTests</code></td>
-            <td>17</td>
-            <td>Help, silent mode validation, ParseMode, file/env secret input, impersonation, unknown option</td>
+            <td>Help, silent-mode validation, ParseMode/ParseDpapiScope, file/env secret input, impersonation guards, unknown option</td>
           </tr>
           <tr>
             <td><code>HttpJarDownloaderTests</code></td>
-            <td>5</td>
-            <td>200 download + ETag save, 304 skip, If-None-Match header, 200 without ETag, orphan guard</td>
+            <td>200 download + ETag save, 304 skip, If-None-Match, orphan-etag guard, 500 leaves old jar intact, mid-stream failure can't corrupt the jar (atomic temp-file move)</td>
           </tr>
           <tr>
-            <td><code>SecretResolverTests</code></td>
-            <td>6</td>
-            <td>Unprotected, DPAPI decrypt, DPAPI invalid base64, env var missing, credential manager missing, empty secret</td>
+            <td><code>SecretResolverTests</code> / <code>SecretWriterTests</code></td>
+            <td>Per-mode round-trips (DPAPI machine/user, unprotected), missing env var/credential errors, nested-config preservation, wrong-typed existing fields fall back instead of crashing</td>
           </tr>
           <tr>
-            <td><code>SecretWriterTests</code></td>
-            <td>3</td>
-            <td>DPAPI write, unprotected write, preserve existing fields</td>
+            <td><code>TpmSecretProtectorTests</code></td>
+            <td>TPM round-trip, base64/missing-key errors, virtual service-account SID computation (skips silently without a TPM &mdash; treat green as "no regression", not "TPM verified")</td>
+          </tr>
+          <tr>
+            <td><code>AgentSecretFileTests</code> / <code>ConfigAclHardenerTests</code></td>
+            <td>Secret file write/overwrite/delete, ACL: inheritance broken, Users denied (incl. removing a seeded Users grant), writing identity keeps write+delete rights</td>
+          </tr>
+          <tr>
+            <td><code>CertificateThumbprintValidatorTests</code> / <code>ProcessMitigationsTests</code> / <code>DataPathsTests</code></td>
+            <td>Thumbprint normalization/pinning match, mitigation policy application, data-directory resolution/expansion</td>
           </tr>
         </tbody>
       </table>

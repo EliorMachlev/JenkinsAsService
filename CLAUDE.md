@@ -59,6 +59,8 @@ Key invariants (each has regression tests — don't regress them):
 - **Give-up stops the service:** exceeding `MaxRetries` calls `IHostApplicationLifetime.StopApplication()` so SCM/Windows Service Recovery can act — never leave a dead agent behind a `RUNNING` service by just returning from the loop.
 - **Exit signal lives in the launcher:** the exit `TaskCompletionSource` is captured in a local inside `AgentProcessLauncher`, not a shared field — a late exit from a killed process must not complete a newer process's signal (that caused spurious restarts).
 - **Clean shutdown ≠ crash:** `StopAsync` sets `_stopping` before killing, so the kill-induced exit isn't counted/recovered; it also deletes the on-disk secret file.
+- **Shutdown gate reaps late-started agents:** the loop is `while (true)` with a single `_stopping || cancelled → KillAgent(); return` gate at the top. Bring-up can start an agent *after* `StopAsync`'s own `KillAgent` ran (it was a no-op while `_agent` was null); without the gate that agent is orphaned past service shutdown. Don't convert the loop back to `while (!ct.IsCancellationRequested)`.
+- **Never dereference the `_agent` field after a null-check** — `StopAsync` (another thread) nulls it via `KillAgent`. Snapshot `var agent = _agent` per iteration and use the local.
 - **Auto transport fallback:** in `Connection:Method = Auto`, a *fast* crash toggles WebSocket ↔ direct-TCP on the next bring-up; a run that stabilised then died stays on the same transport.
 - Timing (`_stabilityMs`/backoff) is injectable via `UseFastTimingForTests(...)`; `ComputeBackoffDelaySeconds`/`HasExceededMaxRetries` are `internal static` pure functions.
 
@@ -83,7 +85,7 @@ Settings live under the `Jenkins` section of `appsettings.json`, grouped into su
 
 ## Testing
 
-xUnit + NSubstitute + FluentAssertions; **142 tests** currently (trust the runner, not any hard-coded number in docs). Test classes mirror units. Notable:
+xUnit + NSubstitute + FluentAssertions; **143 tests** currently (trust the runner, not any hard-coded number in docs). Test classes mirror units. Notable:
 - `SupervisionLoopTests` drives the full watchdog end-to-end via `FakeAgentProcess`/`FakeAgentProcessLauncher` with millisecond timing (restart-on-crash, give-up-and-stop, unreachable-never-gives-up).
 - `WatchdogTimingTests` — pure backoff-curve + max-retry unit tests.
 - `ConfigBindingTests` — binds the nested schema (incl. all three enums) and the shipped `appsettings.json` through real `IConfiguration`.
@@ -104,12 +106,12 @@ Add tests alongside new logic; run `dotnet test -c Release` and confirm green be
 
 ## Documentation
 
-- **Official docs (in-repo, published site):** `docs/*.html`. `configuration.html` is authoritative for settings. `architecture.html`/`overview.html`/`api-reference.html` still lag on some internals (old file list, aggregate test counts) — verify against code before trusting them. When code and docs disagree, **the code wins** — and update the affected doc.
+- **Official docs (in-repo, published site):** `docs/*.html`. `configuration.html` is authoritative for settings. `architecture.html`/`overview.html`/`api-reference.html` may lag on some internals (notably `api-reference.html`'s file list) — verify against code before trusting them. When code and docs disagree, **the code wins** — and update the affected doc.
 - **Owner's private notes (not in repo):** `Q:\Git\Obsidian Vaults\eliormachlev\Docs\Projects\Developments\JenkinsAsService\`.
 - `README.md`, `Security.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` at root are current.
 
 ## Current state / open items
 
-- Active branch: `feature/hardening`. A large hardening batch landed (commit `66d1ab7`): secret-file ACL fix, watchdog resilience rewrite + process seam, installer security defaults, +20 tests, doc updates.
+- The hardening batch (PR #47 — secret-file ACL fix, watchdog resilience rewrite + process seam, installer security defaults, +20 tests, docs) is **merged to `main`**. A follow-up bug-review pass (PR #48, branch `hotfix/Fable`) fixed two shutdown races in the supervision loop (orphaned agent on stop-during-bring-up; `_agent` NRE) plus a Process-handle leak and an `update-secret --secret-file` delete crash.
 - **Deferred (by decision, not oversight):** release-artifact **code signing** (waiting on a free OSS cert; CI step not yet wired); **post-quantum at-rest encryption** (ML-KEM/ML-DSA declined — rotate secrets at the PQC transition instead); making plain-`http` a hard failure (still only warns); visible xUnit skips for TPM tests (needs a package or xUnit v3).
 - **Not yet done against real infra:** a real MSI install validating ACL/TPM-decrypt, and live WebSocket/`Auto`-fallback verification against a controller.
