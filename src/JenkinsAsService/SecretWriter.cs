@@ -37,25 +37,7 @@ public static class SecretWriter
         var jenkins = BuildJenkinsSection(
             configSecret, mode, server, agentName, javaPath, dpapiScope, controllerCertThumbprint, existingJenkins);
 
-        var root = new JsonObject();
-        if (existingRoot != null)
-        {
-            foreach (var kvp in existingRoot)
-            {
-                if (kvp.Key != ConfigSectionName)
-                {
-                    root[kvp.Key] = kvp.Value?.DeepClone();
-                }
-            }
-        }
-
-        root[ConfigSectionName] = jenkins;
-
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        // basePath is always the trusted application base directory (AppContext.BaseDirectory);
-        // no CLI option sets it and the filename is a constant, so there is no path-traversal vector.
-        // nosemgrep: csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine
-        File.WriteAllText(configPath, root.ToJsonString(options), Encoding.UTF8);
+        WriteRoot(configPath, existingRoot, jenkins);
 
         if (!string.IsNullOrWhiteSpace(serviceAccount))
         {
@@ -86,6 +68,61 @@ public static class SecretWriter
         }
         agent[ConfigKeys.Agent.DataDirectory] = dataDirectory;
 
+        WriteRoot(configPath, existingRoot, jenkins);
+    }
+
+    /// <summary>
+    /// Surgically merges the supplied optional fields into the <c>Jenkins</c> section of appsettings.json,
+    /// creating any missing sub-section. Every field not supplied (null) — and every other top-level
+    /// section, plus the already-written secret — is preserved verbatim. Used by the installer's advanced
+    /// custom actions. The file's existing ACL is preserved (File.WriteAllText truncates in place).
+    /// </summary>
+    public static void MergeConfig(string basePath, ConfigMergeFields fields)
+    {
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        var existingRoot = ReadExistingRoot(configPath);
+        var jenkins = existingRoot?[ConfigSectionName] is JsonObject existingJenkins
+            ? (JsonObject)existingJenkins.DeepClone()
+            : new JsonObject();
+
+        if (fields.Method is { } method)
+            GetOrCreate(jenkins, ConfigKeys.Connection.Name)[ConfigKeys.Connection.Method] = method.ToString();
+        if (fields.DpapiScope is { } scope)
+            GetOrCreate(jenkins, ConfigKeys.Secret.Name)[ConfigKeys.Secret.DpapiScope] = scope.ToString();
+        if (fields.ViaFile is { } viaFile)
+            GetOrCreate(jenkins, ConfigKeys.Secret.Name)[ConfigKeys.Secret.ViaFile] = viaFile;
+        if (fields.CustomArguments is { } customArgs)
+            GetOrCreate(jenkins, ConfigKeys.Agent.Name)[ConfigKeys.Agent.CustomArguments] = customArgs;
+        if (fields.SanitizeEnvironment is { } sanitize)
+            GetOrCreate(jenkins, ConfigKeys.Hardening.Name)[ConfigKeys.Hardening.SanitizeEnvironment] = sanitize;
+        if (fields.AllowedEnvironmentVariables is { } allowed)
+            GetOrCreate(jenkins, ConfigKeys.Hardening.Name)[ConfigKeys.Hardening.AllowedEnvironmentVariables] = allowed;
+        if (fields.DebugMode is { } debug)
+            GetOrCreate(jenkins, ConfigKeys.Logging.Name)[ConfigKeys.Logging.DebugMode] = debug;
+        if (fields.CompactLog is { } compact)
+            GetOrCreate(jenkins, ConfigKeys.Logging.Name)[ConfigKeys.Logging.CompactLog] = compact;
+        if (fields.RetainedLogs is { } retained)
+            GetOrCreate(jenkins, ConfigKeys.Logging.Name)[ConfigKeys.Logging.RetainedLogs] = retained;
+        if (fields.MaxRetries is { } maxRetries)
+            GetOrCreate(jenkins, ConfigKeys.Recovery.Name)[ConfigKeys.Recovery.MaxRetries] = maxRetries;
+
+        WriteRoot(configPath, existingRoot, jenkins);
+    }
+
+    private static JsonObject GetOrCreate(JsonObject parent, string key)
+    {
+        if (parent[key] is JsonObject existing)
+        {
+            return existing;
+        }
+        var created = new JsonObject();
+        parent[key] = created;
+        return created;
+    }
+
+    // Rebuilds the root: every non-Jenkins top-level section is preserved, the Jenkins section replaced.
+    private static void WriteRoot(string configPath, JsonObject? existingRoot, JsonObject jenkins)
+    {
         var root = new JsonObject();
         if (existingRoot != null)
         {
@@ -267,4 +304,22 @@ public static class SecretWriter
 
         return CredTargetName;
     }
+}
+
+/// <summary>
+/// Optional configuration fields for <see cref="SecretWriter.MergeConfig"/>. Each member is nullable;
+/// a <c>null</c> member leaves that field unchanged in the existing appsettings.json.
+/// </summary>
+public sealed record ConfigMergeFields
+{
+    public ConnectionMethod? Method { get; init; }
+    public DpapiScope? DpapiScope { get; init; }
+    public bool? ViaFile { get; init; }
+    public string? CustomArguments { get; init; }
+    public bool? SanitizeEnvironment { get; init; }
+    public string? AllowedEnvironmentVariables { get; init; }
+    public bool? DebugMode { get; init; }
+    public bool? CompactLog { get; init; }
+    public int? RetainedLogs { get; init; }
+    public int? MaxRetries { get; init; }
 }
