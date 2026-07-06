@@ -134,7 +134,7 @@
           <Publish Event="NewDialog" Value="JenkinsConfigDlg" />
         </Control>
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
-          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+          <Publish Event="NewDialog" Value="AdvancedOptionsDlg" />
         </Control>
         <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
           <Publish Event="SpawnDialog" Value="CancelDlg" />
@@ -152,10 +152,72 @@
         </Control>
       </Dialog>
 
+      <!-- ════════════════════════════════════════════════════════════════════
+           Page 3: Advanced Options
+           ════════════════════════════════════════════════════════════════════ -->
+      <Dialog Id="AdvancedOptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
+
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15"
+                 Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Advanced Options" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="300" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="Optional runtime, logging and recovery settings. Defaults are fine for most installs." />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+        <!-- Data directory -->
+        <Control Id="DataLabel" Type="Text" X="15" Y="60" Width="130" Height="13" NoPrefix="yes"
+                 Text="Data Directory (opt):" />
+        <Control Id="DataEdit" Type="Edit" X="150" Y="58" Width="205" Height="16" Property="DATAFOLDER" />
+
+        <!-- Custom java args -->
+        <Control Id="ArgsLabel" Type="Text" X="15" Y="84" Width="130" Height="13" NoPrefix="yes"
+                 Text="Custom Java Args (opt):" />
+        <Control Id="ArgsEdit" Type="Edit" X="150" Y="82" Width="205" Height="16" Property="JENKINS_CUSTOM_ARGS" />
+
+        <!-- Allowed env vars -->
+        <Control Id="EnvLabel" Type="Text" X="15" Y="108" Width="130" Height="13" NoPrefix="yes"
+                 Text="Allowed Env Vars (opt):" />
+        <Control Id="EnvEdit" Type="Edit" X="150" Y="106" Width="205" Height="16" Property="JENKINS_ALLOWED_ENV" />
+
+        <!-- Checkboxes -->
+        <Control Id="SanitizeCheck" Type="CheckBox" X="15" Y="132" Width="340" Height="16"
+                 Property="JENKINS_SANITIZE_ENV" CheckBoxValue="1"
+                 Text="Sanitize the agent child environment (recommended)" />
+        <Control Id="DebugCheck" Type="CheckBox" X="15" Y="152" Width="340" Height="16"
+                 Property="JENKINS_DEBUG" CheckBoxValue="1"
+                 Text="Enable verbose (debug) Java agent logging" />
+        <Control Id="CompactCheck" Type="CheckBox" X="15" Y="172" Width="340" Height="16"
+                 Property="JENKINS_COMPACT_LOG" CheckBoxValue="1"
+                 Text="Use compact JSON log format" />
+
+        <!-- Numeric fields on one row -->
+        <Control Id="RetainLabel" Type="Text" X="15" Y="198" Width="120" Height="13" NoPrefix="yes"
+                 Text="Retained log files:" />
+        <Control Id="RetainEdit" Type="Edit" X="138" Y="196" Width="40" Height="16" Property="JENKINS_RETAINED_LOGS" />
+        <Control Id="RetryLabel" Type="Text" X="195" Y="198" Width="120" Height="13" NoPrefix="yes"
+                 Text="Max retries (0=inf):" />
+        <Control Id="RetryEdit" Type="Edit" X="315" Y="196" Width="40" Height="16" Property="JENKINS_MAX_RETRIES" />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+          <Publish Event="NewDialog" Value="SecurityOptionsDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+      </Dialog>
+
       <!-- ─── Wire into WixUI_InstallDir sequence ─── -->
       <!-- Default: License → InstallDirDlg (no override needed, WixUI_InstallDir handles it) -->
       <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="JenkinsConfigDlg" Order="2" />
-      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="SecurityOptionsDlg" Order="2" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="AdvancedOptionsDlg" Order="2" />
 
     </UI>
   </Fragment>
