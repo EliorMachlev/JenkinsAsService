@@ -16,7 +16,16 @@ public static class UpdateSecretCommand
           --secret-file <path>    Read secret from file (file is deleted after reading)
           --secret-env <var>      Read secret from named environment variable
           --url <value>           Jenkins controller address (include port)
-          --mode <value>          Protection mode: Dpapi, EnvironmentVariable, CredentialManager, Unprotected
+          --mode <value>          Protection mode: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected
+                                  Tpm encrypts with a non-exportable TPM-resident key (pass --service-account
+                                  so the service can decrypt at runtime).
+          --dpapi-scope <value>   DPAPI scope when --mode Dpapi: Machine (default) or User.
+                                  User-scope requires writing as the service account (see --impersonate).
+          --thumbprint <value>    SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
+          --service-account <acct> Service account (e.g. 'NT SERVICE\Jenkins') granted read on the
+                                  written config; appsettings.json ACL is hardened to deny Users.
+          --set-data-dir <path>   Only set Jenkins:DataDirectory in appsettings.json, then exit (used
+                                  by the installer; the writable data dir, separate from the binary).
           --agent-name <value>    Agent node label (default: hostname)
           --java-path <value>     Java installation directory (default: JAVA_HOME)
           --impersonate           Run Credential Manager write as a different user account.
@@ -31,7 +40,9 @@ public static class UpdateSecretCommand
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
 
     private const string ConfigFileName = "appsettings.json";
-    private const string ConfigSectionName = "Jenkins";
+    private const string ConfigSectionName = ConfigKeys.Section;
+    private const string EventLogSource = EventLogSourceInstaller.DefaultSource;
+    private const string EventLogName = EventLogSourceInstaller.DefaultLogName;
     private const char DomainSeparator = '\\';
     private const string LocalDomain = ".";
 
@@ -47,6 +58,10 @@ public static class UpdateSecretCommand
         public string? SecretEnv;
         public string? Url;
         public SecretMode? Mode;
+        public DpapiScope? DpapiScope;
+        public string? Thumbprint;
+        public string? ServiceAccount;
+        public string? SetDataDir;
         public string? AgentName;
         public string? JavaPath;
         public string? Username;
@@ -73,6 +88,15 @@ public static class UpdateSecretCommand
         if (parsed is null)
         {
             return 1;
+        }
+
+        // Focused operation: just persist the data directory and exit. Used by the installer's second
+        // custom action — the value can't be appended to the main write command (MSI 255-char CA limit).
+        if (parsed.SetDataDir is not null)
+        {
+            SecretWriter.SetDataDirectory(basePath, parsed.SetDataDir);
+            Console.WriteLine($"Data directory set to {parsed.SetDataDir}");
+            return 0;
         }
 
         return parsed.Silent
@@ -117,6 +141,18 @@ public static class UpdateSecretCommand
             case "--mode":
                 state.Mode = ParseMode(Next(args, ref i));
                 return true;
+            case "--dpapi-scope":
+                state.DpapiScope = ParseDpapiScope(Next(args, ref i));
+                return true;
+            case "--thumbprint":
+                state.Thumbprint = Next(args, ref i);
+                return true;
+            case "--service-account":
+                state.ServiceAccount = Next(args, ref i);
+                return true;
+            case "--set-data-dir":
+                state.SetDataDir = Next(args, ref i);
+                return true;
             case "--agent-name":
                 state.AgentName = Next(args, ref i);
                 return true;
@@ -150,6 +186,10 @@ public static class UpdateSecretCommand
 
     private static int RunSilent(string basePath, ParseState args)
     {
+        // Installer-only path: runs elevated (SYSTEM) during install, so pre-create the event source
+        // here while we have the privilege. The low-privilege service account cannot do this later.
+        EventLogSourceInstaller.Ensure(EventLogSource, EventLogName);
+
         var secret = ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv);
 
         if (string.IsNullOrWhiteSpace(secret))
@@ -175,7 +215,8 @@ public static class UpdateSecretCommand
             return RunSilentImpersonated(basePath, secret, args);
         }
 
-        SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath);
+        SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath,
+            args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
         var configPath = Path.Combine(basePath, ConfigFileName);
         Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode.Value})");
         return 0;
@@ -199,7 +240,8 @@ public static class UpdateSecretCommand
         try
         {
             RunImpersonated(args.Username, password, () =>
-                SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath));
+                SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath,
+                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
         }
         catch (InvalidOperationException ex)
         {
@@ -255,11 +297,13 @@ public static class UpdateSecretCommand
                 }
 
                 RunImpersonated(credentials.Value.Username, credentials.Value.Password, () =>
-                    SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath));
+                    SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
+                        args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
             }
             else
             {
-                SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath);
+                SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
+                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
             }
         }
         catch (InvalidOperationException ex)
@@ -332,13 +376,15 @@ public static class UpdateSecretCommand
         Console.WriteLine("  2. Environment Variable — system env var");
         Console.WriteLine("  3. Credential Manager — Windows credential vault");
         Console.WriteLine("  4. Unprotected — plaintext (dev only)");
-        Console.Write($"Select [1-4] (default: {(int)existingMode + 1}): ");
+        Console.WriteLine("  5. TPM — hardware-backed, non-exportable key (strongest; needs TPM 2.0)");
+        Console.Write("Select [1-5]: ");
         return Console.ReadLine()?.Trim() switch
         {
             "1" => SecretMode.Dpapi,
             "2" => SecretMode.EnvironmentVariable,
             "3" => SecretMode.CredentialManager,
             "4" => SecretMode.Unprotected,
+            "5" => SecretMode.Tpm,
             _ => existingMode
         };
     }
@@ -408,10 +454,10 @@ public static class UpdateSecretCommand
                 .AddJsonFile(ConfigFileName, optional: true)
                 .Build();
             var section = config.GetSection(ConfigSectionName);
-            existingServer = section["JenkinsURL"] ?? "";
-            existingAgentName = section["AgentName"] ?? "";
-            existingJavaPath = section["JavaPath"] ?? "";
-            if (Enum.TryParse<SecretMode>(section["SecretMode"], out var parsed))
+            existingServer = section[ConfigKeys.Connection.UrlPath] ?? "";
+            existingAgentName = section[ConfigKeys.Connection.AgentNamePath] ?? "";
+            existingJavaPath = section[ConfigKeys.Agent.JavaPathPath] ?? "";
+            if (Enum.TryParse<SecretMode>(section[ConfigKeys.Secret.ModePath], out var parsed))
             {
                 existingMode = parsed;
             }
@@ -497,7 +543,24 @@ public static class UpdateSecretCommand
             return mode;
         }
 
-        Console.Error.WriteLine($"Error: unknown mode '{value}'. Valid: Dpapi, EnvironmentVariable, CredentialManager, Unprotected");
+        Console.Error.WriteLine($"Error: unknown mode '{value}'. Valid: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected");
+        return null;
+    }
+
+    // Returns null on invalid input so callers can fail explicitly.
+    internal static DpapiScope? ParseDpapiScope(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (Enum.TryParse<DpapiScope>(value, ignoreCase: true, out var scope))
+        {
+            return scope;
+        }
+
+        Console.Error.WriteLine($"Error: unknown dpapi-scope '{value}'. Valid: Machine, User");
         return null;
     }
 

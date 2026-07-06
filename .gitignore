@@ -48,3 +48,7 @@ remoting/
 .claude/
 
 #Documentation - now tracked for GitHub Pages
+
+# Node tooling for docs linting (Stylelint) — never committed
+node_modules/
+package-lock.json

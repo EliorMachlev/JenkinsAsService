@@ -76,6 +76,97 @@
 
     <h2 id="common-issues">Common Issues</h2>
 
+    <h3 id="message-severity">Message reference by severity</h3>
+    <p>Log messages the service emits, by severity. <strong>Errors</strong> stop the service (or the current startup); <strong>Warnings</strong> are non-fatal &mdash; the watchdog keeps going. The topic sections below drill into the most common cases.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Log message / symptom</th>
+            <th>Type</th>
+            <th>Meaning &amp; fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>'Connection:Url' is a mandatory field</code> / <code>'Secret:Value' is a mandatory field</code></td>
+            <td>Error</td>
+            <td>A required field in <code>appsettings.json</code> is empty &mdash; fill it in.</td>
+          </tr>
+          <tr>
+            <td><code>Connection:Url must include an explicit port</code></td>
+            <td>Error</td>
+            <td>Write the port explicitly: <code>https://jenkins:8443</code>. A URL with no port is rejected; an explicit standard <code>:443</code> is accepted.</td>
+          </tr>
+          <tr>
+            <td><code>Connection:Url is not a valid absolute URL</code></td>
+            <td>Error</td>
+            <td>Malformed URL &mdash; fix the value.</td>
+          </tr>
+          <tr>
+            <td><code>Cannot find java.exe</code></td>
+            <td>Error</td>
+            <td>Set <code>Agent:JavaPath</code> to the JDK <code>bin</code> folder, or set <code>JAVA_HOME</code>.</td>
+          </tr>
+          <tr>
+            <td><code>DPAPI decryption failed</code> / <code>TPM decryption failed</code> / env var or credential not found</td>
+            <td>Error</td>
+            <td>The secret can't be decrypted or read on this machine &mdash; re-run <code>update-secret</code> (DPAPI/TPM keys are machine-bound and don't move between hosts).</td>
+          </tr>
+          <tr>
+            <td><code>Service failed &mdash; shutting down</code></td>
+            <td>Error</td>
+            <td>A non-transient failure (bad config, unresolvable secret, missing Java) &mdash; check the logged exception; the service stops so SCM recovery can restart it.</td>
+          </tr>
+          <tr>
+            <td><code>Watchdog: Failed to download or start the agent &mdash; will retry</code></td>
+            <td>Error</td>
+            <td>Jar download or process launch failed &mdash; check the jar URL, disk permissions, and Java. Retried automatically with backoff.</td>
+          </tr>
+          <tr>
+            <td><code>Watchdog: Max retries (N) exceeded &mdash; the agent keeps crashing. Stopping the service.</code></td>
+            <td>Error</td>
+            <td>A persistent crash-loop hit <code>Recovery:MaxRetries</code>; the service stops itself so Windows Service Recovery restarts it. Enable <code>DebugMode</code> and inspect the exit codes.</td>
+          </tr>
+          <tr>
+            <td><code>Connection:Url uses http &mdash; agent secret will be sent unencrypted. Consider HTTPS.</code></td>
+            <td>Warning</td>
+            <td>Plain HTTP sends the secret in cleartext. Use HTTPS. (Not blocked.)</td>
+          </tr>
+          <tr>
+            <td><code>Connectivity test to &lt;host&gt;:&lt;port&gt; timed out</code> / <code>failed</code></td>
+            <td>Warning</td>
+            <td>Controller unreachable &mdash; check firewall, DNS, the port, and that Jenkins is running.</td>
+          </tr>
+          <tr>
+            <td><code>Watchdog: Jenkins unreachable &mdash; will keep retrying.</code></td>
+            <td>Warning</td>
+            <td>Controller down during (re)connect. Retried indefinitely with backoff; does <strong>not</strong> count toward <code>MaxRetries</code>.</td>
+          </tr>
+          <tr>
+            <td><code>Watchdog: Agent emitted N SEVERE event(s) before exiting.</code></td>
+            <td>Warning</td>
+            <td>The agent logged SEVERE lines before dying &mdash; check the controller logs and that <code>AgentName</code>/<code>Secret</code> match the node exactly.</td>
+          </tr>
+          <tr>
+            <td><code>Watchdog: &lt;transport&gt; transport failed to stabilise &mdash; falling back to &lt;other&gt;.</code></td>
+            <td>Warning</td>
+            <td><code>Connection:Method = Auto</code> toggled WebSocket &harr; direct-TCP inbound. If it flip-flops, make sure the intended transport is enabled on the controller.</td>
+          </tr>
+          <tr>
+            <td><code>Could not restrict ACL on agent secret file</code></td>
+            <td>Warning</td>
+            <td>The defense-in-depth ACL couldn't be applied; the secret file is still usable and already lives in a restricted folder &mdash; check the data-folder permissions.</td>
+          </tr>
+          <tr>
+            <td>Agent connects then disconnects randomly</td>
+            <td>Warning</td>
+            <td><code>Connection:AgentName</code> and <code>Secret:Value</code> must match the Jenkins node config exactly; check network stability.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <h3 id="service-starts-and-immediately-stops">Service starts and immediately stops</h3>
 
     <p><strong>Check <code>agent.log</code> for:</strong></p>
@@ -91,23 +182,23 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>Mandatory fields (JenkinsURL, AgentSecret) are empty</code></td>
+            <td><code>Mandatory fields (Connection:Url, Secret:Value) are empty</code></td>
             <td>Config not filled in</td>
             <td>Edit <code>appsettings.json</code> and fill the <code>Jenkins</code> section</td>
           </tr>
           <tr>
-            <td><code>'JenkinsURL' is a mandatory field</code></td>
-            <td><code>JenkinsURL</code> empty</td>
+            <td><code>'Connection:Url' is a mandatory field</code></td>
+            <td><code>Connection:Url</code> empty</td>
             <td>Set the Jenkins URL in <code>appsettings.json</code></td>
           </tr>
           <tr>
-            <td><code>'AgentSecret' is a mandatory field</code></td>
-            <td><code>AgentSecret</code> empty</td>
+            <td><code>'Secret:Value' is a mandatory field</code></td>
+            <td><code>Secret:Value</code> empty</td>
             <td>Copy the secret from Jenkins node configuration</td>
           </tr>
           <tr>
-            <td><code>JenkinsURL must include an explicit port</code></td>
-            <td>URL uses default port (80/443)</td>
+            <td><code>Connection:Url must include an explicit port</code></td>
+            <td>URL has no port at all (an explicit standard <code>:443</code> is accepted)</td>
             <td>Add an explicit port, e.g. <code>https://jenkins.example.com:8443</code></td>
           </tr>
         </tbody>
@@ -176,7 +267,7 @@
           <tr>
             <td>HTTP error in log during download</td>
             <td>Jenkins URL wrong or controller down</td>
-            <td>Verify <code>JenkinsURL</code> is correct and Jenkins is running</td>
+            <td>Verify <code>Connection:Url</code> is correct and Jenkins is running</td>
           </tr>
           <tr>
             <td><code>agent.jar</code> download hangs</td>
@@ -191,11 +282,11 @@
 
     <ul>
       <li>Check watchdog log entries: search for <code>Watchdog:</code> in <code>agent.log</code></li>
-      <li>The watchdog will auto-recover with exponential backoff</li>
-      <li>If <code>Watchdog: Max retries (N) exceeded</code> appears, the issue is persistent &mdash; check:
+      <li>The watchdog will auto-recover with exponential backoff. Note a controller that is merely <em>unreachable</em> is retried indefinitely and does not count toward <code>MaxRetries</code> &mdash; only real agent crashes do.</li>
+      <li>If <code>Watchdog: Max retries (N) exceeded &mdash; the agent keeps crashing. Stopping the service.</code> appears, consecutive crashes hit the limit and the service <strong>stops itself</strong> so Windows Service Recovery can restart it (see <a href="#service-recovery-windows-level">Service Recovery</a>). Set <code>Recovery:MaxRetries</code> to <code>0</code> for infinite retries. The issue is persistent &mdash; check:
         <ul>
-          <li><code>AgentName</code> matches the node name in Jenkins <strong>exactly</strong> (case-sensitive)</li>
-          <li><code>AgentSecret</code> is correct (regenerate in Jenkins if unsure)</li>
+          <li><code>Connection:AgentName</code> matches the node name in Jenkins <strong>exactly</strong> (case-sensitive)</li>
+          <li><code>Secret:Value</code> is correct (regenerate in Jenkins if unsure)</li>
           <li>Jenkins controller logs for rejection reasons</li>
           <li>Network stability between the agent and controller</li>
         </ul>
@@ -206,9 +297,9 @@
 
     <p>If the agent repeatedly dies and recovers:</p>
     <ul>
-      <li>Enable <code>DebugMode: true</code> for detailed Java output</li>
+      <li>Enable <code>Logging:DebugMode: true</code> for detailed Java output</li>
       <li>Look for patterns in <code>agent.log</code> &mdash; the watchdog logs exit codes before each restart</li>
-      <li>Common causes: Java OOM (increase heap via <code>CustomArguments</code>), Jenkins controller restarts, network drops</li>
+      <li>Common causes: Java OOM (increase heap via <code>Agent:CustomArguments</code>), Jenkins controller restarts, network drops</li>
     </ul>
 
     <h2 id="debug-mode">Debug Mode</h2>

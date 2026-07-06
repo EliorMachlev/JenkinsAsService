@@ -14,22 +14,23 @@ public sealed class SecretResolver : ISecretResolver
 
     public string Resolve(ServiceSettings settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.AgentSecret))
+        if (string.IsNullOrWhiteSpace(settings.Secret.Value))
         {
-            throw new InvalidOperationException("'AgentSecret' is empty — nothing to resolve.");
+            throw new InvalidOperationException("'Secret:Value' is empty — nothing to resolve.");
         }
 
-        return settings.SecretMode switch
+        return settings.Secret.Mode switch
         {
-            SecretMode.Unprotected => settings.AgentSecret,
-            SecretMode.Dpapi => ResolveDpapi(settings.AgentSecret),
-            SecretMode.EnvironmentVariable => ResolveEnvironmentVariable(settings.AgentSecret),
-            SecretMode.CredentialManager => ResolveCredentialManager(settings.AgentSecret),
-            _ => throw new InvalidOperationException($"Unknown SecretMode: '{settings.SecretMode}'.")
+            SecretMode.Unprotected => settings.Secret.Value,
+            SecretMode.Dpapi => ResolveDpapi(settings.Secret.Value, settings.Secret.DpapiScope),
+            SecretMode.EnvironmentVariable => ResolveEnvironmentVariable(settings.Secret.Value),
+            SecretMode.CredentialManager => ResolveCredentialManager(settings.Secret.Value),
+            SecretMode.Tpm => TpmSecretProtector.Resolve(settings.Secret.Value),
+            _ => throw new InvalidOperationException($"Unknown SecretMode: '{settings.Secret.Mode}'.")
         };
     }
 
-    private static string ResolveDpapi(string base64Cipher)
+    private static string ResolveDpapi(string base64Cipher, DpapiScope scope)
     {
         byte[] encrypted;
         try
@@ -42,15 +43,22 @@ public sealed class SecretResolver : ISecretResolver
                 "AgentSecret is not valid Base64. Re-run the installer with DPAPI mode to re-encrypt.", ex);
         }
 
+        var protectionScope = scope == DpapiScope.User
+            ? DataProtectionScope.CurrentUser
+            : DataProtectionScope.LocalMachine;
+
         try
         {
-            var plain = ProtectedData.Unprotect(encrypted, DpapiEntropy, DataProtectionScope.LocalMachine);
+            var plain = ProtectedData.Unprotect(encrypted, DpapiEntropy, protectionScope);
             return Encoding.UTF8.GetString(plain);
         }
         catch (CryptographicException ex)
         {
-            throw new InvalidOperationException(
-                "DPAPI decryption failed. The secret was encrypted on a different machine or the key has been rotated.", ex);
+            var hint = scope == DpapiScope.User
+                ? "The secret must be encrypted by the same identity that runs the service (User-scope DPAPI). " +
+                  "Re-run 'update-secret --impersonate' as the service account."
+                : "The secret was encrypted on a different machine or the key has been rotated.";
+            throw new InvalidOperationException($"DPAPI decryption failed. {hint}", ex);
         }
     }
 
