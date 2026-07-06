@@ -10,19 +10,21 @@ using Serilog.Formatting.Compact;
 
 const string UpdateSecretCommandName = "update-secret";
 const string ConfigFileName = "appsettings.json";
-const string ConfigSectionName = "Jenkins";
-const string DebugModeKey = "DebugMode";
-const string CompactLogKey = "CompactLog";
-const string RetainedLogsKey = "RetainedLogs";
+const string ConfigSectionName = ConfigKeys.Section;
+const string DebugModeKey = ConfigKeys.Logging.DebugModePath;
+const string CompactLogKey = ConfigKeys.Logging.CompactLogPath;
+const string RetainedLogsKey = ConfigKeys.Logging.RetainedLogsPath;
+const string DataDirectoryKey = ConfigKeys.Agent.DataDirectoryPath;
+const string ControllerCertThumbprintKey = ConfigKeys.Connection.ControllerCertThumbprintPath;
 const int DefaultRetainedLogs = 3;
 const string ServiceName = "Jenkins";
-const string JarDownloaderClientName = "JarDownloader";
-const string EventLogSource = "JenkinsAsService";
-const string EventLogName = "Application";
+const string JarDownloaderClientName = HttpJarDownloader.ClientName;
+const string EventLogSource = EventLogSourceInstaller.DefaultSource;
+const string EventLogName = EventLogSourceInstaller.DefaultLogName;
 const string TextLogFileName = "agent.log";
 const string CompactLogFileName = "agent.clef";
 const long FileSizeLimitBytes = 10 * 1024 * 1024;
-const string TelemetrySectionName = "Telemetry";
+const string TelemetrySectionName = ConfigKeys.TelemetrySection;
 const string LogOutputTemplate =
     "{ProcessId} | {Timestamp:yyyy-MM-dd HH:mm:ss} | {Level} | {Message:lj}{NewLine}{Exception}";
 
@@ -48,7 +50,16 @@ var debugMode = jenkinsSection.GetValue<bool>(DebugModeKey);
 var compactLog = jenkinsSection.GetValue<bool>(CompactLogKey);
 var retainedLogs = jenkinsSection.GetValue<int?>(RetainedLogsKey) ?? DefaultRetainedLogs;
 
-Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, basePath);
+// Logs go to the writable data directory (separate from the read-only install folder), not next to
+// the binary. Resolved here so the file sink points at the same place the worker writes its artifacts.
+var dataDir = DataPaths.ResolveDataDirectory(jenkinsSection[DataDirectoryKey]);
+
+Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, dataDir);
+
+// Harden the service process: block remote/low-integrity/non-System32 DLL loads and legacy
+// extension-point injection. Affects future LoadLibrary calls in this process only (not the Java
+// child). Best-effort — never blocks startup. See ProcessMitigations for the rationale on the subset.
+ProcessMitigations.Apply(msg => Log.Warning("{Warning}", msg));
 
 try
 {
@@ -70,7 +81,7 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int retainedLogs, string basePath)
+static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int retainedLogs, string logDirectory)
 {
     var logConfig = new LoggerConfiguration()
         .MinimumLevel.Is(debugMode ? LogEventLevel.Debug : LogEventLevel.Information)
@@ -81,24 +92,30 @@ static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int reta
         .Enrich.WithMachineName()
         .Enrich.WithEnvironmentName();
 
-    ConfigureFileSink(logConfig, compactLog, retainedLogs, basePath);
+    ConfigureFileSink(logConfig, compactLog, retainedLogs, logDirectory);
 
-    return logConfig
-        .WriteTo.EventLog(
+    // The low-privilege service account cannot create the event source (HKLM write). The installer
+    // pre-creates it as SYSTEM; here we only attach the sink if the source is usable, and never let
+    // the sink attempt creation (manageEventSource: false) so startup can't fail on a registry write.
+    if (EventLogSourceInstaller.Ensure(EventLogSource, EventLogName))
+    {
+        logConfig.WriteTo.EventLog(
             source: EventLogSource,
             logName: EventLogName,
             restrictedToMinimumLevel: LogEventLevel.Warning,
-            manageEventSource: true)
-        .CreateLogger();
+            manageEventSource: false);
+    }
+
+    return logConfig.CreateLogger();
 }
 
-static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, int retainedLogs, string basePath)
+static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, int retainedLogs, string logDirectory)
 {
     if (compactLog)
     {
         logConfig.WriteTo.File(
             formatter: new CompactJsonFormatter(),
-            path: Path.Combine(basePath, CompactLogFileName),
+            path: Path.Combine(logDirectory, CompactLogFileName),
             rollingInterval: RollingInterval.Infinite,
             rollOnFileSizeLimit: true,
             fileSizeLimitBytes: FileSizeLimitBytes,
@@ -107,7 +124,7 @@ static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, in
     else
     {
         logConfig.WriteTo.File(
-            path: Path.Combine(basePath, TextLogFileName),
+            path: Path.Combine(logDirectory, TextLogFileName),
             rollingInterval: RollingInterval.Infinite,
             rollOnFileSizeLimit: true,
             fileSizeLimitBytes: FileSizeLimitBytes,
@@ -122,11 +139,30 @@ static IHost BuildHost(string[] args)
 
     builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
     builder.Services.Configure<ServiceSettings>(builder.Configuration.GetSection(ConfigSectionName));
-    builder.Services.AddHttpClient(JarDownloaderClientName)
-        .AddStandardResilienceHandler();
+
+    var pinnedThumbprint = builder.Configuration.GetSection(ConfigSectionName)[ControllerCertThumbprintKey];
+    var jarClient = builder.Services.AddHttpClient(JarDownloaderClientName);
+    jarClient.AddStandardResilienceHandler();
+
+    if (!string.IsNullOrWhiteSpace(pinnedThumbprint))
+    {
+        Log.Information("Controller certificate pinning enabled for {Jar} download", "agent.jar");
+        jarClient.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                // Pin replaces chain trust: accept the connection only if the server certificate's
+                // SHA-256 thumbprint matches, rejecting any other certificate (incl. chain-trusted MITM).
+                RemoteCertificateValidationCallback = (_, cert, _, _) =>
+                    CertificateThumbprintValidator.Matches(
+                        cert as System.Security.Cryptography.X509Certificates.X509Certificate2, pinnedThumbprint)
+            }
+        });
+    }
     builder.Services.AddSingleton<IJarDownloader, HttpJarDownloader>();
     builder.Services.AddSingleton<IConnectivityChecker, TcpConnectivityChecker>();
     builder.Services.AddSingleton<ISecretResolver, SecretResolver>();
+    builder.Services.AddSingleton<IAgentProcessLauncher, AgentProcessLauncher>();
     builder.Services.AddHostedService<JenkinsAgentWorker>();
 
     builder.Logging.ClearProviders();
@@ -145,7 +181,7 @@ static IHost BuildHost(string[] args)
                 .ConfigureResource(r => r.AddService(telemetry.ServiceName))
                 .WithMetrics(metrics =>
                 {
-                    metrics.AddMeter("JenkinsAsService");
+                    metrics.AddMeter(JenkinsAgentWorker.MeterName);
                     metrics.AddRuntimeInstrumentation();
                     metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetry.OtlpEndpoint));
                 });
@@ -158,12 +194,17 @@ static IHost BuildHost(string[] args)
 static bool ValidateBoundSettings(IHost host, string basePath)
 {
     var settings = host.Services.GetRequiredService<IOptions<ServiceSettings>>().Value;
-    if (string.IsNullOrWhiteSpace(settings.JenkinsUrl) || string.IsNullOrWhiteSpace(settings.AgentSecret))
+    try
+    {
+        // Single source of truth for mandatory-field/URL rules (empty Url/Secret, explicit port, valid URL),
+        // so a bad config fails the clean pre-flight here instead of faulting later inside the worker.
+        ServiceSettingsValidator.Validate(settings);
+        return true;
+    }
+    catch (InvalidOperationException ex)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
-        Log.Error("Mandatory fields (JenkinsUrl, AgentSecret) are empty. Fill in: {Path}", configPath);
+        Log.Error("Invalid configuration: {Reason} Fix: {Path}", ex.Message, configPath);
         return false;
     }
-
-    return true;
 }

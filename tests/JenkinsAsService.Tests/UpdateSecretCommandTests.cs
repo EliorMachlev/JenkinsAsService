@@ -110,10 +110,10 @@ public class UpdateSecretCommandTests : IDisposable
 
         var json = ReadConfig();
         var jenkins = json.RootElement.GetProperty("Jenkins");
-        jenkins.GetProperty("AgentSecret").GetString().Should().Be("my-secret");
-        jenkins.GetProperty("JenkinsURL").GetString().Should().Be("https://jenkins:8443");
-        jenkins.GetProperty("AgentName").GetString().Should().Be("build-agent-01");
-        jenkins.GetProperty("SecretMode").GetString().Should().Be("Unprotected");
+        jenkins.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("my-secret");
+        jenkins.GetProperty("Connection").GetProperty("Url").GetString().Should().Be("https://jenkins:8443");
+        jenkins.GetProperty("Connection").GetProperty("AgentName").GetString().Should().Be("build-agent-01");
+        jenkins.GetProperty("Secret").GetProperty("Mode").GetString().Should().Be("Unprotected");
     }
 
     // ─── --secret-file ────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ public class UpdateSecretCommandTests : IDisposable
         File.Exists(secretFile).Should().BeFalse("file should be deleted after reading");
 
         var json = ReadConfig();
-        json.RootElement.GetProperty("Jenkins").GetProperty("AgentSecret").GetString()
+        json.RootElement.GetProperty("Jenkins").GetProperty("Secret").GetProperty("Value").GetString()
             .Should().Be("file-secret");
     }
 
@@ -170,7 +170,7 @@ public class UpdateSecretCommandTests : IDisposable
 
             code.Should().Be(0);
             var json = ReadConfig();
-            json.RootElement.GetProperty("Jenkins").GetProperty("AgentSecret").GetString()
+            json.RootElement.GetProperty("Jenkins").GetProperty("Secret").GetProperty("Value").GetString()
                 .Should().Be("env-secret");
         }
         finally

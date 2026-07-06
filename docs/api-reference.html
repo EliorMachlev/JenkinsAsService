@@ -67,61 +67,103 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>JenkinsURL</code></td>
+            <td><code>Connection.Url</code></td>
             <td><code>string</code></td>
             <td><code>""</code></td>
             <td>Jenkins URL with explicit port</td>
           </tr>
           <tr>
-            <td><code>AgentName</code></td>
+            <td><code>Connection.Method</code></td>
+            <td><code>ConnectionMethod</code></td>
+            <td><code>Auto</code></td>
+            <td>Agent transport: <code>Auto</code>, <code>WebSocket</code>, or <code>Https</code> (direct TCP inbound)</td>
+          </tr>
+          <tr>
+            <td><code>Connection.AgentName</code></td>
             <td><code>string</code></td>
             <td><code>""</code></td>
             <td>Agent name (defaults to hostname at runtime)</td>
           </tr>
           <tr>
-            <td><code>AgentSecret</code></td>
+            <td><code>Connection.ControllerCertThumbprint</code></td>
             <td><code>string</code></td>
             <td><code>""</code></td>
-            <td>JNLP secret (or reference/ciphertext depending on SecretMode)</td>
+            <td>SHA-256 thumbprint to pin the controller TLS cert (empty = chain validation)</td>
           </tr>
           <tr>
-            <td><code>SecretMode</code></td>
+            <td><code>Secret.Value</code></td>
+            <td><code>string</code></td>
+            <td><code>""</code></td>
+            <td>JNLP secret (or reference/ciphertext depending on <code>Secret.Mode</code>)</td>
+          </tr>
+          <tr>
+            <td><code>Secret.Mode</code></td>
             <td><code>SecretMode</code></td>
             <td><code>Unprotected</code></td>
-            <td>How <code>AgentSecret</code> is stored/resolved</td>
+            <td>How <code>Secret.Value</code> is stored/resolved</td>
           </tr>
           <tr>
-            <td><code>JavaPath</code></td>
+            <td><code>Secret.DpapiScope</code></td>
+            <td><code>DpapiScope</code></td>
+            <td><code>Machine</code></td>
+            <td>DPAPI scope when <code>Secret.Mode</code> is <code>Dpapi</code></td>
+          </tr>
+          <tr>
+            <td><code>Secret.ViaFile</code></td>
+            <td><code>bool</code></td>
+            <td><code>true</code></td>
+            <td>Pass the secret via an ACL-restricted file (<code>-secret @&lt;file&gt;</code>)</td>
+          </tr>
+          <tr>
+            <td><code>Agent.JavaPath</code></td>
             <td><code>string</code></td>
             <td><code>""</code></td>
             <td>Path to JDK bin folder</td>
           </tr>
           <tr>
-            <td><code>CustomArguments</code></td>
+            <td><code>Agent.CustomArguments</code></td>
             <td><code>string</code></td>
             <td><code>""</code></td>
             <td>Extra java.exe arguments (supports quoted values)</td>
           </tr>
           <tr>
-            <td><code>DebugMode</code></td>
+            <td><code>Agent.DataDirectory</code></td>
+            <td><code>string</code></td>
+            <td><code>""</code></td>
+            <td>Writable runtime data dir (empty = <code>%ProgramData%\JenkinsAsService</code>)</td>
+          </tr>
+          <tr>
+            <td><code>Hardening.SanitizeEnvironment</code></td>
+            <td><code>bool</code></td>
+            <td><code>true</code></td>
+            <td>Deny-by-default environment for the agent child</td>
+          </tr>
+          <tr>
+            <td><code>Hardening.AllowedEnvironmentVariables</code></td>
+            <td><code>string</code></td>
+            <td><code>""</code></td>
+            <td>Extra env var names passed through (<code>;</code>/<code>,</code>-separated)</td>
+          </tr>
+          <tr>
+            <td><code>Logging.DebugMode</code></td>
             <td><code>bool</code></td>
             <td><code>false</code></td>
             <td>Verbose logging</td>
           </tr>
           <tr>
-            <td><code>CompactLog</code></td>
+            <td><code>Logging.CompactLog</code></td>
             <td><code>bool</code></td>
             <td><code>false</code></td>
             <td>CLEF JSON log output (<code>agent.clef</code> instead of <code>agent.log</code>)</td>
           </tr>
           <tr>
-            <td><code>RetainedLogs</code></td>
+            <td><code>Logging.RetainedLogs</code></td>
             <td><code>int</code></td>
             <td><code>3</code></td>
             <td>Number of rolled log files to keep (oldest permanently deleted)</td>
           </tr>
           <tr>
-            <td><code>MaxRetries</code></td>
+            <td><code>Recovery.MaxRetries</code></td>
             <td><code>int</code></td>
             <td><code>0</code></td>
             <td>Max recovery attempts (0 = infinite)</td>
@@ -175,15 +217,16 @@
     <p><strong>Files:</strong> <code>SecretWriter.cs</code>, <code>SecretResolver.cs</code>, <code>UpdateSecretCommand.cs</code>, <code>SecretMode.cs</code></p>
 
     <h3 id="secretwriter-writeconfig"><code>SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath)</code></h3>
-    <p>Processes <code>secret</code> for the given <code>mode</code> (DPAPI encrypt / store env var / store CredMgr entry / leave plaintext), then writes <code>appsettings.json</code>. Preserves all existing top-level JSON sections (e.g. <code>Telemetry</code>) and existing Jenkins fields not explicitly provided (<code>CustomArguments</code>, <code>DebugMode</code>, etc.).</p>
+    <p>Processes <code>secret</code> for the given <code>mode</code> (DPAPI encrypt / store env var / store CredMgr entry / leave plaintext), then writes the nested <code>appsettings.json</code> (sub-sections <code>Connection</code> / <code>Secret</code> / <code>Agent</code> / <code>Hardening</code> / <code>Logging</code> / <code>Recovery</code>). Preserves all existing top-level JSON sections (e.g. <code>Telemetry</code>) and existing sub-section fields not explicitly provided (<code>Agent.CustomArguments</code>, <code>Logging.DebugMode</code>, etc.).</p>
 
     <h3 id="secretresolver-resolve"><code>SecretResolver.Resolve(ServiceSettings)</code></h3>
     <p>Resolves the raw secret at service startup:</p>
     <ul>
-      <li><code>Unprotected</code> — returns <code>AgentSecret</code> as-is</li>
-      <li><code>Dpapi</code> — <code>ProtectedData.Unprotect</code> (machine-scoped, same entropy as writer)</li>
-      <li><code>EnvironmentVariable</code> — reads machine-level env var named by <code>AgentSecret</code></li>
-      <li><code>CredentialManager</code> — reads Credential Manager entry named by <code>AgentSecret</code></li>
+      <li><code>Unprotected</code> — returns <code>Secret.Value</code> as-is</li>
+      <li><code>Dpapi</code> — <code>ProtectedData.Unprotect</code> (machine- or user-scoped, same entropy as writer)</li>
+      <li><code>Tpm</code> — <code>RSACng</code> decrypt via the TPM Platform Crypto Provider (non-exportable key)</li>
+      <li><code>EnvironmentVariable</code> — reads machine-level env var named by <code>Secret.Value</code></li>
+      <li><code>CredentialManager</code> — reads Credential Manager entry named by <code>Secret.Value</code></li>
     </ul>
 
     <h3 id="updatesecretcommand-run"><code>UpdateSecretCommand.Run(args, basePath?)</code></h3>
@@ -273,10 +316,10 @@
     <h3 id="validation-methods">Validation Methods</h3>
 
     <h4 id="validatesettings-static"><code>ValidateSettings(ServiceSettings)</code> (internal static)</h4>
-    <p>Testable static method. Checks <code>JenkinsURL</code> and <code>AgentSecret</code> are non-empty. Parses URL via <code>System.Uri</code> and rejects <code>Uri.IsDefaultPort</code> (requires explicit port).</p>
+    <p>Testable static method. Checks <code>Connection.Url</code> and <code>Secret.Value</code> are non-empty. Parses URL via <code>System.Uri</code> and rejects <code>Uri.IsDefaultPort</code> (requires explicit port).</p>
 
     <h4 id="validatesettings-instance"><code>ValidateSettings()</code> (private instance)</h4>
-    <p>Calls the static overload, then resolves <code>AgentName</code> to <code>Environment.MachineName</code> if empty — stored in a private <code>_agentName</code> field without mutating the <code>ServiceSettings</code> object.</p>
+    <p>Calls the static overload, then resolves <code>Connection.AgentName</code> to <code>Environment.MachineName</code> if empty — stored in a private <code>_agentName</code> field without mutating the <code>ServiceSettings</code> object.</p>
 
     <h4 id="resolvejavapath"><code>ResolveJavaPath(string? configuredPath, string? javaHome)</code> (internal static)</h4>
     <p>Testable static method. Builds candidate list: <code>configuredPath</code> &rarr; <code>javaHome</code> &rarr; <code>javaHome\bin</code>. Returns the first path containing <code>java.exe</code>. Throws if none found.</p>
@@ -289,7 +332,7 @@
     <p>Creates <code>ProcessStartInfo</code> with <code>ArgumentList</code> (no shell interpretation):</p>
     <ul>
       <li><code>-jar agent.jar -url ... -secret ... -name ... -workDir ...</code></li>
-      <li>Parses <code>CustomArguments</code> via <code>ParseArguments()</code> (supports quoted values with spaces)</li>
+      <li>Parses <code>Agent.CustomArguments</code> via <code>ParseArguments()</code> (supports quoted values with spaces)</li>
     </ul>
     <p>Hooks <code>OutputDataReceived</code> and <code>ErrorDataReceived</code> to <code>ParseAgentOutput()</code>. Returns the started <code>Process</code>.</p>
 
@@ -320,7 +363,7 @@
     <ol>
       <li>Logs SEVERE count (via <code>Interlocked.Exchange(ref _severeCount, 0)</code>)</li>
       <li>Captures exit code, calls <code>KillAgent()</code> to dispose</li>
-      <li>Increments retry counter, checks <code>MaxRetries</code></li>
+      <li>Increments retry counter, checks <code>Recovery.MaxRetries</code></li>
       <li>Calls <code>RecoverAgentAsync(retryCount, ct)</code></li>
     </ol>
     <p>On stability window elapsed (agent still running):</p>

@@ -9,7 +9,7 @@ public class ResolveJavaPathTests
     [Fact]
     public void Throws_when_no_java_found()
     {
-        var act = () => JenkinsAgentWorker.ResolveJavaPath(null, null);
+        var act = () => JavaPathResolver.Resolve(null, null);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*java.exe*");
@@ -18,7 +18,7 @@ public class ResolveJavaPathTests
     [Fact]
     public void Throws_when_paths_dont_contain_java()
     {
-        var act = () => JenkinsAgentWorker.ResolveJavaPath(@"C:\nonexistent", @"C:\also-nonexistent");
+        var act = () => JavaPathResolver.Resolve(@"C:\nonexistent", @"C:\also-nonexistent");
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*java.exe*");
@@ -34,7 +34,7 @@ public class ResolveJavaPathTests
         {
             File.WriteAllBytes(Path.Combine(tempDir, JavaExeFilename), []);
 
-            JenkinsAgentWorker.ResolveJavaPath(tempDir, null)
+            JavaPathResolver.Resolve(tempDir, null)
                 .Should().Be(Path.Combine(tempDir, JavaExeFilename));
         }
         finally
@@ -54,7 +54,7 @@ public class ResolveJavaPathTests
         {
             File.WriteAllBytes(Path.Combine(binDir, JavaExeFilename), []);
 
-            JenkinsAgentWorker.ResolveJavaPath(null, tempDir)
+            JavaPathResolver.Resolve(null, tempDir)
                 .Should().Be(Path.Combine(binDir, JavaExeFilename));
         }
         finally
@@ -77,7 +77,7 @@ public class ResolveJavaPathTests
             File.WriteAllBytes(Path.Combine(configDir, JavaExeFilename), []);
             File.WriteAllBytes(Path.Combine(homeBin, JavaExeFilename), []);
 
-            JenkinsAgentWorker.ResolveJavaPath(configDir, homeDir)
+            JavaPathResolver.Resolve(configDir, homeDir)
                 .Should().Be(Path.Combine(configDir, JavaExeFilename));
         }
         finally

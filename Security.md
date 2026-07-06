@@ -97,7 +97,7 @@ Agent secrets are scrubbed from all log output (file and Event Log) before being
 ### Network Security
 
 - TLS 1.2+ is enforced by default (.NET 10)
-- Jenkins controller URL requires an explicit port (default ports 80/443 are rejected to prevent accidental plaintext connections)
+- Jenkins controller URL requires an explicit port (a URL with no port is rejected); a non-HTTPS URL is allowed but warned at startup because the agent secret would be sent unencrypted
 - TCP connectivity is verified before each agent launch
 
 ### Build Integrity

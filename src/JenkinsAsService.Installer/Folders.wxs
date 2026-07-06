@@ -4,6 +4,12 @@
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="Jenkins" />
     </StandardDirectory>
+
+    <!-- Writable runtime data dir (agent.jar, logs, secret file, workdir), kept out of the read-only
+         install folder. Public (uppercase) Id so it can be overridden: msiexec DATAFOLDER="D:\Path". -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATAFOLDER" Name="JenkinsAsService" />
+    </StandardDirectory>
   </Fragment>
 
 </Wix>

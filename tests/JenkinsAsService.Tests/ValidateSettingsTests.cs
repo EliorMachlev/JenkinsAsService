@@ -6,25 +6,25 @@ namespace JenkinsAsService.Tests;
 public class ValidateSettingsTests
 {
     [Fact]
-    public void Throws_when_JenkinsUrl_is_empty()
+    public void Throws_when_url_is_empty()
     {
-        var settings = new ServiceSettings { AgentSecret = "secret" };
+        var settings = new ServiceSettings { Secret = new() { Value = "secret" } };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*JenkinsUrl*");
+            .WithMessage("*Connection:Url*");
     }
 
     [Fact]
-    public void Throws_when_AgentSecret_is_empty()
+    public void Throws_when_secret_is_empty()
     {
-        var settings = new ServiceSettings { JenkinsUrl = "https://jenkins:8443" };
+        var settings = new ServiceSettings { Connection = new() { Url = "https://jenkins:8443" } };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*AgentSecret*");
+            .WithMessage("*Secret:Value*");
     }
 
     [Fact]
@@ -32,28 +32,46 @@ public class ValidateSettingsTests
     {
         var settings = new ServiceSettings
         {
-            JenkinsUrl = "https://jenkins.example.com",
-            AgentSecret = "secret"
+            Connection = new() { Url = "https://jenkins.example.com" },
+            Secret = new() { Value = "secret" }
         };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*explicit port*");
     }
 
-    [Fact]
-    public void Throws_when_URL_is_malformed()
+    [Theory]
+    [InlineData("https://jenkins.example.com:443")]   // explicit standard HTTPS port (reverse proxy)
+    [InlineData("http://jenkins.example.com:80")]      // explicit standard HTTP port
+    [InlineData("https://[2001:db8::1]:443")]          // explicit port on an IPv6 literal
+    public void Passes_when_URL_specifies_an_explicit_port_even_if_it_is_the_scheme_default(string url)
     {
         var settings = new ServiceSettings
         {
-            JenkinsUrl = "not-a-url",
-            AgentSecret = "secret"
+            Connection = new() { Url = url },
+            Secret = new() { Value = "secret" }
         };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
-        act.Should().Throw<UriFormatException>();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Throws_a_friendly_error_when_URL_is_malformed()
+    {
+        var settings = new ServiceSettings
+        {
+            Connection = new() { Url = "not-a-url" },
+            Secret = new() { Value = "secret" }
+        };
+
+        var act = () => ServiceSettingsValidator.Validate(settings);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*not a valid absolute URL*");
     }
 
     [Fact]
@@ -61,11 +79,11 @@ public class ValidateSettingsTests
     {
         var settings = new ServiceSettings
         {
-            JenkinsUrl = "https://jenkins.example.com:8443",
-            AgentSecret = "secret123"
+            Connection = new() { Url = "https://jenkins.example.com:8443" },
+            Secret = new() { Value = "secret123" }
         };
 
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().NotThrow();
     }
@@ -73,16 +91,16 @@ public class ValidateSettingsTests
     [Fact]
     public void SecretMode_defaults_to_Unprotected_when_not_in_config()
     {
-        // Existing installs have no SecretMode field — binding should fall back to enum default
+        // A config with no Secret:Mode should fall back to the enum default.
         var settings = new ServiceSettings
         {
-            JenkinsUrl = "https://jenkins.example.com:8443",
-            AgentSecret = "plaintext-secret"
-            // SecretMode intentionally not set (simulates old appsettings.json)
+            Connection = new() { Url = "https://jenkins.example.com:8443" },
+            Secret = new() { Value = "plaintext-secret" }
+            // Mode intentionally not set
         };
 
-        settings.SecretMode.Should().Be(SecretMode.Unprotected);
-        var act = () => JenkinsAgentWorker.ValidateSettings(settings);
+        settings.Secret.Mode.Should().Be(SecretMode.Unprotected);
+        var act = () => ServiceSettingsValidator.Validate(settings);
         act.Should().NotThrow();
     }
 }

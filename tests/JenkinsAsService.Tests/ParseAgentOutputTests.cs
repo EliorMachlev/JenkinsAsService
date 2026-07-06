@@ -1,5 +1,6 @@
 // Copyright (c) 2024 All rights reserved
 using FluentAssertions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -17,9 +18,9 @@ public class ParseAgentOutputTests
     {
         var settings = new ServiceSettings
         {
-            JenkinsUrl = "https://jenkins:8443",
-            AgentSecret = "secret",
-            DebugMode = true
+            Connection = new() { Url = "https://jenkins:8443" },
+            Secret = new() { Value = "secret" },
+            Logging = new() { DebugMode = true }
         };
 
         _worker = new JenkinsAgentWorker(
@@ -27,7 +28,9 @@ public class ParseAgentOutputTests
             Options.Create(settings),
             Substitute.For<IJarDownloader>(),
             Substitute.For<IConnectivityChecker>(),
-            Substitute.For<ISecretResolver>());
+            Substitute.For<ISecretResolver>(),
+            Substitute.For<IAgentProcessLauncher>(),
+            Substitute.For<IHostApplicationLifetime>());
     }
 
     [Fact]
@@ -96,16 +99,18 @@ public class ParseAgentOutputTests
         var logger = Substitute.For<ILogger<JenkinsAgentWorker>>();
         var settings = new ServiceSettings
         {
-            JenkinsUrl = "https://jenkins:8443",
-            AgentSecret = "secret",
-            DebugMode = false
+            Connection = new() { Url = "https://jenkins:8443" },
+            Secret = new() { Value = "secret" },
+            Logging = new() { DebugMode = false }
         };
         var worker = new JenkinsAgentWorker(
             logger,
             Options.Create(settings),
             Substitute.For<IJarDownloader>(),
             Substitute.For<IConnectivityChecker>(),
-            Substitute.For<ISecretResolver>());
+            Substitute.For<ISecretResolver>(),
+            Substitute.For<IAgentProcessLauncher>(),
+            Substitute.For<IHostApplicationLifetime>());
 
         worker.ParseAgentOutput(RawJavaOutput);
 
