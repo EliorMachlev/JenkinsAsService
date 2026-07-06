@@ -496,7 +496,7 @@ public static class UpdateSecretCommand
             {
                 File.Delete(secretFile);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // best-effort delete — if it fails the file remains but operation continues
             }

@@ -106,6 +106,34 @@ public sealed class SupervisionLoopTests : IDisposable
         await StopQuietly(worker);
     }
 
+    [Fact]
+    public async Task Stop_during_bring_up_kills_an_agent_started_after_the_stop_request()
+    {
+        // Connectivity blocks (ignoring the token) so we can stop the service mid-bring-up.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _connectivity.Check(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => gate.Task);
+
+        var started = new FakeAgentProcess();
+        _launcher.Enqueue(started);
+
+        var worker = CreateWorker(maxRetries: 0);
+        worker.UseFastTimingForTests(stabilityMs: 10_000, backoffBaseSec: 0, backoffMaxSec: 0);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitUntil(() => _connectivity.ReceivedCalls().Any());
+
+        // StopAsync sets _stopping and cancels the token, then awaits the (still blocked) loop.
+        var stopTask = worker.StopAsync(CancellationToken.None);
+        // Connectivity now "succeeds" — bring-up proceeds and starts an agent AFTER the stop request.
+        gate.TrySetResult();
+        await stopTask;
+
+        // The late-started agent must be reaped on the way out, not orphaned past service shutdown.
+        started.WasKilled.Should().BeTrue("an agent started after the stop request must not outlive the service");
+        started.WasDisposed.Should().BeTrue();
+    }
+
     private JenkinsAgentWorker CreateWorker(int maxRetries)
     {
         var settings = new ServiceSettings

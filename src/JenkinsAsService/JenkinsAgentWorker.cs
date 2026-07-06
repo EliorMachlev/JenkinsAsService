@@ -356,9 +356,23 @@ public sealed class JenkinsAgentWorker : BackgroundService
         var crashCount = 0;      // consecutive real agent deaths — the only thing that trips give-up
         var bringUpAttempts = 0; // consecutive failed connect/download/start attempts — drive backoff only
 
-        while (!ct.IsCancellationRequested)
+        while (true)
         {
-            if (_agent is null)
+            // Single shutdown gate for every path back to the loop top. Killing here (idempotent) closes
+            // the stop-during-bring-up race: StopAsync's own KillAgent runs while _agent may still be null,
+            // and the launcher can assign a freshly started process AFTER that — without this gate the loop
+            // would exit on the cancelled token and orphan the just-started java.exe past service shutdown.
+            if (_stopping || ct.IsCancellationRequested)
+            {
+                KillAgent();
+                ct.ThrowIfCancellationRequested();
+                return;
+            }
+
+            // Snapshot the field: StopAsync (another thread) nulls _agent via KillAgent, so dereferencing
+            // the field after a null-check races an NRE during a clean stop.
+            var agent = _agent;
+            if (agent is null)
             {
                 if (bringUpAttempts > 0)
                 {
@@ -378,7 +392,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             // instead of leaving a live 60s timer per cycle to accumulate under frequent restarts.
             using (var stabilityCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
-                await Task.WhenAny(_agent.Exited, Task.Delay(_stabilityMs, stabilityCts.Token));
+                await Task.WhenAny(agent.Exited, Task.Delay(_stabilityMs, stabilityCts.Token));
                 await stabilityCts.CancelAsync();
             }
 
@@ -390,7 +404,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
             ct.ThrowIfCancellationRequested();
 
-            if (!_agent.Exited.IsCompleted && !_agent.HasExited)
+            if (!agent.Exited.IsCompleted && !agent.HasExited)
             {
                 // Stability window elapsed, agent still running.
                 _currentRunReachedStability = true;
@@ -410,7 +424,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
                 _logger.LogWarning("Watchdog: Agent emitted {Count} SEVERE event(s) before exiting.", severeCount);
             }
 
-            var exitCode = GetAgentExitCode();
+            var exitCode = agent.HasExited ? agent.ExitCode : UnknownExitCode;
             KillAgent();
             ApplyAutoTransportFallback(agentActuallyExited: true);
 
@@ -484,9 +498,6 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _logger.LogWarning("Watchdog: {Previous} transport failed to stabilise — falling back to {Next}.",
             previous, _effectiveMethod);
     }
-
-    private int GetAgentExitCode() =>
-        _agent is { HasExited: true } ? _agent.ExitCode : UnknownExitCode;
 
     internal static bool HasExceededMaxRetries(int crashCount, int maxRetries) =>
         maxRetries > 0 && crashCount > maxRetries;
