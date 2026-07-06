@@ -51,6 +51,7 @@
 
     <h2 id="configuration-file">Configuration File</h2>
     <p>The service reads its settings from <code>appsettings.json</code>, located in the same directory as the executable. The <code>Jenkins</code> section is grouped into topic sub-sections &mdash; <code>Connection</code>, <code>Secret</code>, <code>Agent</code>, <code>Hardening</code>, <code>Logging</code>, and <code>Recovery</code>. Settings below are written as <code>Section:Key</code>.</p>
+    <p>The MSI installer wizard now collects every setting below across the <code>JenkinsConfigDlg</code>, <code>SecurityOptionsDlg</code>, and a new <strong>Advanced Options</strong> page (<code>AdvancedOptionsDlg</code>) &mdash; including <code>Connection:Method</code> and <code>Connection:ControllerCertThumbprint</code>, which previously required a manual edit of <code>appsettings.json</code> after install. Fields left untouched keep the same defaults as before.</p>
 
     <h2 id="settings-reference">Settings Reference</h2>
     <div class="table-wrap">

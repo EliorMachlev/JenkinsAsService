@@ -118,4 +118,52 @@ public class ConfigBindingTests
 
         return null;
     }
+
+    [Fact]
+    public void Generated_full_config_binds_to_ServiceSettings_with_all_enums()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "JAS_Bind_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Simulate the installer: WriteConfig then the merge CAs.
+            SecretWriter.WriteConfig(tempDir, "secret", SecretMode.Dpapi, "https://jenkins:8443", "agent-x", @"C:\jdk");
+            SecretWriter.MergeConfig(tempDir, new ConfigMergeFields
+            {
+                Method = ConnectionMethod.WebSocket,
+                DpapiScope = DpapiScope.User,
+                ViaFile = false,
+                CustomArguments = "-noCertificateCheck",
+                SanitizeEnvironment = false,
+                AllowedEnvironmentVariables = "MAVEN_OPTS",
+                DebugMode = true,
+                CompactLog = true,
+                RetainedLogs = 9,
+                MaxRetries = 6
+            });
+
+            var config = new ConfigurationBuilder()
+                .SetBasePath(tempDir)
+                .AddJsonFile("appsettings.json")
+                .Build();
+            var settings = config.GetSection("Jenkins").Get<ServiceSettings>()!;
+
+            settings.Connection.Method.Should().Be(ConnectionMethod.WebSocket);
+            settings.Connection.AgentName.Should().Be("agent-x");
+            settings.Secret.Mode.Should().Be(SecretMode.Dpapi);
+            settings.Secret.DpapiScope.Should().Be(DpapiScope.User);
+            settings.Secret.ViaFile.Should().BeFalse();
+            settings.Agent.CustomArguments.Should().Be("-noCertificateCheck");
+            settings.Hardening.SanitizeEnvironment.Should().BeFalse();
+            settings.Hardening.AllowedEnvironmentVariables.Should().Be("MAVEN_OPTS");
+            settings.Logging.DebugMode.Should().BeTrue();
+            settings.Logging.CompactLog.Should().BeTrue();
+            settings.Logging.RetainedLogs.Should().Be(9);
+            settings.Recovery.MaxRetries.Should().Be(6);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
 }
