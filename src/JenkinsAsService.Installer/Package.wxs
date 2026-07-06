@@ -68,9 +68,14 @@
                   ExeCommand='update-secret --silent --set-data-dir "[DATAFOLDER]"'
                   Execute="deferred" Impersonate="no" />
 
+    <!-- Both CAs must run AFTER InstallFiles (the exe must be on disk to invoke) and BEFORE StartServices:
+         the service is registered with Start="install" (ServiceControl, Wait="yes"), so SCM launches it at
+         the standard StartServices action. If appsettings.json / the data dir aren't written yet, the service
+         fails its pre-flight config validation, StartServices reports failure, and the install rolls back.
+         Writing config before StartServices is the fix — do not move these back to Before=InstallFinalize. -->
     <InstallExecuteSequence>
-      <Custom Action="WriteConfig" Before="SetDataDir" Condition="NOT Installed" />
-      <Custom Action="SetDataDir" Before="InstallFinalize" Condition="NOT Installed" />
+      <Custom Action="WriteConfig" After="InstallFiles" Condition="NOT Installed" />
+      <Custom Action="SetDataDir" After="WriteConfig" Condition="NOT Installed" />
     </InstallExecuteSequence>
 
   </Package>
