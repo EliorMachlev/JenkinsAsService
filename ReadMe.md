@@ -19,15 +19,15 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 ## Features
 
 - **Auto-start on boot** — runs under a least-privilege virtual service account (`NT SERVICE\Jenkins`), no interactive login required
-- **Event-driven watchdog** — detects agent death instantly (not polling), auto-recovers with exponential backoff (10s to 5min)
-- **Secret protection** — DPAPI machine-scope encryption, Windows Credential Manager, environment variables, or plaintext
+- **Event-driven watchdog** — detects agent death instantly (not polling), auto-recovers with exponential backoff (10s to 5min); a persistent crash-loop stops the service so Windows Service Recovery can act, while a merely-unreachable controller is retried indefinitely
+- **Secret protection** — TPM 2.0 hardware-backed key, DPAPI machine/user-scope encryption, Windows Credential Manager, environment variables, or plaintext
 - **Smart jar caching** — ETag-based conditional GET skips the download when `agent.jar` is unchanged
 - **HTTP resilience** — Polly-based retry, circuit breaker, and timeout on all HTTP calls
 - **Structured logging** — Serilog rolling file + Windows Event Log, with `ProcessId`/`MachineName` enrichment
 - **CLEF JSON mode** — machine-parseable compact log format for Seq, Datadog, or any log aggregator
 - **OpenTelemetry metrics** — opt-in OTLP export: restart counter, SEVERE event counter, .NET runtime metrics
 - **Secret redaction** — agent secrets are scrubbed from all log output
-- **59 unit tests** — xUnit + NSubstitute + FluentAssertions, CI on every push
+- **142 unit tests** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness), CI on every push
 - **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy; all actions SHA-pinned
 - **Single-file deploy** — self-contained `.exe` with R2R, compression, and embedded PDB symbols
 - **Dual-arch releases** — x64 + x86 MSI installers, 7z/RAR archives, SHA256 checksums
@@ -36,20 +36,21 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 
 ```mermaid
 flowchart TD
-    A[Windows Service Manager] -->|Calls ExecuteAsync| B[Validate Settings]
-    B --> C{Settings OK?}
-    C -->|No| D[Log Error & Stop]
-    C -->|Yes| E[Resolve Java Path]
-    E --> F[Test TCP Connectivity]
-    F -->|Fail| D
-    F -->|Pass| G["Download agent.jar (ETag cached)"]
-    G --> H[Start Java Process]
-    H --> I[Watchdog Loop]
-    I -->|process.Exited or 60s timer| J{Process exited?}
-    J -->|No — stable 60s| K[Reset retry counter]
-    K --> I
-    J -->|Yes| L["Log SEVERE count, Backoff, Re-download, Restart"]
-    L --> I
+    A[Windows Service Manager] -->|ExecuteAsync| B[Validate settings + resolve Java]
+    B -->|Invalid config| D[Log error and StopApplication]
+    B -->|OK| E[Supervision loop]
+    E --> F{Agent running?}
+    F -->|No — bring-up| G["Backoff, then connect → download agent.jar ETag → start"]
+    G -->|Unreachable or start fails| H[Retry forever — does not count toward MaxRetries]
+    H --> E
+    G -->|Started| E
+    F -->|Yes| I[Await exit signal or 60s stability]
+    I -->|Stable 60s| J[Reset crash counter]
+    J --> E
+    I -->|Crash| K[Log SEVERE count, kill, auto-transport fallback]
+    K --> L{Crashes exceed MaxRetries?}
+    L -->|Yes| M[StopApplication so SCM can recover]
+    L -->|No| E
 ```
 
 ## Quick Start
@@ -77,7 +78,7 @@ msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
     INSTALLFOLDER="D:\Jenkins" `
     JENKINS_URL="https://jenkins.example.com:8443" `
     JENKINS_SECRET="your-secret" `
-    JENKINS_SECRET_MODE="EnvironmentVariable" `
+    JENKINS_SECRET_MODE="Dpapi" `
     JENKINS_AGENT_NAME="" `
     JENKINS_JAVA_PATH=""
 ```
@@ -87,7 +88,7 @@ msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
 | `INSTALLFOLDER` | No | `C:\Program Files\Jenkins` | Installation directory |
 | `JENKINS_URL` | Yes | — | Jenkins controller URL with explicit port |
 | `JENKINS_SECRET` | Yes | — | JNLP agent secret |
-| `JENKINS_SECRET_MODE` | No | `EnvironmentVariable` | `EnvironmentVariable`, `Dpapi`, `CredentialManager`, or `Unprotected` |
+| `JENKINS_SECRET_MODE` | No | `Dpapi` | `Dpapi`, `Tpm`, `CredentialManager`, `EnvironmentVariable`, or `Unprotected` |
 | `JENKINS_AGENT_NAME` | No | Hostname | Agent node name in Jenkins |
 | `JENKINS_JAVA_PATH` | No | `JAVA_HOME` | Path to JDK `bin` folder |
 
@@ -127,7 +128,7 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 
 | Setting | Required | Default | Description |
 |---|:---:|---|---|
-| `Connection:Url` | Yes | — | Full URL with explicit port (default ports 80/443 are rejected) |
+| `Connection:Url` | Yes | — | Full URL with an explicit port. A URL with no port is rejected; an explicit standard `:443` (e.g. a reverse-proxied controller) is accepted. Non-HTTPS URLs are allowed but warned (secret sent unencrypted) |
 | `Connection:Method` | No | `Auto` | Agent transport: `Auto` (WebSocket first, fall back to direct TCP inbound), `WebSocket`, or `Https` (direct TCP inbound) |
 | `Connection:AgentName` | No | Hostname | Node name in Jenkins (case-sensitive) |
 | `Connection:ControllerCertThumbprint` | No | *(empty)* | SHA-256 thumbprint to pin the controller TLS cert (empty = chain validation) |
@@ -143,7 +144,7 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 | `Logging:DebugMode` | No | `false` | Verbose Java agent output in logs |
 | `Logging:CompactLog` | No | `false` | CLEF JSON output (`agent.clef`) instead of human-readable (`agent.log`) |
 | `Logging:RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
-| `Recovery:MaxRetries` | No | `0` | Max recovery attempts before giving up (`0` = infinite) |
+| `Recovery:MaxRetries` | No | `0` | Max consecutive agent *crashes* before the service stops itself for SCM recovery. Unreachable-controller retries don't count. `0` = infinite |
 
 ### Secret Protection
 
@@ -193,28 +194,43 @@ Get-EventLog -LogName Application -Source JenkinsAsService -Newest 20
 
 ## Auto-Recovery
 
-The watchdog is event-driven — it awaits the process exit signal, not a polling timer. On agent death:
+The watchdog is event-driven — it awaits the process exit signal, not a polling timer. The supervision loop has two states:
 
-1. Detects failure instantly via `process.Exited` event
-2. Logs exit code and SEVERE event count from that run
-3. Waits with exponential backoff (10s, 20s, 40s, ... capped at 300s)
-4. Tests TCP connectivity — skips restart if the controller is unreachable
-5. Re-downloads `agent.jar` via conditional GET (ETag/304)
-6. Starts a new agent process
-7. Resets retry counter after 60s of stability
+**Bring-up (no live agent)** — used for both first launch and recovery, so a transient outage at boot doesn't fault the service:
 
-The MSI installer configures Windows-level service recovery automatically: first, second, and third failures all restart the service after 10 seconds, with the failure counter resetting daily.
+1. Wait with exponential backoff (10s, 20s, 40s, ... capped at 300s)
+2. Test TCP connectivity — an **unreachable** controller is retried indefinitely and never counts toward `MaxRetries`
+3. Re-download `agent.jar` via conditional GET (ETag/304) and start a new agent process
+
+**Live agent** — awaits the exit signal or a 60s stability timer:
+
+1. On 60s of stability, reset the crash counter
+2. On a **crash** (real exit before stability): log the exit code + SEVERE count, kill, and in `Auto` transport mode toggle WebSocket ↔ direct-TCP for the next attempt
+3. Count the crash; if consecutive crashes exceed `Recovery:MaxRetries`, call `StopApplication()` so the service stops (rather than leaving a dead agent behind a `RUNNING` service)
+
+The MSI installer configures Windows-level service recovery automatically: first, second, and third failures all restart the service after 10 seconds, with the failure counter resetting daily — so a crash-loop give-up is itself recovered by SCM.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| Service starts and stops immediately | Check `agent.log` — mandatory fields (`Connection:Url`, `Secret:Value`) are likely empty |
-| "must include an explicit port" | Add the port explicitly: `https://jenkins:8443` (80/443 are rejected) |
-| "Cannot reach Jenkins" | Verify URL, port, firewall, DNS, and that Jenkins is running |
-| "Cannot find java.exe" | Set `JavaPath` to the JDK `bin` folder, or set `JAVA_HOME` |
-| Agent connects then disconnects | `Connection:AgentName` and `Secret:Value` must match Jenkins node config exactly |
-| Watchdog keeps restarting | Enable `DebugMode: true` and look for patterns in exit codes |
+Log messages the service emits, by severity. **Errors** stop the service (or the current startup); **Warnings** are non-fatal — the watchdog keeps going.
+
+| Log message / symptom | Type | Meaning & fix |
+|---|:---:|---|
+| `'Connection:Url' is a mandatory field` / `'Secret:Value' is a mandatory field` | Error | A required field in `appsettings.json` is empty — fill it in. |
+| `Connection:Url must include an explicit port` | Error | Write the port explicitly: `https://jenkins:8443`. A URL with no port is rejected; an explicit standard `:443` is accepted. |
+| `Connection:Url is not a valid absolute URL` | Error | Malformed URL — fix the value. |
+| `Cannot find java.exe` | Error | Set `Agent:JavaPath` to the JDK `bin` folder, or set `JAVA_HOME`. |
+| `DPAPI decryption failed` / `TPM decryption failed` / env var / credential not found | Error | The secret can't be decrypted or read on this machine — re-run `update-secret` (DPAPI/TPM keys are machine-bound and don't move between hosts). |
+| `Service failed — shutting down` | Error | A non-transient failure (bad config, unresolvable secret, missing Java) — check the logged exception; the service stops so SCM recovery can restart it. |
+| `Watchdog: Failed to download or start the agent — will retry` | Error | Jar download or process launch failed — check the jar URL, disk permissions, and Java. Retried automatically with backoff. |
+| `Watchdog: Max retries (N) exceeded — the agent keeps crashing. Stopping the service.` | Error | A persistent crash-loop hit `Recovery:MaxRetries`; the service stops itself so Windows Service Recovery restarts it. Enable `DebugMode` and inspect the exit codes. |
+| `Connection:Url uses http — agent secret will be sent unencrypted. Consider HTTPS.` | Warning | Plain HTTP sends the secret in cleartext. Use HTTPS. (Not blocked.) |
+| `Connectivity test to <host>:<port> timed out` / `failed` | Warning | Controller unreachable — check firewall, DNS, the port, and that Jenkins is running. |
+| `Watchdog: Jenkins unreachable — will keep retrying.` | Warning | Controller down during (re)connect. Retried indefinitely with backoff; does **not** count toward `MaxRetries`. |
+| `Watchdog: Agent emitted N SEVERE event(s) before exiting.` | Warning | The agent logged SEVERE lines before dying — check the controller logs and that `AgentName`/`Secret` match the node exactly. |
+| `Watchdog: <transport> transport failed to stabilise — falling back to <other>.` | Warning | `Connection:Method = Auto` toggled WebSocket ↔ direct-TCP inbound. If it flip-flops, make sure the intended transport is enabled on the controller. |
+| `Could not restrict ACL on agent secret file` | Warning | The defense-in-depth ACL couldn't be applied; the secret file is still usable and already lives in a restricted folder — check the data-folder permissions. |
+| Agent connects then disconnects randomly | Warning | `Connection:AgentName` and `Secret:Value` must match the Jenkins node config exactly; check network stability. |
 
 ## Building From Source
 

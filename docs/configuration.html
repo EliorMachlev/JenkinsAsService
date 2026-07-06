@@ -68,7 +68,7 @@
             <td><code>Connection:Url</code></td>
             <td><strong>Yes</strong></td>
             <td>&mdash;</td>
-            <td>Full Jenkins URL including port. The port must be written explicitly &mdash; a URL with no port is rejected, but an explicitly-specified standard port (<code>:443</code>/<code>:80</code>, e.g. a reverse-proxied controller) is accepted. Example: <code>https://jenkins.example.com:8443</code></td>
+            <td>Full Jenkins URL including port. The port must be written explicitly &mdash; a URL with no port is rejected, but an explicitly-specified standard <code>:443</code> (e.g. a reverse-proxied controller) is accepted. Example: <code>https://jenkins.example.com:8443</code></td>
           </tr>
           <tr>
             <td><code>Connection:Method</code></td>
@@ -243,7 +243,7 @@
     <p>The <code>Connection:Url</code> is parsed using <code>System.Uri</code>:</p>
     <ul>
       <li>Must be a valid absolute URI (parse failure &rarr; a clear configuration error)</li>
-      <li>The port must be written explicitly in the URL. A URL with no port is rejected; an explicitly-specified port is accepted even when it equals the scheme default (<code>:443</code>/<code>:80</code>), so a reverse-proxied controller on a standard port works.</li>
+      <li>The port must be written explicitly in the URL. A URL with no port is rejected; an explicitly-specified port is accepted even when it equals the scheme default (e.g. <code>:443</code>), so a reverse-proxied controller on the standard HTTPS port works. The check is scheme-agnostic &mdash; a non-HTTPS URL is not rejected here, only warned (see below).</li>
       <li>TCP connectivity is tested asynchronously with a 2-second timeout</li>
     </ul>
 
