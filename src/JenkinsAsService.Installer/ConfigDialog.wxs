@@ -6,7 +6,11 @@
     <!-- ════════════════════════════════════════════════════════════════════
          Page 1: Jenkins Configuration
          ════════════════════════════════════════════════════════════════════ -->
-    <UI>
+    <!-- The UI carries an Id so Package.wxs can pull this fragment in with a UIRef. Without that reference
+         the WiX linker drops the whole fragment as unused, the MSI ships with only the stock
+         WixUI_InstallDir pages, and the install skips straight to VerifyReadyDlg with every JENKINS_*
+         property empty (WriteConfig then fails with an empty URL and secret, installer error 1722). -->
+    <UI Id="JenkinsConfigUI">
       <Dialog Id="JenkinsConfigDlg" Width="370" Height="270" Title="[ProductName] Setup">
 
         <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15"
@@ -216,8 +220,17 @@
 
       <!-- ─── Wire into WixUI_InstallDir sequence ─── -->
       <!-- Default: License → InstallDirDlg (no override needed, WixUI_InstallDir handles it) -->
-      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="JenkinsConfigDlg" Order="2" />
-      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="AdvancedOptionsDlg" Order="2" />
+      <!-- WixUI_InstallDir already publishes InstallDirDlg/Next NewDialog to VerifyReadyDlg at Order 4
+           (gated on a validated path). This insert must use a HIGHER Order so it wins and routes into the
+           config pages; the same path-valid condition is kept so an invalid folder still re-prompts rather
+           than skipping ahead. The previous Order 2 lost to the stock Order 4 publish, so every config page
+           was skipped and WriteConfig ran with an empty URL and secret (installer error 1722). -->
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="JenkinsConfigDlg" Order="5"
+               Condition="WIXUI_INSTALLDIR_VALID = &quot;1&quot;" />
+      <!-- Return from the confirm page to the last config page on a fresh install; leave stock maintenance
+           navigation (Order 2) untouched when the product is already Installed. -->
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="AdvancedOptionsDlg" Order="5"
+               Condition="NOT Installed" />
 
     </UI>
   </Fragment>

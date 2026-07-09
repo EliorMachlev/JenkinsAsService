@@ -58,6 +58,9 @@
     </Feature>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <!-- Pull in the custom Jenkins configuration pages (ConfigDialog.wxs). This reference is what keeps the
+         linker from discarding that fragment; without it the config wizard pages never ship. -->
+    <UIRef Id="JenkinsConfigUI" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)License.rtf" />
 
     <!-- ─── Custom Action: call installed exe to write appsettings.json ───
