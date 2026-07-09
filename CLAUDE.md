@@ -98,6 +98,7 @@ Add tests alongside new logic; run `dotnet test -c Release` and confirm green be
 - Default secret mode is **`Dpapi`** (encrypted at rest, machine-scoped) — deliberately **not** the world-readable machine env var. The Security Options radio group lists DPAPI (recommended) → TPM (strongest) → Credential Manager → Environment Variable → Unprotected.
 - The install-time secret is passed on the `WriteConfig` deferred CA command line — an accepted MSI trade-off (EXE custom actions get no `CustomActionData`); mitigated by `Hidden="yes"` + `Impersonate="no"` (runs as SYSTEM). Scripted installs that must avoid even a verbose MSI log should call `update-secret` directly with the secret-env/secret-file input options.
 - Default identity is the virtual account `NT SERVICE\Jenkins`. Runtime data dir is set by a second CA (`--set-data-dir`) because folding it into the main command would exceed the MSI 255-char CA limit.
+- Optional settings are collected across the two config pages plus an **Advanced Options** page and applied by three deferred `update-secret --merge` custom actions (`WriteAdvanced1/2/3`), split only to stay under the MSI 255-char CA limit. They run after `WriteConfig` and before `StartServices`, so the full config exists before the service launches.
 - XML comments must not contain `--` (WIX0104); validate `.wxs` well-formedness after edits.
 
 ## CI/CD & Security Scans

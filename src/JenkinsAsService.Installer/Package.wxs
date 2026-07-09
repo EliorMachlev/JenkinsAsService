@@ -29,6 +29,19 @@
     <Property Id="JENKINS_SECRET_MODE" Value="Dpapi" Secure="yes" />
     <Property Id="JENKINS_THUMBPRINT" Secure="yes" />
 
+    <!-- Optional-field properties. Each carries its ServiceSettings default so an untouched field
+         reproduces current behaviour. Bool fields use "1" (checked) / "" (unchecked) from checkboxes. -->
+    <Property Id="JENKINS_METHOD" Value="Auto" Secure="yes" />
+    <Property Id="JENKINS_DPAPI_SCOPE" Value="Machine" Secure="yes" />
+    <Property Id="JENKINS_VIA_FILE" Value="1" Secure="yes" />
+    <Property Id="JENKINS_CUSTOM_ARGS" Secure="yes" />
+    <Property Id="JENKINS_ALLOWED_ENV" Secure="yes" />
+    <Property Id="JENKINS_SANITIZE_ENV" Value="1" Secure="yes" />
+    <Property Id="JENKINS_DEBUG" Secure="yes" />
+    <Property Id="JENKINS_COMPACT_LOG" Secure="yes" />
+    <Property Id="JENKINS_RETAINED_LOGS" Value="3" Secure="yes" />
+    <Property Id="JENKINS_MAX_RETRIES" Value="0" Secure="yes" />
+
     <!-- ─── Service identity (least privilege). Default: virtual service account 'NT SERVICE\Jenkins'.
          For a password-based or gMSA account, override all three: SERVICE_ACCOUNT='DOMAIN\svc' (+ '$'
          for gMSA), SERVICE_ACCOUNT_DOMAIN/SERVICE_ACCOUNT_NAME (for the folder ACL), and
@@ -68,9 +81,35 @@
                   ExeCommand='update-secret --silent --set-data-dir "[DATAFOLDER]"'
                   Execute="deferred" Impersonate="no" />
 
+    <!-- Advanced optional fields, applied via the update-secret merge flag. Split across three CAs purely to
+         keep each authored command under the MSI 255-char Target limit. Possibly-empty values are quoted
+         so an empty property does not swallow the following flag. -->
+    <CustomAction Id="WriteAdvanced1"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='update-secret --silent --merge --method [JENKINS_METHOD] --dpapi-scope [JENKINS_DPAPI_SCOPE] --via-file "[JENKINS_VIA_FILE]" --max-retries [JENKINS_MAX_RETRIES]'
+                  Execute="deferred" Impersonate="no" />
+    <CustomAction Id="WriteAdvanced2"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='update-secret --silent --merge --debug "[JENKINS_DEBUG]" --compact-log "[JENKINS_COMPACT_LOG]" --retained-logs [JENKINS_RETAINED_LOGS] --sanitize-env "[JENKINS_SANITIZE_ENV]"'
+                  Execute="deferred" Impersonate="no" />
+    <CustomAction Id="WriteAdvanced3"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='update-secret --silent --merge --custom-args "[JENKINS_CUSTOM_ARGS]" --allowed-env "[JENKINS_ALLOWED_ENV]"'
+                  Execute="deferred" Impersonate="no" />
+
+    <!-- All five CAs must run AFTER InstallFiles (the exe must be on disk to invoke) and BEFORE StartServices:
+         the service is registered with Start="install" (ServiceControl, Wait="yes"), so SCM launches it at
+         the standard StartServices action. If appsettings.json / the data dir aren't written yet, the service
+         fails its pre-flight config validation, StartServices reports failure, and the install rolls back.
+         Writing config before StartServices is the fix — do not move these back to Before=InstallFinalize.
+         WriteAdvanced1/2/3 apply the optional fields via the update-secret merge flag between WriteConfig
+         (required fields) and SetDataDir (data directory), preserving that ordering guarantee. -->
     <InstallExecuteSequence>
-      <Custom Action="WriteConfig" Before="SetDataDir" Condition="NOT Installed" />
-      <Custom Action="SetDataDir" Before="InstallFinalize" Condition="NOT Installed" />
+      <Custom Action="WriteConfig" After="InstallFiles" Condition="NOT Installed" />
+      <Custom Action="WriteAdvanced1" After="WriteConfig" Condition="NOT Installed" />
+      <Custom Action="WriteAdvanced2" After="WriteAdvanced1" Condition="NOT Installed" />
+      <Custom Action="WriteAdvanced3" After="WriteAdvanced2" Condition="NOT Installed" />
+      <Custom Action="SetDataDir" After="WriteAdvanced3" Condition="NOT Installed" />
     </InstallExecuteSequence>
 
   </Package>

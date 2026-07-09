@@ -33,6 +33,17 @@ public static class UpdateSecretCommand
                                   Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
           --username <value>      Windows account for impersonation (DOMAIN\account)
           --silent                Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
+          --merge                 Merge only the optional fields below into an existing appsettings.json
+                                  (no secret written). Used by the installer's advanced custom actions.
+          --method <value>        Connection transport: Auto, WebSocket, Https
+          --via-file <bool>       Pass secret to agent via file (true/false)
+          --custom-args <value>   Extra java.exe arguments
+          --sanitize-env <bool>   Sanitize the agent child environment (true/false)
+          --allowed-env <value>   Extra env var names to pass through (semicolon/comma separated)
+          --debug <bool>          Verbose Java agent logging (true/false)
+          --compact-log <bool>    Compact JSON log format (true/false)
+          --retained-logs <int>   Number of rolled log files to keep
+          --max-retries <int>     Max auto-recovery attempts (0 = infinite)
           --help                  Show this help
         """;
 
@@ -67,6 +78,16 @@ public static class UpdateSecretCommand
         public string? Username;
         public bool Silent;
         public bool Impersonate;
+        public bool Merge;
+        public ConnectionMethod? Method;
+        public bool? ViaFile;
+        public string? CustomArgs;
+        public bool? SanitizeEnv;
+        public string? AllowedEnv;
+        public bool? DebugMode;
+        public bool? CompactLog;
+        public int? RetainedLogs;
+        public int? MaxRetries;
     }
 
     public static int Run(string[] args)
@@ -96,6 +117,26 @@ public static class UpdateSecretCommand
         {
             SecretWriter.SetDataDirectory(basePath, parsed.SetDataDir);
             Console.WriteLine($"Data directory set to {parsed.SetDataDir}");
+            return 0;
+        }
+
+        // Installer-only path: surgically merge optional fields into an already-written config, then exit.
+        if (parsed.Merge)
+        {
+            SecretWriter.MergeConfig(basePath, new ConfigMergeFields
+            {
+                Method = parsed.Method,
+                DpapiScope = parsed.DpapiScope,
+                ViaFile = parsed.ViaFile,
+                CustomArguments = parsed.CustomArgs,
+                SanitizeEnvironment = parsed.SanitizeEnv,
+                AllowedEnvironmentVariables = parsed.AllowedEnv,
+                DebugMode = parsed.DebugMode,
+                CompactLog = parsed.CompactLog,
+                RetainedLogs = parsed.RetainedLogs,
+                MaxRetries = parsed.MaxRetries
+            });
+            Console.WriteLine("Optional configuration merged into appsettings.json.");
             return 0;
         }
 
@@ -162,6 +203,33 @@ public static class UpdateSecretCommand
             case "--username":
                 state.Username = Next(args, ref i);
                 return true;
+            case "--method":
+                state.Method = ParseMethod(Next(args, ref i));
+                return true;
+            case "--via-file":
+                state.ViaFile = ParseBool(Next(args, ref i));
+                return true;
+            case "--custom-args":
+                state.CustomArgs = Next(args, ref i);
+                return true;
+            case "--sanitize-env":
+                state.SanitizeEnv = ParseBool(Next(args, ref i));
+                return true;
+            case "--allowed-env":
+                state.AllowedEnv = Next(args, ref i);
+                return true;
+            case "--debug":
+                state.DebugMode = ParseBool(Next(args, ref i));
+                return true;
+            case "--compact-log":
+                state.CompactLog = ParseBool(Next(args, ref i));
+                return true;
+            case "--retained-logs":
+                state.RetainedLogs = ParseInt(Next(args, ref i));
+                return true;
+            case "--max-retries":
+                state.MaxRetries = ParseInt(Next(args, ref i));
+                return true;
             default:
                 return false;
         }
@@ -176,6 +244,9 @@ public static class UpdateSecretCommand
                 return true;
             case "--impersonate":
                 state.Impersonate = true;
+                return true;
+            case "--merge":
+                state.Merge = true;
                 return true;
             default:
                 return false;
@@ -563,6 +634,37 @@ public static class UpdateSecretCommand
         Console.Error.WriteLine($"Error: unknown dpapi-scope '{value}'. Valid: Machine, User");
         return null;
     }
+
+    // Returns null on invalid input so a typo fails rather than silently defaulting.
+    internal static ConnectionMethod? ParseMethod(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (Enum.TryParse<ConnectionMethod>(value, ignoreCase: true, out var method))
+        {
+            return method;
+        }
+
+        Console.Error.WriteLine($"Error: unknown method '{value}'. Valid: Auto, WebSocket, Https");
+        return null;
+    }
+
+    // Maps checkbox-style values to bool. An empty string (unchecked MSI checkbox) is false.
+    // Unrecognised values return null so the caller leaves the field unchanged.
+    internal static bool? ParseBool(string? value) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "1" or "true" or "yes" or "on" => true,
+            "0" or "false" or "no" or "off" or "" => false,
+            null => null,
+            _ => null
+        };
+
+    internal static int? ParseInt(string? value) =>
+        int.TryParse(value, out var n) ? n : null;
 
     private static string ReadMaskedInput()
     {

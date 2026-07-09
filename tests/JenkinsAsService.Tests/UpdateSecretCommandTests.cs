@@ -206,6 +206,84 @@ public class UpdateSecretCommandTests : IDisposable
         code.Should().Be(1);
     }
 
+    // ─── Merge mode ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Merge_applies_optional_fields_without_a_secret()
+    {
+        // Seed a config as WriteConfig would have.
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
+            "{\"Jenkins\":{\"Secret\":{\"Value\":\"pre-written\",\"Mode\":\"Dpapi\"}}}");
+
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge",
+             "--method", "WebSocket",
+             "--max-retries", "4",
+             "--debug", "1",
+             "--via-file", "0",
+             "--custom-args", "-noCertificateCheck"],
+            _tempDir);
+
+        code.Should().Be(0);
+        var j = ReadConfig().RootElement.GetProperty("Jenkins");
+        j.GetProperty("Connection").GetProperty("Method").GetString().Should().Be("WebSocket");
+        j.GetProperty("Recovery").GetProperty("MaxRetries").GetInt32().Should().Be(4);
+        j.GetProperty("Logging").GetProperty("DebugMode").GetBoolean().Should().BeTrue();
+        j.GetProperty("Secret").GetProperty("ViaFile").GetBoolean().Should().BeFalse();
+        j.GetProperty("Agent").GetProperty("CustomArguments").GetString().Should().Be("-noCertificateCheck");
+        j.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("pre-written", "merge never touches the secret");
+    }
+
+    [Fact]
+    public void Merge_with_empty_quoted_bool_treats_as_false()
+    {
+        // Mirrors an unchecked MSI checkbox: --debug "" arrives as an empty argument.
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), "{\"Jenkins\":{}}");
+
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", "--debug", "", "--sanitize-env", "1"],
+            _tempDir);
+
+        code.Should().Be(0);
+        var logging = ReadConfig().RootElement.GetProperty("Jenkins").GetProperty("Logging");
+        logging.GetProperty("DebugMode").GetBoolean().Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("Auto", ConnectionMethod.Auto)]
+    [InlineData("websocket", ConnectionMethod.WebSocket)]
+    [InlineData("Https", ConnectionMethod.Https)]
+    public void ParseMethod_recognises_valid_methods(string input, ConnectionMethod expected)
+    {
+        UpdateSecretCommand.ParseMethod(input).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ParseMethod_returns_null_for_invalid()
+    {
+        UpdateSecretCommand.ParseMethod("Carrier-Pigeon").Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData("true", true)]
+    [InlineData("YES", true)]
+    [InlineData("0", false)]
+    [InlineData("false", false)]
+    [InlineData("", false)]
+    public void ParseBool_maps_known_values(string input, bool expected)
+    {
+        UpdateSecretCommand.ParseBool(input).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ParseInt_parses_and_rejects()
+    {
+        UpdateSecretCommand.ParseInt("7").Should().Be(7);
+        UpdateSecretCommand.ParseInt("nope").Should().BeNull();
+        UpdateSecretCommand.ParseInt("").Should().BeNull();
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private JsonDocument ReadConfig()
