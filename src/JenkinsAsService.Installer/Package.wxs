@@ -16,12 +16,6 @@
 
     <Icon Id="Logo.ico" SourceFile="$(var.ProjectDir)..\..\Resources\Logo.ico" />
     <Property Id="ARPPRODUCTICON" Value="Logo.ico" />
-
-    <!-- Small info glyph used by the Java Path help control on the config page. An Icon-type control draws its
-         picture from the Binary table (not the Icon table). MSI renders a hover tooltip (Help column) only for
-         picture controls (Icon/Bitmap/PushButton), not plain Text, so the on-hover explanation is attached to
-         this icon rather than to a text hint. -->
-    <Binary Id="InfoIcon" SourceFile="$(var.ProjectDir)..\..\Resources\Info.ico" />
     <Property Id="ARPHELPLINK" Value="https://github.com/EliorMachlev/JenkinsAsService" />
 
     <!-- ─── Public properties (set via UI or silent msiexec; consumed by WriteConfig).
