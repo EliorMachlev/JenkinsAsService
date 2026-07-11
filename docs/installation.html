@@ -285,7 +285,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     <ul>
       <li>Installs to <code>C:\Program Files\Jenkins</code> (customizable via install directory dialog or <code>INSTALLFOLDER</code> property)</li>
       <li>Registers the <code>Jenkins</code> Windows Service under a least-privilege <strong>virtual service account</strong> (<code>NT SERVICE\Jenkins</code>, Automatic start) instead of <code>LocalSystem</code></li>
-      <li>Splits binaries from runtime data: binaries stay <strong>read-only</strong> in <code>C:\Program Files\Jenkins</code> (the agent account cannot overwrite the <code>.exe</code>), while runtime artifacts (<code>agent.jar</code>, logs, secret file, work dir) live in a separate writable data folder <code>C:\ProgramData\JenkinsAsService</code> (overridable via <code>DATAFOLDER</code>) where the service account is granted write</li>
+      <li>Splits binaries from runtime data: binaries stay <strong>read-only</strong> in <code>C:\Program Files\Jenkins</code> (the agent account cannot overwrite the <code>.exe</code>), while runtime artifacts live in a separate writable data folder <code>C:\ProgramData\JenkinsAsService</code> (overridable via <code>DATAFOLDER</code>) where the service account is granted write &mdash; logs and the secret file at the root, the cached <code>agent.jar</code> (+ SHA-256) under <code>agent\</code>, and the agent <code>-workDir</code> under <code>work\</code></li>
       <li>Locks down <code>appsettings.json</code> so only SYSTEM, Administrators and the service account can read it (the secret-bearing file is removed from <code>Users</code>)</li>
       <li>Pre-creates the Windows Event Log source (the low-privilege account cannot create it at runtime)</li>
       <li>Configures Windows-level service recovery automatically (<code>util:ServiceConfig</code> &mdash; restart on all 3 failures after 10s, reset daily)</li>
@@ -394,7 +394,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>DATAFOLDER</code></td>
             <td>No</td>
             <td><code>C:\ProgramData\JenkinsAsService</code></td>
-            <td>Writable data directory (<code>agent.jar</code>, logs, secret file, work dir). The service account is granted write here; persisted to <code>Agent:DataDirectory</code> in <code>appsettings.json</code></td>
+            <td>Writable data directory root (logs + secret file at the root, cached <code>agent.jar</code> under <code>agent\</code>, agent <code>-workDir</code> under <code>work\</code>). The service account is granted write here; persisted to <code>Agent:DataDirectory</code> in <code>appsettings.json</code></td>
           </tr>
           <tr>
             <td><code>JENKINS_URL</code></td>

@@ -57,6 +57,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private readonly IHostApplicationLifetime _lifetime;
     private readonly string _basePath;
     private string _dataDir = "";
+    private string _agentDir = "";
+    private string _workDir = "";
     private string _javaExe = "";
     private string _agentName = "";
     private string _resolvedSecret = "";
@@ -187,7 +189,10 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _logger.LogInformation("Secret resolved via {Mode} mode", _settings.Secret.Mode);
 
         _dataDir = DataPaths.ResolveDataDirectory(_settings.Agent.DataDirectory);
-        _logger.LogInformation("Data directory: {DataDir}", _dataDir);
+        _agentDir = DataPaths.ResolveAgentDirectory(_dataDir);
+        _workDir = DataPaths.ResolveWorkDirectory(_dataDir);
+        _logger.LogInformation("Data directory: {DataDir} (agent cache: {AgentDir}, work dir: {WorkDir})",
+            _dataDir, _agentDir, _workDir);
 
         _effectiveMethod = AgentTransport.InitialMethod(_settings.Connection.Method);
         _logger.LogInformation("Connection method: {Configured} (starting transport: {Effective})",
@@ -217,7 +222,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     private ProcessStartInfo BuildProcessStartInfo()
     {
-        var jarPath = Path.Combine(_dataDir, JarFilename);
+        var jarPath = Path.Combine(_agentDir, JarFilename);
         var normalizedUrl = $"{_settings.Connection.Url.TrimEnd(TrailingSlash)}{UrlPathSeparator}";
 
         var psi = new ProcessStartInfo(_javaExe)
@@ -226,7 +231,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            WorkingDirectory = _dataDir
+            WorkingDirectory = _workDir
         };
 
         AddAgentArguments(psi, jarPath, normalizedUrl);
@@ -254,7 +259,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
         psi.ArgumentList.Add(ArgName);
         psi.ArgumentList.Add(_agentName);
         psi.ArgumentList.Add(ArgWorkDir);
-        psi.ArgumentList.Add(_dataDir);
+        psi.ArgumentList.Add(_workDir);
 
         if (_effectiveMethod == ConnectionMethod.WebSocket)
         {
@@ -471,7 +476,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
         try
         {
-            await _jarDownloader.Download(new Uri(_settings.Connection.Url), _dataDir, ct);
+            await _jarDownloader.Download(new Uri(_settings.Connection.Url), _agentDir, ct);
             _agent = StartAgentProcess();
 
             // The first successful start is the initial launch; subsequent ones are restarts (metric).

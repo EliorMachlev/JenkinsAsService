@@ -41,7 +41,7 @@ The `.slnx` builds the app + tests only; the installer has `Build=false` and mus
 - **Config POCOs:** `ServiceSettings.cs` (nested: `Connection`/`Secret`/`Agent`/`Hardening`/`Logging`/`Recovery`), `TelemetrySettings.cs`, `ConfigKeys.cs` (centralized section/key name constants — **use these, don't hardcode config strings**), `ConnectionMethod.cs`, `SecretMode.cs`, `DpapiScope.cs`
 - **Secrets:** `ISecretResolver.cs`/`SecretResolver.cs`, `SecretWriter.cs`, `UpdateSecretCommand.cs` (the `update-secret` CLI), `TpmSecretProtector.cs`, `AgentSecretFile.cs` (`-secret @<file>` off-argv), `CertificateThumbprintValidator.cs`
 - **Agent process:** `AgentProcessLauncher.cs` (the `IAgentProcessLauncher`/`IAgentProcess` seam — production wraps `System.Diagnostics.Process`; fakes drive the watchdog in tests), `AgentArgumentParser.cs`, `AgentTransport.cs` (pure transport-selection: `InitialMethod`/`Toggle`/`ShouldFallback`), `JavaPathResolver.cs`, `ServiceSettingsValidator.cs`
-- **Networking:** `IJarDownloader.cs`/`HttpJarDownloader.cs` (ETag conditional GET; downloads to a temp file + atomic move so a truncated download can't sit behind a valid ETag), `IConnectivityChecker.cs`/`TcpConnectivityChecker.cs`
+- **Networking:** `IJarDownloader.cs`/`HttpJarDownloader.cs` (ETag conditional GET; downloads to a temp file + atomic move so a truncated download can't sit behind a valid ETag; records the jar's SHA-256 on download and re-verifies the cached jar on every 304 — a mismatch forces an unconditional re-download, so a tampered/corrupt cached jar is never launched. TOFU/local-integrity, not upstream authenticity — that's `Connection:ControllerCertThumbprint`), `IConnectivityChecker.cs`/`TcpConnectivityChecker.cs`
 - **Hardening:** `ProcessMitigations.cs`, `EnvironmentSanitizer.cs`, `ConfigAclHardener.cs`, `EventLogSourceInstaller.cs`, `DataPaths.cs` (binary/data split)
 - **Other:** `Properties/AssemblyInfo.cs` (explicit assembly attributes — required for Codacy; do not delete)
 
@@ -70,7 +70,7 @@ Settings live under the `Jenkins` section of `appsettings.json`, grouped into su
 
 - **`Connection:Url`** must carry an **explicit port**. A URL with no port is rejected; an explicitly-written standard `:443` (e.g. a reverse-proxied controller) is accepted. The rule checks the raw string for a textual port, not `Uri.IsDefaultPort`, and is **scheme-agnostic** — plain `http` (incl. `:80`) is *not* blocked here, only warned separately (secret sent unencrypted). Don't advertise `:80` in examples.
 - Key axes: `Connection:Method` (`Auto`/`WebSocket`/`Https` — `Https` means direct TCP inbound, not literal HTTPS), `Secret:Mode` (`Unprotected`/`Dpapi`/`Tpm`/`EnvironmentVariable`/`CredentialManager`), `Secret:ViaFile`, `Secret:DpapiScope`, `Hardening:SanitizeEnvironment`, `Agent:DataDirectory`, `Recovery:MaxRetries` (0 = infinite).
-- Runtime data (jar, logs, secret file, workdir) lives in `%ProgramData%\JenkinsAsService`, **separate** from the read-only install folder in `Program Files`.
+- Runtime data lives in `%ProgramData%\JenkinsAsService`, **separate** from the read-only install folder in `Program Files`. Within it: logs + secret file at the root, cached `agent.jar` (+ `.etag`/`.sha256`) under `agent\`, and the Jenkins `-workDir` under `work\` — the cache is isolated from workspace churn so a build step can't clobber the binary the watchdog launches. `DataPaths.ResolveAgentDirectory`/`ResolveWorkDirectory` derive the subdirs; don't put the jar back in the workdir root.
 
 ## Conventions & Invariants
 
