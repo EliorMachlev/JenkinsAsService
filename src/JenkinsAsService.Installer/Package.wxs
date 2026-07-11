@@ -51,6 +51,12 @@
     <Property Id="SERVICE_ACCOUNT_NAME" Value="Jenkins" Secure="yes" />
     <Property Id="SERVICE_PASSWORD" Secure="yes" Hidden="yes" />
 
+    <!-- Prefill the Java Path field from JAVA_HOME so the wizard shows the detected JDK and how it was found.
+         UI sequence only and gated on an empty value, so a silent install that sets no explicit java path
+         still defers to the runtime resolver instead of pinning JAVA_HOME. The user can clear or override it. -->
+    <SetProperty Id="JENKINS_JAVA_PATH" Value="[%JAVA_HOME]" After="AppSearch" Sequence="ui"
+                 Condition="NOT JENKINS_JAVA_PATH" />
+
     <Feature Id="Main" Title="Jenkins Agent Service" Level="1">
       <ComponentGroupRef Id="PublishOutput" />
       <ComponentRef Id="ServiceComponent" />

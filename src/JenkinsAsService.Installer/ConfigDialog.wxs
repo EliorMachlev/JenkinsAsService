@@ -18,21 +18,23 @@
 
         <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15"
                  Transparent="yes" NoPrefix="yes"
-                 Text="Enter the Jenkins controller connection details." />
+                 Text="Enter the Jenkins controller connection details.  Fields marked * are required." />
 
         <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
                  TabSkip="no" Text="WixUI_Bmp_Banner" />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
 
         <!-- Row 1: Jenkins URL (required) -->
-        <Control Id="UrlLabel" Type="Text" X="15" Y="62" Width="115" Height="13" NoPrefix="yes"
-                 Text="Jenkins URL (with port):" />
+        <Control Id="UrlLabel" Type="Text" X="15" Y="62" Width="120" Height="13" NoPrefix="yes"
+                 Text="* Jenkins URL (with port):" />
         <Control Id="UrlEdit" Type="Edit" X="135" Y="60" Width="220" Height="16" Property="JENKINS_URL" />
 
         <!-- Row 2: Agent Secret (required) -->
-        <Control Id="SecretLabel" Type="Text" X="15" Y="90" Width="115" Height="13" NoPrefix="yes"
-                 Text="Agent Secret:" />
-        <Control Id="SecretEdit" Type="MaskedEdit" X="135" Y="88" Width="220" Height="16" Property="JENKINS_SECRET" />
+        <Control Id="SecretLabel" Type="Text" X="15" Y="90" Width="120" Height="13" NoPrefix="yes"
+                 Text="* Agent Secret:" />
+        <!-- Password="yes" masks the secret on screen. The previous MaskedEdit rendered no usable input box
+             because it had no mask template, so the secret could not be entered at all. -->
+        <Control Id="SecretEdit" Type="Edit" Password="yes" X="135" Y="88" Width="220" Height="16" Property="JENKINS_SECRET" />
 
         <!-- Row 3: Connection Method -->
         <Control Id="MethodLabel" Type="Text" X="15" Y="118" Width="115" Height="13" NoPrefix="yes"
@@ -48,18 +50,22 @@
 
         <!-- Row 4: Controller cert thumbprint -->
         <Control Id="ThumbLabel" Type="Text" X="15" Y="146" Width="115" Height="13" NoPrefix="yes"
-                 Text="Cert Thumbprint (opt):" />
+                 Text="Cert Thumbprint:" />
         <Control Id="ThumbEdit" Type="Edit" X="135" Y="144" Width="220" Height="16" Property="JENKINS_THUMBPRINT" />
 
         <!-- Row 5: Agent name -->
         <Control Id="NameLabel" Type="Text" X="15" Y="174" Width="115" Height="13" NoPrefix="yes"
-                 Text="Agent Name (opt):" />
+                 Text="Agent Name:" />
         <Control Id="NameEdit" Type="Edit" X="135" Y="172" Width="220" Height="16" Property="JENKINS_AGENT_NAME" />
 
         <!-- Row 6: Java path -->
         <Control Id="JavaLabel" Type="Text" X="15" Y="202" Width="115" Height="13" NoPrefix="yes"
-                 Text="Java Path (opt):" />
+                 Text="Java Path:" />
         <Control Id="JavaEdit" Type="Edit" X="135" Y="200" Width="220" Height="16" Property="JENKINS_JAVA_PATH" />
+        <!-- Prefilled from JAVA_HOME by a SetProperty CA (Package.wxs). The hint tells the user how it was
+             discovered and that clearing it defers to runtime auto-detection at service start. -->
+        <Control Id="JavaHint" Type="Text" X="15" Y="218" Width="345" Height="14" Transparent="yes" NoPrefix="yes"
+                 Text="Optional. Auto-filled from JAVA_HOME; clear it to auto-detect at service start, or enter a custom path." />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 
