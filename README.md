@@ -21,7 +21,7 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **Auto-start on boot** — runs under a least-privilege virtual service account (`NT SERVICE\Jenkins`), no interactive login required
 - **Event-driven watchdog** — detects agent death instantly (not polling), auto-recovers with exponential backoff (10s to 5min); a persistent crash-loop stops the service so Windows Service Recovery can act, while a merely-unreachable controller is retried indefinitely
 - **Secret protection** — TPM 2.0 hardware-backed key, DPAPI machine/user-scope encryption, Windows Credential Manager, environment variables, or plaintext
-- **Smart jar caching** — ETag-based conditional GET skips the download when `agent.jar` is unchanged
+- **Smart jar caching + integrity** — ETag-based conditional GET skips the download when `agent.jar` is unchanged; the jar's SHA-256 is recorded on download and re-verified on every reuse, so a tampered or corrupt cached jar is re-downloaded instead of launched
 - **HTTP resilience** — Polly-based retry, circuit breaker, and timeout on all HTTP calls
 - **Structured logging** — Serilog rolling file + Windows Event Log, with `ProcessId`/`MachineName` enrichment
 - **CLEF JSON mode** — machine-parseable compact log format for Seq, Datadog, or any log aggregator
@@ -138,7 +138,7 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 | `Secret:ViaFile` | No | `true` | Pass the secret as `-secret @<file>` (ACL-restricted) instead of inline, keeping it out of the process table |
 | `Agent:JavaPath` | No | `JAVA_HOME` | Path to JDK `bin` folder |
 | `Agent:CustomArguments` | No | *(empty)* | Extra `java.exe` args (supports quoted values and escaped quotes) |
-| `Agent:DataDirectory` | No | `%ProgramData%\JenkinsAsService` | Writable dir for runtime data (jar, logs, secret, work dir), separate from the read-only install folder |
+| `Agent:DataDirectory` | No | `%ProgramData%\JenkinsAsService` | Writable root for runtime data, separate from the read-only install folder: logs + secret at the root, cached `agent.jar` under `agent\`, Jenkins `-workDir` under `work\` |
 | `Hardening:SanitizeEnvironment` | No | `true` | Launch the agent with a deny-by-default environment (curated allow-list only) |
 | `Hardening:AllowedEnvironmentVariables` | No | *(empty)* | Extra env var names (`;`/`,`-separated) to pass through when sanitizing |
 | `Logging:DebugMode` | No | `false` | Verbose Java agent output in logs |
@@ -200,7 +200,7 @@ The watchdog is event-driven — it awaits the process exit signal, not a pollin
 
 1. Wait with exponential backoff (10s, 20s, 40s, ... capped at 300s)
 2. Test TCP connectivity — an **unreachable** controller is retried indefinitely and never counts toward `MaxRetries`
-3. Re-download `agent.jar` via conditional GET (ETag/304) and start a new agent process
+3. Refresh `agent.jar` via conditional GET (ETag/304); on a 304 the cached jar is SHA-256-verified (re-downloaded if it fails), then start a new agent process
 
 **Live agent** — awaits the exit signal or a 60s stability timer:
 
@@ -256,7 +256,7 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 - TLS 1.2+ enforced by default (.NET 10), with optional controller certificate pinning (`ControllerCertThumbprint`)
 - Secrets encrypted at rest (TPM 2.0 hardware-backed key, DPAPI machine/user scope, or CredMgr), redacted from all logs, and passed to the agent off the command line via `-secret @<file>` so they never appear in the process table
 - Least-privilege virtual service account, deny-by-default environment block for the agent child, and Win32 process-mitigation policies (no remote/low-IL/non-System32 DLL loads, extension-point injection disabled)
-- Binary/data separation: read-only binaries in `Program Files`, writable runtime data (jar, logs, secret, work dir) in `ProgramData` — a malicious pipeline running under the agent can't overwrite the service `.exe`
+- Binary/data separation: read-only binaries in `Program Files`, writable runtime data in `ProgramData` — a malicious pipeline running under the agent can't overwrite the service `.exe`. Within the data folder the cached `agent.jar` (+ SHA-256) sits in `agent\`, isolated from the build `work\` dir, and is integrity-checked before each launch so a build step can't swap the binary the watchdog runs
 - Deterministic builds with locked NuGet restore and embedded PDB symbols
 - CycloneDX **SBOM** generated in CI and attached to every release (with SHA-256 checksum)
 - Unit tests run on every push and PR

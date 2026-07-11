@@ -52,4 +52,30 @@ public class DataPathsTests
         resolved.Should().NotContain("%");
         resolved.Should().EndWith(@"JAS_EnvTest_Marker");
     }
+
+    [Fact]
+    public void Agent_and_work_dirs_are_created_as_siblings_under_the_data_dir()
+    {
+        var dataDir = Path.Combine(Path.GetTempPath(), "JAS_Sub_" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            Directory.CreateDirectory(dataDir);
+
+            var agentDir = DataPaths.ResolveAgentDirectory(dataDir);
+            var workDir = DataPaths.ResolveWorkDirectory(dataDir);
+
+            agentDir.Should().Be(Path.Combine(dataDir, DataPaths.AgentFolderName));
+            workDir.Should().Be(Path.Combine(dataDir, DataPaths.WorkFolderName));
+            Directory.Exists(agentDir).Should().BeTrue("the agent cache subfolder is created best-effort");
+            Directory.Exists(workDir).Should().BeTrue("the work subfolder is created best-effort");
+            agentDir.Should().NotBe(workDir, "the jar cache must be isolated from build/workspace churn");
+        }
+        finally
+        {
+            if (Directory.Exists(dataDir))
+            {
+                Directory.Delete(dataDir, recursive: true);
+            }
+        }
+    }
 }

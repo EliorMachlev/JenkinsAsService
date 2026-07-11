@@ -129,7 +129,7 @@
             <td><code>Agent:DataDirectory</code></td>
             <td>No</td>
             <td><code>%ProgramData%\JenkinsAsService</code></td>
-            <td>Writable directory for runtime artifacts (<code>agent.jar</code>, logs, secret file, work dir), kept separate from the read-only install folder. Env vars are expanded. The MSI sets this to the chosen <code>DATAFOLDER</code>. See <a href="#data-dir-split">Data directory split</a>.</td>
+            <td>Writable directory root for runtime artifacts, kept separate from the read-only install folder. Holds logs + secret file at the root, the cached <code>agent.jar</code> under <code>agent\</code>, and the Jenkins <code>-workDir</code> under <code>work\</code>. Env vars are expanded. The MSI sets this to the chosen <code>DATAFOLDER</code>. See <a href="#data-dir-split">Data directory split</a>.</td>
           </tr>
           <tr>
             <td><code>Hardening:SanitizeEnvironment</code></td>
@@ -410,13 +410,14 @@
           <tr>
             <td>Data folder (<code>Agent:DataDirectory</code>)</td>
             <td><code>C:\ProgramData\JenkinsAsService</code></td>
-            <td><code>agent.jar</code> (+ ETag cache), <code>agent.log</code>/<code>.clef</code>, <code>.agent-secret</code>, agent work dir</td>
+            <td><code>agent.log</code>/<code>.clef</code> + <code>.agent-secret</code> at the root; cached <code>agent.jar</code> (+ <code>.etag</code>/<code>.sha256</code>) under <code>agent\</code>; Jenkins <code>-workDir</code> under <code>work\</code></td>
             <td>Service account granted write (set by the MSI)</td>
           </tr>
         </tbody>
       </table>
     </div>
     <p>Because the install folder is not writable by the agent identity, a malicious pipeline running inside the agent cannot overwrite the service binary and wait for a restart &mdash; a local privilege-escalation / persistence vector that a single shared folder can't close (the same identity needs write for data but must not have it for the binary). The MSI sets <code>Agent:DataDirectory</code> to the chosen <code>DATAFOLDER</code>; for portable/manual deployments the service defaults to <code>%ProgramData%\JenkinsAsService</code> and creates it on first run.</p>
+    <p>Inside the data folder the cached <code>agent.jar</code> and its integrity sidecars live in the <code>agent\</code> subfolder, kept out of the <code>work\</code> subfolder (the Jenkins <code>-workDir</code>) where builds churn &mdash; so a <code>git clean</code> or a workspace-path collision can't clobber the binary the watchdog launches. On download the jar's SHA-256 is recorded next to it; on every subsequent start, if the controller answers the ETag check with <code>304 Not Modified</code>, the cached jar is re-hashed and compared &mdash; any mismatch (tamper or corruption) forces an unconditional re-download rather than launching the altered jar. This is trust-on-first-use local-integrity checking; to also pin <em>who</em> the jar came from, set <a href="#cert-pinning"><code>Connection:ControllerCertThumbprint</code></a>.</p>
 
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>

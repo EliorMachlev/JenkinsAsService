@@ -75,10 +75,12 @@ public sealed class AgentSettings
     public string CustomArguments { get; set; } = "";
 
     /// <summary>
-    /// Writable data directory for runtime artifacts the service produces — <c>agent.jar</c> (+ ETag
-    /// cache), log files, the secret file, and the agent work directory. Kept separate from the
-    /// read-only install folder so the binary can't be overwritten by the agent identity. Environment
-    /// variables are expanded. Empty (default) resolves to <c>%ProgramData%\JenkinsAsService</c>.
+    /// Writable data directory root for runtime artifacts the service produces — log files and the secret
+    /// file at the root, the cached <c>agent.jar</c> (+ ETag and SHA-256 sidecars) under <c>agent\</c>, and
+    /// the Jenkins <c>-workDir</c> under <c>work\</c> (so build/workspace churn can't clobber the binary).
+    /// Kept separate from the read-only install folder so the binary can't be overwritten by the agent
+    /// identity. Environment variables are expanded. Empty (default) resolves to
+    /// <c>%ProgramData%\JenkinsAsService</c>.
     /// </summary>
     public string DataDirectory { get; set; } = "";
 }
