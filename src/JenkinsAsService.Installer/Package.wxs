@@ -6,7 +6,8 @@
            Version="$(var.Version)"
            UpgradeCode="dbd9ef1c-d4f0-5809-a88c-de4dbbf85f29"
            Scope="perMachine"
-           InstallerVersion="500">
+           InstallerVersion="500"
+           Codepage="65001">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
                   Schedule="afterInstallInitialize" />
@@ -15,6 +16,12 @@
 
     <Icon Id="Logo.ico" SourceFile="$(var.ProjectDir)..\..\Resources\Logo.ico" />
     <Property Id="ARPPRODUCTICON" Value="Logo.ico" />
+
+    <!-- Small info glyph used by the Java Path help control on the config page. An Icon-type control draws its
+         picture from the Binary table (not the Icon table). MSI renders a hover tooltip (Help column) only for
+         picture controls (Icon/Bitmap/PushButton), not plain Text, so the on-hover explanation is attached to
+         this icon rather than to a text hint. -->
+    <Binary Id="InfoIcon" SourceFile="$(var.ProjectDir)..\..\Resources\Info.ico" />
     <Property Id="ARPHELPLINK" Value="https://github.com/EliorMachlev/JenkinsAsService" />
 
     <!-- ─── Public properties (set via UI or silent msiexec; consumed by WriteConfig).
