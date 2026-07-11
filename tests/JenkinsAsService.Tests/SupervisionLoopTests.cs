@@ -134,11 +134,41 @@ public sealed class SupervisionLoopTests : IDisposable
         started.WasDisposed.Should().BeTrue();
     }
 
-    private JenkinsAgentWorker CreateWorker(int maxRetries)
+    [Fact]
+    public async Task Auto_mode_launches_the_agent_with_noReconnect_so_the_watchdog_owns_reconnection()
+    {
+        var worker = CreateWorker(maxRetries: 0, method: ConnectionMethod.Auto);
+        worker.UseFastTimingForTests(stabilityMs: 10_000, backoffBaseSec: 0, backoffMaxSec: 0);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitUntil(() => _launcher.StartCount == 1);
+
+        _launcher.LastStartInfo!.ArgumentList.Should().Contain("-noReconnect",
+            "Auto must let the agent exit on a failed handshake so the transport fallback can fire");
+
+        await StopQuietly(worker);
+    }
+
+    [Fact]
+    public async Task Fixed_transport_keeps_the_agents_own_internal_reconnect()
+    {
+        var worker = CreateWorker(maxRetries: 0, method: ConnectionMethod.WebSocket);
+        worker.UseFastTimingForTests(stabilityMs: 10_000, backoffBaseSec: 0, backoffMaxSec: 0);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitUntil(() => _launcher.StartCount == 1);
+
+        _launcher.LastStartInfo!.ArgumentList.Should().NotContain("-noReconnect",
+            "a pinned transport has nothing to fall back to, so the agent's faster internal reconnect stays");
+
+        await StopQuietly(worker);
+    }
+
+    private JenkinsAgentWorker CreateWorker(int maxRetries, ConnectionMethod method = ConnectionMethod.Auto)
     {
         var settings = new ServiceSettings
         {
-            Connection = new() { Url = "https://jenkins:8443", Method = ConnectionMethod.Auto },
+            Connection = new() { Url = "https://jenkins:8443", Method = method },
             Secret = new() { Value = "cipher", Mode = SecretMode.Unprotected, ViaFile = false },
             Agent = new() { JavaPath = _javaDir, DataDirectory = _dataDir },
             Hardening = new() { SanitizeEnvironment = false },

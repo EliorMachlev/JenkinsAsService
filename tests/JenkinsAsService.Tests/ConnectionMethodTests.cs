@@ -36,6 +36,17 @@ public class ConnectionMethodTests
     }
 
     [Theory]
+    // Only Auto hands reconnection to the watchdog (via -noReconnect) so a fast exit can trigger fallback.
+    [InlineData(ConnectionMethod.Auto, true)]
+    // Fixed transports keep the agent's own internal reconnect — no alternate transport to fall back to.
+    [InlineData(ConnectionMethod.WebSocket, false)]
+    [InlineData(ConnectionMethod.Https, false)]
+    public void UsesWatchdogReconnect_only_for_Auto(ConnectionMethod configured, bool expected)
+    {
+        AgentTransport.UsesWatchdogReconnect(configured).Should().Be(expected);
+    }
+
+    [Theory]
     // Auto + a real fast exit (didn't stabilise) → fall back.
     [InlineData(ConnectionMethod.Auto, false, true, true)]
     // Auto but the run reached stability → keep the transport.
