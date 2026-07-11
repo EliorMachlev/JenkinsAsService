@@ -81,10 +81,11 @@ JenkinsAsService handles sensitive data (Jenkins agent secrets) and runs as a pr
 
 ### Secret Protection
 
-Secrets are never stored in plaintext by default (MSI installer defaults to `EnvironmentVariable` mode). Four protection modes are available:
+Secrets are never stored in plaintext by default (the MSI installer defaults to `Dpapi`). Five protection modes are available, strongest first:
 
 | Mode | Mechanism | Risk if host is compromised |
 |---|---|---|
+| `Tpm` | TPM-bound, non-exportable RSA key (Platform Crypto Provider) | Usable only on this machine's TPM, by a process that can access the key |
 | `Dpapi` | Machine-scoped DPAPI encryption | Decryptable by any process on the same machine |
 | `CredentialManager` | Windows Credential Manager vault | Accessible to processes running as the same user |
 | `EnvironmentVariable` | Machine-level environment variable | Readable by any process on the machine |
@@ -92,7 +93,7 @@ Secrets are never stored in plaintext by default (MSI installer defaults to `Env
 
 ### Secret Redaction
 
-Agent secrets are scrubbed from all log output (file and Event Log) before being written. The redaction logic replaces any occurrence of the secret value with `[REDACTED]`.
+Agent secrets are scrubbed from all log output (file and Event Log) before being written. The redaction logic replaces any occurrence of the resolved secret with `*****`.
 
 ### Network Security
 

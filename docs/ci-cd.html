@@ -57,7 +57,7 @@
       <li><strong>Purpose:</strong> Full end-to-end build validation on every push/PR to <code>main</code></li>
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
       <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet test</code> &rarr; CycloneDX SBOM (uploaded as artifact) &rarr; optimized publish (win-x64 + win-x86) &rarr; WiX v5 MSI build (both architectures, <code>Version=0.0.0</code>)</li>
-      <li><strong>Tests:</strong> 143 unit tests (xUnit + NSubstitute + FluentAssertions)</li>
+      <li><strong>Tests:</strong> 178 unit tests (xUnit + NSubstitute + FluentAssertions)</li>
       <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time.</li>
     </ul>
 

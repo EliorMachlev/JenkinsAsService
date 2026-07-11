@@ -21,13 +21,13 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **Auto-start on boot** — runs under a least-privilege virtual service account (`NT SERVICE\Jenkins`), no interactive login required
 - **Event-driven watchdog** — detects agent death instantly (not polling), auto-recovers with exponential backoff (10s to 5min); a persistent crash-loop stops the service so Windows Service Recovery can act, while a merely-unreachable controller is retried indefinitely
 - **Secret protection** — TPM 2.0 hardware-backed key, DPAPI machine/user-scope encryption, Windows Credential Manager, environment variables, or plaintext
-- **Smart jar caching + integrity** — ETag-based conditional GET skips the download when `agent.jar` is unchanged; the jar's SHA-256 is recorded on download and re-verified on every reuse, so a tampered or corrupt cached jar is re-downloaded instead of launched
+- **Smart jar caching + integrity** — ETag conditional GET skips the download when `agent.jar` is unchanged; its SHA-256 is recorded on download and re-checked before reuse, so a tampered or corrupt cached jar is re-downloaded instead of launched
 - **HTTP resilience** — Polly-based retry, circuit breaker, and timeout on all HTTP calls
 - **Structured logging** — Serilog rolling file + Windows Event Log, with `ProcessId`/`MachineName` enrichment
 - **CLEF JSON mode** — machine-parseable compact log format for Seq, Datadog, or any log aggregator
 - **OpenTelemetry metrics** — opt-in OTLP export: restart counter, SEVERE event counter, .NET runtime metrics
 - **Secret redaction** — agent secrets are scrubbed from all log output
-- **143 unit tests** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness), CI on every push
+- **178 unit tests** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness), CI on every push
 - **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy; all actions SHA-pinned
 - **Single-file deploy** — self-contained `.exe` with R2R, compression, and embedded PDB symbols
 - **Dual-arch releases** — x64 + x86 MSI installers, 7z/RAR archives, SHA256 checksums
@@ -74,7 +74,7 @@ The default install path is `C:\Program Files\Jenkins` (customizable in the UI).
 For automated deployments, use `msiexec` with public properties:
 
 ```powershell
-msiexec /i JenkinsAsService_1.0.4_x64.msi /qn `
+msiexec /i JenkinsAsService_x64.msi /qn `
     INSTALLFOLDER="D:\Jenkins" `
     JENKINS_URL="https://jenkins.example.com:8443" `
     JENKINS_SECRET="your-secret" `
@@ -185,8 +185,8 @@ Exports: `jenkins_agent_restarts_total`, `jenkins_agent_severe_events_total`, an
 **Windows Event Log:** Warnings and errors under source `JenkinsAsService` — crash evidence even when the file log is unavailable.
 
 ```powershell
-# Tail the log
-Get-Content 'C:\Program Files\Jenkins\agent.log' -Tail 50 -Wait
+# Tail the log (in the data folder, not the install folder)
+Get-Content 'C:\ProgramData\JenkinsAsService\agent.log' -Tail 50 -Wait
 
 # Check Event Log
 Get-EventLog -LogName Application -Source JenkinsAsService -Newest 20
@@ -256,7 +256,7 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 - TLS 1.2+ enforced by default (.NET 10), with optional controller certificate pinning (`ControllerCertThumbprint`)
 - Secrets encrypted at rest (TPM 2.0 hardware-backed key, DPAPI machine/user scope, or CredMgr), redacted from all logs, and passed to the agent off the command line via `-secret @<file>` so they never appear in the process table
 - Least-privilege virtual service account, deny-by-default environment block for the agent child, and Win32 process-mitigation policies (no remote/low-IL/non-System32 DLL loads, extension-point injection disabled)
-- Binary/data separation: read-only binaries in `Program Files`, writable runtime data in `ProgramData` — a malicious pipeline running under the agent can't overwrite the service `.exe`. Within the data folder the cached `agent.jar` (+ SHA-256) sits in `agent\`, isolated from the build `work\` dir, and is integrity-checked before each launch so a build step can't swap the binary the watchdog runs
+- Binary/data separation: read-only binaries in `Program Files`, writable runtime data in `ProgramData` — a malicious pipeline can't overwrite the service `.exe`. The cached `agent.jar` (+ SHA-256) lives in an `agent\` subfolder isolated from the build `work\` dir and is integrity-checked before each launch, so a build step can't swap the binary the watchdog runs
 - Deterministic builds with locked NuGet restore and embedded PDB symbols
 - CycloneDX **SBOM** generated in CI and attached to every release (with SHA-256 checksum)
 - Unit tests run on every push and PR

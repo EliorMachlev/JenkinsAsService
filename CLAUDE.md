@@ -41,7 +41,7 @@ The `.slnx` builds the app + tests only; the installer has `Build=false` and mus
 - **Config POCOs:** `ServiceSettings.cs` (nested: `Connection`/`Secret`/`Agent`/`Hardening`/`Logging`/`Recovery`), `TelemetrySettings.cs`, `ConfigKeys.cs` (centralized section/key name constants — **use these, don't hardcode config strings**), `ConnectionMethod.cs`, `SecretMode.cs`, `DpapiScope.cs`
 - **Secrets:** `ISecretResolver.cs`/`SecretResolver.cs`, `SecretWriter.cs`, `UpdateSecretCommand.cs` (the `update-secret` CLI), `TpmSecretProtector.cs`, `AgentSecretFile.cs` (`-secret @<file>` off-argv), `CertificateThumbprintValidator.cs`
 - **Agent process:** `AgentProcessLauncher.cs` (the `IAgentProcessLauncher`/`IAgentProcess` seam — production wraps `System.Diagnostics.Process`; fakes drive the watchdog in tests), `AgentArgumentParser.cs`, `AgentTransport.cs` (pure transport-selection: `InitialMethod`/`Toggle`/`ShouldFallback`), `JavaPathResolver.cs`, `ServiceSettingsValidator.cs`
-- **Networking:** `IJarDownloader.cs`/`HttpJarDownloader.cs` (ETag conditional GET; downloads to a temp file + atomic move so a truncated download can't sit behind a valid ETag; records the jar's SHA-256 on download and re-verifies the cached jar on every 304 — a mismatch forces an unconditional re-download, so a tampered/corrupt cached jar is never launched. TOFU/local-integrity, not upstream authenticity — that's `Connection:ControllerCertThumbprint`), `IConnectivityChecker.cs`/`TcpConnectivityChecker.cs`
+- **Networking:** `IJarDownloader.cs`/`HttpJarDownloader.cs` (ETag conditional GET; temp-file + atomic move so a truncated download can't sit behind a valid ETag; records the jar's SHA-256 on download and re-verifies the cached jar on each 304 — a mismatch forces an unconditional re-download. TOFU/local-integrity, not upstream authenticity — that's `Connection:ControllerCertThumbprint`), `IConnectivityChecker.cs`/`TcpConnectivityChecker.cs`
 - **Hardening:** `ProcessMitigations.cs`, `EnvironmentSanitizer.cs`, `ConfigAclHardener.cs`, `EventLogSourceInstaller.cs`, `DataPaths.cs` (binary/data split)
 - **Other:** `Properties/AssemblyInfo.cs` (explicit assembly attributes — required for Codacy; do not delete)
 
@@ -85,7 +85,7 @@ Settings live under the `Jenkins` section of `appsettings.json`, grouped into su
 
 ## Testing
 
-xUnit + NSubstitute + FluentAssertions; **143 tests** currently (trust the runner, not any hard-coded number in docs). Test classes mirror units. Notable:
+xUnit + NSubstitute + FluentAssertions; **178 tests** currently (trust the runner, not any hard-coded number in docs). Test classes mirror units. Notable:
 - `SupervisionLoopTests` drives the full watchdog end-to-end via `FakeAgentProcess`/`FakeAgentProcessLauncher` with millisecond timing (restart-on-crash, give-up-and-stop, unreachable-never-gives-up).
 - `WatchdogTimingTests` — pure backoff-curve + max-retry unit tests.
 - `ConfigBindingTests` — binds the nested schema (incl. all three enums) and the shipped `appsettings.json` through real `IConfiguration`.
@@ -113,6 +113,6 @@ Add tests alongside new logic; run `dotnet test -c Release` and confirm green be
 
 ## Current state / open items
 
-- The hardening batch (PR #47 — secret-file ACL fix, watchdog resilience rewrite + process seam, installer security defaults, +20 tests, docs) is **merged to `main`**. A follow-up bug-review pass (PR #48, branch `hotfix/Fable`) fixed two shutdown races in the supervision loop (orphaned agent on stop-during-bring-up; `_agent` NRE) plus a Process-handle leak and an `update-secret --secret-file` delete crash.
+- Recent merges: hardening batch + shutdown-race fixes (PR #47/#48); full installer config coverage (PR #50, tag 1.7); Auto-transport fallback made to actually fire via `-noReconnect` (PR #57, tag 1.12); jar SHA-256 integrity check + `agent\`/`work\` data-dir split (PR #58).
 - **Deferred (by decision, not oversight):** release-artifact **code signing** (waiting on a free OSS cert; CI step not yet wired); **post-quantum at-rest encryption** (ML-KEM/ML-DSA declined — rotate secrets at the PQC transition instead); making plain-`http` a hard failure (still only warns); visible xUnit skips for TPM tests (needs a package or xUnit v3).
-- **Not yet done against real infra:** a real MSI install validating ACL/TPM-decrypt, and live WebSocket/`Auto`-fallback verification against a controller.
+- **Not yet verified against real infra:** a real MSI install validating ACL/TPM-decrypt, and live WebSocket/`Auto`-fallback against a controller.
