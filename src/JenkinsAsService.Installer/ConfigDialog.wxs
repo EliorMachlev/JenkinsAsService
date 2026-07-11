@@ -127,11 +127,17 @@
                  ShowCondition="JENKINS_SECRET_MODE = &quot;Unprotected&quot;"
                  Text="WARNING: Unprotected mode stores the secret in plaintext in appsettings.json." />
 
-        <!-- DPAPI scope (only meaningful when Mode = Dpapi; harmless otherwise) -->
+        <!-- DPAPI scope: only meaningful when Mode = Dpapi, so grey it out for every other mode. The
+             Disable/Enable conditions write ControlCondition rows that re-evaluate as the mode radio changes,
+             so the scope selector enables the moment DPAPI is picked and greys again when it is not. -->
         <Control Id="ScopeLabel" Type="Text" X="20" Y="200" Width="90" Height="13" NoPrefix="yes"
-                 Text="DPAPI scope:" />
+                 Text="DPAPI scope:"
+                 DisableCondition="JENKINS_SECRET_MODE &lt;&gt; &quot;Dpapi&quot;"
+                 EnableCondition="JENKINS_SECRET_MODE = &quot;Dpapi&quot;" />
         <Control Id="ScopeGroup" Type="RadioButtonGroup" X="112" Y="198" Width="240" Height="16"
-                 Property="JENKINS_DPAPI_SCOPE">
+                 Property="JENKINS_DPAPI_SCOPE"
+                 DisableCondition="JENKINS_SECRET_MODE &lt;&gt; &quot;Dpapi&quot;"
+                 EnableCondition="JENKINS_SECRET_MODE = &quot;Dpapi&quot;">
           <RadioButtonGroup Property="JENKINS_DPAPI_SCOPE">
             <RadioButton Value="Machine" X="0" Y="0" Width="80" Height="16" Text="Machine" />
             <RadioButton Value="User" X="84" Y="0" Width="150" Height="16" Text="User (service acct)" />
@@ -183,17 +189,17 @@
 
         <!-- Data directory -->
         <Control Id="DataLabel" Type="Text" X="15" Y="60" Width="130" Height="13" NoPrefix="yes"
-                 Text="Data Directory (opt):" />
+                 Text="Data Directory:" />
         <Control Id="DataEdit" Type="Edit" X="150" Y="58" Width="205" Height="16" Property="DATAFOLDER" />
 
         <!-- Custom java args -->
         <Control Id="ArgsLabel" Type="Text" X="15" Y="84" Width="130" Height="13" NoPrefix="yes"
-                 Text="Custom Java Args (opt):" />
+                 Text="Custom Java Args:" />
         <Control Id="ArgsEdit" Type="Edit" X="150" Y="82" Width="205" Height="16" Property="JENKINS_CUSTOM_ARGS" />
 
         <!-- Allowed env vars -->
         <Control Id="EnvLabel" Type="Text" X="15" Y="108" Width="130" Height="13" NoPrefix="yes"
-                 Text="Allowed Env Vars (opt):" />
+                 Text="Allowed Env Vars:" />
         <Control Id="EnvEdit" Type="Edit" X="150" Y="106" Width="205" Height="16" Property="JENKINS_ALLOWED_ENV" />
 
         <!-- Checkboxes -->
@@ -212,7 +218,7 @@
                  Text="Retained log files:" />
         <Control Id="RetainEdit" Type="Edit" X="138" Y="196" Width="40" Height="16" Property="JENKINS_RETAINED_LOGS" />
         <Control Id="RetryLabel" Type="Text" X="195" Y="198" Width="120" Height="13" NoPrefix="yes"
-                 Text="Max retries (0=inf):" />
+                 Text="Max retries (0=&#x221E;):" />
         <Control Id="RetryEdit" Type="Edit" X="315" Y="196" Width="40" Height="16" Property="JENKINS_MAX_RETRIES" />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />

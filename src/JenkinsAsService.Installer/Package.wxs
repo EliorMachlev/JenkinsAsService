@@ -6,7 +6,8 @@
            Version="$(var.Version)"
            UpgradeCode="dbd9ef1c-d4f0-5809-a88c-de4dbbf85f29"
            Scope="perMachine"
-           InstallerVersion="500">
+           InstallerVersion="500"
+           Codepage="65001">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
                   Schedule="afterInstallInitialize" />
