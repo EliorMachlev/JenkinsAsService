@@ -468,7 +468,7 @@ sc.exe start Jenkins</code></pre>
 
     <div class="callout callout-note">
       <div class="callout-title">Low-privilege account prerequisites</div>
-      <p>A virtual / low-privilege account cannot create the Event Log source or write into <code>Program Files</code>. When not using the MSI, run <code>update-secret --silent</code> from an elevated prompt once (it pre-creates the Event Log source), and grant the account Modify on the install folder so it can write logs and download <code>agent.jar</code>. The service falls back to file-only logging if the Event Log source is unavailable.</p>
+      <p>A virtual / low-privilege account cannot create the Event Log source. When not using the MSI, run <code>update-secret --silent</code> from an elevated prompt once (it pre-creates the Event Log source and writes <code>appsettings.json</code>). Runtime artifacts (logs, <code>agent.jar</code>, work dir) go to the separate writable data folder <code>%ProgramData%\JenkinsAsService</code>, which the service creates itself &mdash; no write access to <code>Program Files</code> is required at runtime. The service falls back to file-only logging if the Event Log source is unavailable.</p>
     </div>
 
     <p>To configure secret protection and harden the config ACL, run the CLI (elevated) before starting:</p>

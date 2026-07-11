@@ -44,9 +44,9 @@ dotnet publish src/JenkinsAsService `
     -p:EnableCompressionInSingleFile=true `
     -p:PublishReadyToRun=true
 
-# Optional: build MSI installer
+# Optional: build MSI installer (after publishing — it's excluded from the solution build)
 dotnet build src/JenkinsAsService.Installer -c Release `
-    -p:PublishDir=../../publish/x64/ -p:Version=1.0.0
+    -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:Version=1.0.0
 ```
 
 ### Project Structure
@@ -65,7 +65,7 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 
 Use a descriptive prefix:
 
-- `feature/` — new functionality
+- `feat/` — new functionality
 - `fix/` — bug fixes
 - `chore/` — maintenance, dependency updates, CI changes
 - `docs/` — documentation only
