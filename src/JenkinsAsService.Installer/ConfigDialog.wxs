@@ -193,10 +193,14 @@
                  Text="Custom Java Args:" />
         <Control Id="ArgsEdit" Type="Edit" X="150" Y="82" Width="205" Height="16" Property="JENKINS_CUSTOM_ARGS" />
 
-        <!-- Allowed env vars -->
+        <!-- Allowed env vars: only meaningful when the child environment is being sanitized, so grey it out
+             whenever the Sanitize checkbox below is cleared. The Disable/Enable conditions re-evaluate as the
+             JENKINS_SANITIZE_ENV property toggles. Sanitize defaults on, so the field starts enabled. -->
         <Control Id="EnvLabel" Type="Text" X="15" Y="108" Width="130" Height="13" NoPrefix="yes"
-                 Text="Allowed Env Vars:" />
-        <Control Id="EnvEdit" Type="Edit" X="150" Y="106" Width="205" Height="16" Property="JENKINS_ALLOWED_ENV" />
+                 Text="Allowed Env Vars:"
+                 DisableCondition="NOT JENKINS_SANITIZE_ENV" EnableCondition="JENKINS_SANITIZE_ENV" />
+        <Control Id="EnvEdit" Type="Edit" X="150" Y="106" Width="205" Height="16" Property="JENKINS_ALLOWED_ENV"
+                 DisableCondition="NOT JENKINS_SANITIZE_ENV" EnableCondition="JENKINS_SANITIZE_ENV" />
 
         <!-- Checkboxes -->
         <Control Id="SanitizeCheck" Type="CheckBox" X="15" Y="132" Width="340" Height="16"
