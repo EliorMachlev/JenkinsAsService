@@ -85,10 +85,14 @@
 
     <!-- Second CA: persist the data directory. Kept separate because folding the data-dir flag into the
          command above would exceed the MSI 255-char custom-action Target limit. An EXE custom action's
-         command line is formatted at schedule time (immediate sequence), so [DATAFOLDER] resolves. -->
+         command line is formatted at schedule time (immediate sequence), so [DATAFOLDER] resolves.
+         DATAFOLDER is a directory property, so it always resolves with a trailing backslash; the extra
+         backslash before the closing quote turns that into a doubled backslash, which CommandLineToArgvW
+         reads as one literal backslash plus a proper closing quote. Without it the closing quote is escaped
+         and the exe receives a stray trailing quote in the path (belt-and-braces with SanitizePathArgument). -->
     <CustomAction Id="SetDataDir"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --set-data-dir "[DATAFOLDER]"'
+                  ExeCommand='update-secret --silent --set-data-dir "[DATAFOLDER]\"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Advanced optional fields, applied via the update-secret merge flag. Split across three CAs purely to

@@ -284,6 +284,44 @@ public class UpdateSecretCommandTests : IDisposable
         UpdateSecretCommand.ParseInt("").Should().BeNull();
     }
 
+    // ─── SanitizePathArgument ────────────────────────────────────────────────
+    // Guards the DATAFOLDER command-line escaping bug: a directory property resolves as "D:\Jenkins\", and
+    // the quoted "\"" on the CA command line is parsed as an escaped quote, so the exe receives 'D:\Jenkins"'.
+
+    [Theory]
+    [InlineData("D:\\Jenkins\"", "D:\\Jenkins")]  // mangled: stray trailing quote from \"-escaping
+    [InlineData("D:\\Jenkins\\", "D:\\Jenkins")]  // clean trailing separator normalised away
+    [InlineData("D:\\Jenkins", "D:\\Jenkins")]    // already clean
+    [InlineData("  D:\\My Data\"  ", "D:\\My Data")] // spaces in path + surrounding whitespace
+    [InlineData("D:\\", "D:\\")]                    // drive root preserved
+    public void SanitizePathArgument_recovers_mangled_paths(string input, string expected)
+    {
+        UpdateSecretCommand.SanitizePathArgument(input).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("\"")]
+    public void SanitizePathArgument_returns_null_for_empty(string? input)
+    {
+        UpdateSecretCommand.SanitizePathArgument(input).Should().BeNull();
+    }
+
+    [Fact]
+    public void SetDataDir_with_escaped_trailing_quote_writes_clean_path()
+    {
+        // Reproduces the installer bug: the mangled 'D:\Jenkins"' must be stored as 'D:\Jenkins',
+        // not 'D:\Jenkins"' (which serialised as "D:\\Jenkins"").
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--set-data-dir", "D:\\Jenkins\""],
+            _tempDir);
+
+        code.Should().Be(0);
+        ReadConfig().RootElement.GetProperty("Jenkins").GetProperty("Agent")
+            .GetProperty("DataDirectory").GetString().Should().Be("D:\\Jenkins");
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private JsonDocument ReadConfig()

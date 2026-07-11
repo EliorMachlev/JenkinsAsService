@@ -192,13 +192,13 @@ public static class UpdateSecretCommand
                 state.ServiceAccount = Next(args, ref i);
                 return true;
             case "--set-data-dir":
-                state.SetDataDir = Next(args, ref i);
+                state.SetDataDir = SanitizePathArgument(Next(args, ref i));
                 return true;
             case "--agent-name":
                 state.AgentName = Next(args, ref i);
                 return true;
             case "--java-path":
-                state.JavaPath = Next(args, ref i);
+                state.JavaPath = SanitizePathArgument(Next(args, ref i));
                 return true;
             case "--username":
                 state.Username = Next(args, ref i);
@@ -665,6 +665,22 @@ public static class UpdateSecretCommand
 
     internal static int? ParseInt(string? value) =>
         int.TryParse(value, out var n) ? n : null;
+
+    // Recovers a filesystem path passed on an MSI custom-action command line. A WiX directory property such as
+    // DATAFOLDER resolves with a trailing backslash (e.g. "D:\Jenkins\"); once wrapped in quotes on the command
+    // line the closing \" is parsed by CommandLineToArgvW as an escaped quote, so the process actually receives
+    // 'D:\Jenkins"'. Strip that stray trailing quote and normalise a trailing separator so the stored path is
+    // clean (drive roots like "D:\" are preserved). Returns null when nothing meaningful remains.
+    internal static string? SanitizePathArgument(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var sanitized = value.Trim().TrimEnd('"').Trim();
+        return sanitized.Length == 0 ? null : Path.TrimEndingDirectorySeparator(sanitized);
+    }
 
     private static string ReadMaskedInput()
     {
