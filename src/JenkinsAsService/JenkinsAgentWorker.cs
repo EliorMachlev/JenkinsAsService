@@ -26,6 +26,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const string ArgName = "-name";
     private const string ArgWorkDir = "-workDir";
     private const string ArgWebSocket = "-webSocket";
+    private const string ArgNoReconnect = "-noReconnect";
 
     // ─── Agent stdout/stderr log-level prefixes ───────────────────────────────
     private const string InfoPrefix = "INFO: ";
@@ -258,6 +259,16 @@ public sealed class JenkinsAgentWorker : BackgroundService
         if (_effectiveMethod == ConnectionMethod.WebSocket)
         {
             psi.ArgumentList.Add(ArgWebSocket);
+        }
+
+        // In Auto mode the watchdog owns reconnection. Without -noReconnect the Java agent retries a failed
+        // handshake internally forever, so the process never exits — and ApplyAutoTransportFallback (which
+        // fires only on a real exit) can never flip WebSocket ↔ direct-TCP, pinning a broken transport. With
+        // it, a fast handshake failure exits the process, is counted as a crash, and triggers the fallback.
+        // Fixed transports keep the agent's own faster internal reconnect (no alternate transport to try).
+        if (AgentTransport.UsesWatchdogReconnect(_settings.Connection.Method))
+        {
+            psi.ArgumentList.Add(ArgNoReconnect);
         }
 
         foreach (var arg in AgentArgumentParser.Parse(_settings.Agent.CustomArguments))

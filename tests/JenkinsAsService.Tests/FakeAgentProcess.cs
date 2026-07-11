@@ -49,6 +49,10 @@ internal sealed class FakeAgentProcessLauncher : IAgentProcessLauncher
     public ConcurrentQueue<FakeAgentProcess> Started { get; } = new();
     public int StartCount { get; private set; }
 
+    /// <summary>The <see cref="ProcessStartInfo"/> from the most recent <see cref="Start"/> call, so tests can
+    /// assert on the launched command line (e.g. that <c>-noReconnect</c> is or isn't present).</summary>
+    public ProcessStartInfo? LastStartInfo { get; private set; }
+
     /// <summary>Enqueue processes to be returned by successive <see cref="Start"/> calls.</summary>
     public void Enqueue(params FakeAgentProcess[] processes)
     {
@@ -61,6 +65,7 @@ internal sealed class FakeAgentProcessLauncher : IAgentProcessLauncher
     public IAgentProcess Start(ProcessStartInfo startInfo, Action<string> onOutputLine)
     {
         StartCount++;
+        LastStartInfo = startInfo;
         var process = _queued.TryDequeue(out var next) ? next : new FakeAgentProcess();
         Started.Enqueue(process);
         return process;

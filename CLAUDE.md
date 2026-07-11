@@ -61,7 +61,7 @@ Key invariants (each has regression tests — don't regress them):
 - **Clean shutdown ≠ crash:** `StopAsync` sets `_stopping` before killing, so the kill-induced exit isn't counted/recovered; it also deletes the on-disk secret file.
 - **Shutdown gate reaps late-started agents:** the loop is `while (true)` with a single `_stopping || cancelled → KillAgent(); return` gate at the top. Bring-up can start an agent *after* `StopAsync`'s own `KillAgent` ran (it was a no-op while `_agent` was null); without the gate that agent is orphaned past service shutdown. Don't convert the loop back to `while (!ct.IsCancellationRequested)`.
 - **Never dereference the `_agent` field after a null-check** — `StopAsync` (another thread) nulls it via `KillAgent`. Snapshot `var agent = _agent` per iteration and use the local.
-- **Auto transport fallback:** in `Connection:Method = Auto`, a *fast* crash toggles WebSocket ↔ direct-TCP on the next bring-up; a run that stabilised then died stays on the same transport.
+- **Auto transport fallback:** in `Connection:Method = Auto`, a *fast* crash toggles WebSocket ↔ direct-TCP on the next bring-up; a run that stabilised then died stays on the same transport. Auto launches the agent with **`-noReconnect`** (`AgentTransport.UsesWatchdogReconnect`) so a failed handshake *exits the process* instead of the agent retrying that transport internally forever — that exit is what lets the fallback fire. Fixed `WebSocket`/`Https` omit `-noReconnect` and keep the agent's own faster internal reconnect (no alternate transport to try).
 - Timing (`_stabilityMs`/backoff) is injectable via `UseFastTimingForTests(...)`; `ComputeBackoffDelaySeconds`/`HasExceededMaxRetries` are `internal static` pure functions.
 
 ## Configuration
