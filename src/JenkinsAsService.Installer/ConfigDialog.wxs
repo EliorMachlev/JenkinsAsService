@@ -59,16 +59,12 @@
         <Control Id="NameEdit" Type="Edit" X="135" Y="172" Width="220" Height="16" Property="JENKINS_AGENT_NAME" />
 
         <!-- Row 6: Java path -->
-        <Control Id="JavaLabel" Type="Text" X="15" Y="202" Width="52" Height="13" NoPrefix="yes"
+        <Control Id="JavaLabel" Type="Text" X="15" Y="202" Width="115" Height="13" NoPrefix="yes"
                  Text="Java Path:" />
-        <!-- Info glyph carrying a hover tooltip. MSI shows the Help/ToolTip text only for picture controls
-             (Icon here), and that column is length-capped (ICE03) so the text is short and complements the
-             visible hint below. Kept accurate to JavaPathResolver: only a configured path or JAVA_HOME is probed. -->
-        <Control Id="JavaInfo" Type="Icon" X="69" Y="201" Width="16" Height="16" TabSkip="yes"
-                 Text="InfoIcon" IconSize="16"
-                 ToolTip="Or enter a full path to java.exe or a JDK home" />
         <Control Id="JavaEdit" Type="Edit" X="135" Y="200" Width="220" Height="16" Property="JENKINS_JAVA_PATH" />
-        <!-- Prefilled from JAVA_HOME by a SetProperty CA (Package.wxs); full detail is on the JavaInfo tooltip. -->
+        <!-- Prefilled from JAVA_HOME by a SetProperty CA (Package.wxs). A plain inline hint is used instead of a
+             tooltip: MSI native tooltips (Help column) do not render reliably and the Icon control draws poorly,
+             so the guidance is kept short enough to fit on one line without truncation. -->
         <Control Id="JavaHint" Type="Text" X="135" Y="218" Width="220" Height="14" Transparent="yes" NoPrefix="yes"
                  Text="Optional. Leave blank to auto-detect at service start." />
 
