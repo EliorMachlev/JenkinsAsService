@@ -265,6 +265,10 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 
 See [Security Policy](Security.md) for vulnerability reporting.
 
+## Privacy
+
+JenkinsAsService is local-first and collects nothing about you: the service runs entirely on your machine, telemetry is opt-in and off by default, and there is no update check or "phone home." See the [Privacy Policy](PRIVACY.md) for what the service and the docs site do and don't collect.
+
 ## License
 
 [BSD 3-Clause](LICENSE)
