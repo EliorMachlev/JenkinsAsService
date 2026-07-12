@@ -61,12 +61,12 @@
 &#x2502;       &#x251C;&#x2500;&#x2500; TelemetrySettings.cs       # OpenTelemetry config POCO
 &#x2502;       &#x251C;&#x2500;&#x2500; SecretMode.cs              # Enum: Unprotected, Dpapi, Tpm, EnvironmentVariable, CredentialManager
 &#x2502;       &#x251C;&#x2500;&#x2500; ISecretResolver.cs         # Secret resolution abstraction
-&#x2502;       &#x251C;&#x2500;&#x2500; SecretResolver.cs          # DPAPI / CredMgr / EnvVar / plaintext resolver
+&#x2502;       &#x251C;&#x2500;&#x2500; SecretResolver.cs          # TPM / DPAPI / CredMgr / EnvVar / plaintext resolver
 &#x2502;       &#x251C;&#x2500;&#x2500; SecretWriter.cs            # Writes appsettings.json; stores secret per mode
 &#x2502;       &#x251C;&#x2500;&#x2500; UpdateSecretCommand.cs     # CLI subcommand: update-secret
 &#x2502;       &#x251C;&#x2500;&#x2500; JenkinsAgentWorker.cs      # BackgroundService — validation, process, watchdog, OTel
 &#x2502;       &#x251C;&#x2500;&#x2500; IJarDownloader.cs          # Jar download abstraction
-&#x2502;       &#x251C;&#x2500;&#x2500; HttpJarDownloader.cs       # HTTP jar downloader with ETag caching
+&#x2502;       &#x251C;&#x2500;&#x2500; HttpJarDownloader.cs       # HTTP jar downloader with ETag caching + SHA-256 integrity check
 &#x2502;       &#x251C;&#x2500;&#x2500; IConnectivityChecker.cs    # Connectivity check abstraction
 &#x2502;       &#x251C;&#x2500;&#x2500; TcpConnectivityChecker.cs  # TCP connectivity implementation
 &#x2502;       &#x251C;&#x2500;&#x2500; appsettings.json           # Configuration file
@@ -83,16 +83,21 @@
 
     <h2 id="runtime-file-layout">Runtime File Layout (Installed)</h2>
 
-    <pre data-lang="text"><code>C:\Program Files\Jenkins\
+    <p>Binaries and runtime data live in <strong>separate</strong> locations: the install folder stays read-only to the agent identity (so a build step can't overwrite the service <code>.exe</code>), while everything the service writes goes under <code>%ProgramData%\JenkinsAsService</code>. The cached <code>agent.jar</code> sits in its own <code>agent\</code> subfolder, isolated from the Jenkins <code>-workDir</code> under <code>work\</code>, so workspace churn can't clobber the binary the watchdog launches.</p>
+
+    <pre data-lang="text"><code>C:\Program Files\Jenkins\          # Read-only install folder (binaries)
 &#x251C;&#x2500;&#x2500; JenkinsAsService.exe     # Self-contained .NET 10 executable
-&#x251C;&#x2500;&#x2500; appsettings.json         # Configuration
-&#x251C;&#x2500;&#x2500; agent.jar                # Downloaded from Jenkins (ETag cached)
-&#x251C;&#x2500;&#x2500; agent.jar.etag           # Stored ETag for conditional GET
-&#x251C;&#x2500;&#x2500; agent.log                # Serilog rolling log file
-&#x251C;&#x2500;&#x2500; agent_001.log            # Rolled log (size-based)
-&#x251C;&#x2500;&#x2500; agent_002.log            # Older rolled log
-&#x251C;&#x2500;&#x2500; agent_003.log            # Oldest kept log
-&#x2514;&#x2500;&#x2500; remoting/                # Jenkins remoting work directory</code></pre>
+&#x2514;&#x2500;&#x2500; appsettings.json         # Configuration
+
+C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
+&#x251C;&#x2500;&#x2500; agent.log                # Serilog rolling log (or agent.clef in CompactLog mode)
+&#x251C;&#x2500;&#x2500; agent_001.log            # Rolled log (size-based; RetainedLogs kept)
+&#x251C;&#x2500;&#x2500; .agent-secret            # ACL-restricted secret file (-secret @file), deleted on stop
+&#x251C;&#x2500;&#x2500; agent\                   # Isolated agent-binary cache
+&#x2502;   &#x251C;&#x2500;&#x2500; agent.jar            # Downloaded from Jenkins (ETag cached)
+&#x2502;   &#x251C;&#x2500;&#x2500; agent.jar.etag       # Stored ETag for conditional GET
+&#x2502;   &#x2514;&#x2500;&#x2500; agent.jar.sha256     # Recorded hash; re-verified before each launch
+&#x2514;&#x2500;&#x2500; work\                    # Jenkins -workDir (remoting/, workspace/, build output)</code></pre>
 
     <h2 id="service-lifecycle">Service Lifecycle</h2>
 
@@ -287,7 +292,7 @@
           </tr>
           <tr>
             <td><code>ISecretResolver</code></td>
-            <td><code>SecretResolver</code> (DPAPI/CredMgr/EnvVar/plaintext)</td>
+            <td><code>SecretResolver</code> (TPM/DPAPI/CredMgr/EnvVar/plaintext)</td>
           </tr>
           <tr>
             <td><code>ILogger&lt;T&gt;</code></td>
@@ -356,7 +361,7 @@
           </tr>
           <tr>
             <td><code>HttpJarDownloaderTests</code></td>
-            <td>200 download + ETag save, 304 skip, If-None-Match, orphan-etag guard, 500 leaves old jar intact, mid-stream failure can't corrupt the jar (atomic temp-file move)</td>
+            <td>200 download + ETag/SHA-256 save, 304 skip, If-None-Match, orphan-etag guard, 500 leaves old jar intact, mid-stream failure can't corrupt the jar (atomic temp-file move), 304 with a tampered cached jar forces an unconditional re-download</td>
           </tr>
           <tr>
             <td><code>SecretResolverTests</code> / <code>SecretWriterTests</code></td>

@@ -75,7 +75,7 @@
       {
         "title": "Secret protection modes",
         "url": "configuration.html#secret-protection-modes",
-        "keywords": ["secret protection", "secretmode", "agent secret", "unprotected", "credential manager", "environment variable", "encrypt at rest"]
+        "keywords": ["secret protection", "secretmode", "agent secret", "unprotected", "dpapi", "tpm", "credential manager", "environment variable", "encrypt at rest"]
       },
       {
         "title": "DPAPI scope (machine vs. user)",
