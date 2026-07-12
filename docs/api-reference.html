@@ -47,7 +47,7 @@
 
   <main class="content">
     <h1>Class &amp; Method Reference</h1>
-    <p>The .NET 10 version consists of 14 source files split across interfaces, implementations, CLI, and a central <code>BackgroundService</code>.</p>
+    <p>The .NET 10 version consists of 29 source files split across interfaces, implementations, CLI, hardening, and a central <code>BackgroundService</code>. This page documents the core types; verify the current file list against <code>src/JenkinsAsService/</code>.</p>
 
     <hr>
 
@@ -251,6 +251,7 @@
     <h3 id="httpjardownloader-implementation"><code>HttpJarDownloader</code> (Implementation)</h3>
     <p>Downloads <code>agent.jar</code> from <code>$jenkinsUrl/jnlpJars/agent.jar</code> using a named <code>HttpClient</code> (<code>"JarDownloader"</code>) with Polly resilience (automatic retry, circuit breaker, timeout).</p>
     <p><strong>ETag caching:</strong> Stores the server's <code>ETag</code> response header in <code>agent.jar.etag</code>. On subsequent calls, sends <code>If-None-Match</code> — a <code>304 Not Modified</code> skips the download entirely. If the jar file is missing, the etag file is ignored (preventing a 304 that would leave the caller without a jar). On <code>200</code> with no <code>ETag</code> header, the etag file is deleted so the next call is unconditional.</p>
+    <p><strong>SHA-256 integrity:</strong> On every <code>200</code> download the jar's SHA-256 is recorded in <code>agent.jar.sha256</code>. On a <code>304</code>, the cached jar is re-hashed and compared against the stored value; a mismatch (tampered or corrupt cache) discards the ETag and forces an unconditional re-download rather than launching the bad jar. This is a TOFU/local-integrity guard — for upstream authenticity, pin the controller cert via <code>Connection:ControllerCertThumbprint</code>.</p>
 
     <hr>
 
