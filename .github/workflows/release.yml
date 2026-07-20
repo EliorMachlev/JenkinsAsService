@@ -79,7 +79,6 @@ jobs:
           --self-contained true
           --output publish/x64/
           -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
           -p:PublishReadyToRun=true
           -p:OptimizationPreference=Speed
@@ -102,7 +101,6 @@ jobs:
           --self-contained true
           --output publish/x86/
           -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
           -p:PublishReadyToRun=true
           -p:OptimizationPreference=Speed
