@@ -37,6 +37,7 @@ internal static class ConfigKeys
         internal const string ViaFile = "ViaFile";
 
         internal const string ModePath = Name + ":" + Mode;
+        internal const string ValuePath = Name + ":" + Value;
     }
 
     internal static class Agent

@@ -40,6 +40,10 @@ public static class UpdateSecretCommand
           --custom-args <value>   Extra java.exe arguments
           --sanitize-env <bool>   Sanitize the agent child environment (true/false)
           --allowed-env <value>   Extra env var names to pass through (semicolon/comma separated)
+          --upgrade               Reconcile appsettings.json to the current schema on MSI upgrade:
+                                  add new settings at their defaults, prune settings the schema no longer
+                                  defines, and preserve existing values and the secret. If no secret is
+                                  present, falls back to a full write from --secret/--url/--mode.
           --debug <bool>          Verbose Java agent logging (true/false)
           --compact-log <bool>    Compact JSON log format (true/false)
           --retained-logs <int>   Number of rolled log files to keep
@@ -79,6 +83,7 @@ public static class UpdateSecretCommand
         public bool Silent;
         public bool Impersonate;
         public bool Merge;
+        public bool Upgrade;
         public ConnectionMethod? Method;
         public bool? ViaFile;
         public string? CustomArgs;
@@ -138,6 +143,13 @@ public static class UpdateSecretCommand
             });
             Console.WriteLine("Optional configuration merged into appsettings.json.");
             return 0;
+        }
+
+        // Installer-only path: reconcile the config to the current schema on MSI upgrade, then decide
+        // whether the secret must be (re)written. Runs as SYSTEM; never resolves/decrypts the secret.
+        if (parsed.Upgrade)
+        {
+            return RunUpgrade(basePath, parsed);
         }
 
         return parsed.Silent
@@ -248,6 +260,9 @@ public static class UpdateSecretCommand
             case "--merge":
                 state.Merge = true;
                 return true;
+            case "--upgrade":
+                state.Upgrade = true;
+                return true;
             default:
                 return false;
         }
@@ -323,6 +338,64 @@ public static class UpdateSecretCommand
         var configPath = Path.Combine(basePath, ConfigFileName);
         Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode!.Value})");
         return 0;
+    }
+
+    // ─── Upgrade mode ────────────────────────────────────────────────────────
+
+    private static int RunUpgrade(string basePath, ParseState args)
+    {
+        // 1. Reconcile appsettings.json to the current schema (add new keys, prune obsolete ones).
+        //    Secret-agnostic — the secret's value, being an in-schema key, is preserved untouched.
+        var (added, removed) = SecretWriter.NormalizeConfig(basePath);
+        foreach (var path in added)
+        {
+            Console.WriteLine($"Added missing setting: {path}");
+        }
+        foreach (var path in removed)
+        {
+            Console.WriteLine($"Removed obsolete setting: {path}");
+        }
+
+        // 2. Decryption-free, identity-independent secret-presence check: only inspect the raw string.
+        //    A present-but-undecryptable secret (User-DPAPI / TPM / Credential Manager under any identity)
+        //    counts as present and is left alone. A broken/incorrect secret likewise keeps failing, as
+        //    it did before the upgrade.
+        if (HasConfiguredSecret(basePath))
+        {
+            Console.WriteLine("Existing secret present — configuration preserved.");
+            return 0;
+        }
+
+        // 3. No secret on disk: repair by writing from the supplied args. Fails when none were supplied,
+        //    exactly as a fresh silent install with no secret fails.
+        Console.WriteLine("No existing secret found — writing configuration from supplied arguments.");
+        return RunSilent(basePath, args);
+    }
+
+    // True when the on-disk config has a non-empty Jenkins:Secret:Value. This is a plain string read of
+    // appsettings.json — no resolve, no decryption — so it works when this process runs as SYSTEM even if
+    // the secret is bound to a different service identity (User-DPAPI / TPM / Credential Manager).
+    private static bool HasConfiguredSecret(string basePath)
+    {
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        if (!File.Exists(configPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .SetBasePath(basePath)
+                .AddJsonFile(ConfigFileName, optional: true)
+                .Build();
+            var value = config.GetSection(ConfigSectionName)[ConfigKeys.Secret.ValuePath];
+            return !string.IsNullOrWhiteSpace(value);
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException or InvalidOperationException)
+        {
+            return false; // unreadable/corrupt config → treat as no secret (repair path)
+        }
     }
 
     // ─── Interactive mode ─────────────────────────────────────────────────────

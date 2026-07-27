@@ -322,6 +322,58 @@ public class UpdateSecretCommandTests : IDisposable
             .GetProperty("DataDirectory").GetString().Should().Be("D:\\Jenkins");
     }
 
+    // ─── Upgrade mode ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Upgrade_with_existing_secret_reconciles_and_preserves()
+    {
+        // Config predating a new key, has extra/unknown keys, and carries a secret.
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
+            "{\"Jenkins\":{\"Secret\":{\"Value\":\"live-secret\",\"Mode\":\"Tpm\",\"LegacyFlag\":true}}}");
+
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--upgrade",
+             "--secret", "", "--url", "", "--mode", "Dpapi"],
+            _tempDir);
+
+        code.Should().Be(0);
+        var j = ReadConfig().RootElement.GetProperty("Jenkins");
+        j.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("live-secret", "the secret is preserved");
+        j.GetProperty("Secret").TryGetProperty("LegacyFlag", out _).Should().BeFalse("unknown keys are pruned");
+        j.GetProperty("Recovery").GetProperty("MaxRetries").GetInt32().Should().Be(0, "missing keys are added");
+    }
+
+    [Fact]
+    public void Upgrade_without_secret_writes_from_args()
+    {
+        // No secret on disk → repair-write from supplied args.
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
+            "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\"}}}");
+
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--upgrade",
+             "--secret", "repaired", "--url", "https://new:8443", "--mode", "Unprotected"],
+            _tempDir);
+
+        code.Should().Be(0);
+        var j = ReadConfig().RootElement.GetProperty("Jenkins");
+        j.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("repaired");
+        j.GetProperty("Connection").GetProperty("Url").GetString().Should().Be("https://new:8443");
+    }
+
+    [Fact]
+    public void Upgrade_without_secret_and_no_args_fails()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
+            "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\"}}}");
+
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--upgrade", "--secret", "", "--url", "", "--mode", "Dpapi"],
+            _tempDir);
+
+        code.Should().Be(1, "no existing secret and none supplied must fail, as a fresh silent install does");
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private JsonDocument ReadConfig()
