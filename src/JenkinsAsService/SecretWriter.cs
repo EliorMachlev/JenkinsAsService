@@ -1,5 +1,6 @@
 // Copyright (c) 2024 All rights reserved
 
+using System.Linq;
 using System.Net;
 using System.Security;
 using System.Security.Cryptography; // NOSONAR — ProtectedData is from a NuGet package; standalone analysis can't resolve it
@@ -107,6 +108,42 @@ public static class SecretWriter
             GetOrCreate(jenkins, ConfigKeys.Recovery.Name)[ConfigKeys.Recovery.MaxRetries] = maxRetries;
 
         WriteRoot(configPath, existingRoot, jenkins);
+    }
+
+    /// <summary>
+    /// Reconciles appsettings.json to the current schema (adds missing keys at their POCO defaults,
+    /// prunes keys/sections the schema no longer defines) via <see cref="ServiceSettingsNormalizer"/>.
+    /// Rewrites the file only when something changed, atomically via a temp file + <c>File.Replace</c>,
+    /// which preserves the destination file's DACL — so the hardened ACL survives. Never reads, resolves,
+    /// or rewrites the secret value (it is an in-schema key, preserved by the reconcile). Returns the
+    /// dotted paths added and removed, for the caller to log.
+    /// </summary>
+    public static (IReadOnlyList<string> added, IReadOnlyList<string> removed) NormalizeConfig(string basePath)
+    {
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        var existingJson = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
+
+        var (merged, added, removed) = ServiceSettingsNormalizer.NormalizeJson(existingJson);
+
+        if (added.Count == 0 && removed.Count == 0)
+        {
+            return (added, removed); // nothing changed — leave the file (and its ACL/ordering) untouched
+        }
+
+        if (File.Exists(configPath))
+        {
+            // Atomic replace: File.Replace keeps the destination's security descriptor (DACL), so the
+            // ConfigAclHardener-applied ACL is preserved across the rewrite.
+            var tempPath = configPath + ".tmp";
+            File.WriteAllText(tempPath, merged, Encoding.UTF8);
+            File.Replace(tempPath, configPath, null);
+        }
+        else
+        {
+            File.WriteAllText(configPath, merged, Encoding.UTF8);
+        }
+
+        return (added, removed);
     }
 
     private static JsonObject GetOrCreate(JsonObject parent, string key)
