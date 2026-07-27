@@ -111,19 +111,36 @@
                   ExeCommand='update-secret --silent --merge --custom-args "[JENKINS_CUSTOM_ARGS]" --allowed-env "[JENKINS_ALLOWED_ENV]"'
                   Execute="deferred" Impersonate="no" />
 
-    <!-- All five CAs must run AFTER InstallFiles (the exe must be on disk to invoke) and BEFORE StartServices:
+    <!-- Upgrade-only CA: on a major upgrade the existing appsettings.json is left in place (it is CA-generated,
+         not a tracked MSI file). This reconciles it to the current schema (adds new settings at their defaults,
+         prunes settings the schema no longer defines) and preserves existing values and the secret. Runs as
+         SYSTEM (Impersonate="no") so it can write the read-only Program Files config regardless of the service
+         identity, and inspects only the raw Secret:Value string (no decryption). Core args only, to stay under
+         the MSI 255-char CA Target limit; they are used only if no secret is present (repair path). -->
+    <CustomAction Id="UpgradeConfig"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE]'
+                  Execute="deferred" Impersonate="no" />
+
+    <!-- All CAs must run AFTER InstallFiles (the exe must be on disk to invoke) and BEFORE StartServices:
          the service is registered with Start="install" (ServiceControl, Wait="yes"), so SCM launches it at
          the standard StartServices action. If appsettings.json / the data dir aren't written yet, the service
          fails its pre-flight config validation, StartServices reports failure, and the install rolls back.
          Writing config before StartServices is the fix — do not move these back to Before=InstallFinalize.
+         WriteConfig/WriteAdvanced1/2/3/SetDataDir run on fresh install only (Condition NOT WIX_UPGRADE_DETECTED);
          WriteAdvanced1/2/3 apply the optional fields via the update-secret merge flag between WriteConfig
-         (required fields) and SetDataDir (data directory), preserving that ordering guarantee. -->
+         (required fields) and SetDataDir (data directory), preserving that ordering guarantee. UpgradeConfig
+         runs on upgrade only (Condition WIX_UPGRADE_DETECTED) and performs the non-destructive reconcile
+         instead of rewriting the full config. -->
     <InstallExecuteSequence>
-      <Custom Action="WriteConfig" After="InstallFiles" Condition="NOT Installed" />
-      <Custom Action="WriteAdvanced1" After="WriteConfig" Condition="NOT Installed" />
-      <Custom Action="WriteAdvanced2" After="WriteAdvanced1" Condition="NOT Installed" />
-      <Custom Action="WriteAdvanced3" After="WriteAdvanced2" Condition="NOT Installed" />
-      <Custom Action="SetDataDir" After="WriteAdvanced3" Condition="NOT Installed" />
+      <Custom Action="WriteConfig" After="InstallFiles" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="WriteAdvanced1" After="WriteConfig" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="WriteAdvanced2" After="WriteAdvanced1" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="WriteAdvanced3" After="WriteAdvanced2" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="SetDataDir" After="WriteAdvanced3" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <!-- Upgrade path: run only the non-destructive reconcile. Still After InstallFiles (the exe must be on
+           disk) and Before StartServices (so the full config exists before SCM launches the service). -->
+      <Custom Action="UpgradeConfig" After="SetDataDir" Condition="WIX_UPGRADE_DETECTED" />
     </InstallExecuteSequence>
 
   </Package>
