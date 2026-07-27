@@ -1,5 +1,4 @@
 // Copyright (c) 2024 All rights reserved
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 
@@ -87,6 +86,30 @@ public class ServiceSettingsNormalizerTests
 
         added.Should().BeEmpty("the shipped appsettings.json must already equal the schema");
         removed.Should().BeEmpty("the shipped appsettings.json must not carry keys outside the schema");
+    }
+
+    [Fact]
+    public void Invalid_json_is_a_no_op()
+    {
+        const string existing = "{ not json";
+
+        var (mergedJson, added, removed) = ServiceSettingsNormalizer.NormalizeJson(existing);
+
+        mergedJson.Should().Be(existing);
+        added.Should().BeEmpty();
+        removed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Top_level_array_is_a_no_op()
+    {
+        const string existing = "[]";
+
+        var (mergedJson, added, removed) = ServiceSettingsNormalizer.NormalizeJson(existing);
+
+        mergedJson.Should().Be(existing);
+        added.Should().BeEmpty();
+        removed.Should().BeEmpty();
     }
 
     private static string FindShipped()

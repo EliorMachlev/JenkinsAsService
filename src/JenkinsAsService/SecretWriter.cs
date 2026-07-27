@@ -1,6 +1,5 @@
 // Copyright (c) 2024 All rights reserved
 
-using System.Linq;
 using System.Net;
 using System.Security;
 using System.Security.Cryptography; // NOSONAR — ProtectedData is from a NuGet package; standalone analysis can't resolve it
@@ -136,7 +135,24 @@ public static class SecretWriter
             // ConfigAclHardener-applied ACL is preserved across the rewrite.
             var tempPath = configPath + ".tmp";
             File.WriteAllText(tempPath, merged, Encoding.UTF8);
-            File.Replace(tempPath, configPath, null);
+            try
+            {
+                File.Replace(tempPath, configPath, null);
+            }
+            catch
+            {
+                // Don't orphan the temp file if the replace itself fails.
+                try
+                {
+                    File.Delete(tempPath);
+                }
+                catch (Exception deleteEx) when (deleteEx is IOException or UnauthorizedAccessException)
+                {
+                    // best-effort cleanup — surface the original failure
+                }
+
+                throw;
+            }
         }
         else
         {

@@ -33,11 +33,18 @@ internal static class ServiceSettingsNormalizer
         JsonObject existing;
         try
         {
-            existing = JsonNode.Parse(existingJson)?.AsObject() ?? new JsonObject();
+            if (JsonNode.Parse(existingJson) is not JsonObject parsed)
+            {
+                // Unparseable or non-object root (missing/corrupt file, or e.g. a top-level array) — a no-op,
+                // never a destructive rewrite. Hand the original text back untouched.
+                return (existingJson, [], []);
+            }
+
+            existing = parsed;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
-            existing = new JsonObject();
+            return (existingJson, [], []);
         }
 
         var added = new List<string>();

@@ -127,17 +127,19 @@
          the standard StartServices action. If appsettings.json / the data dir aren't written yet, the service
          fails its pre-flight config validation, StartServices reports failure, and the install rolls back.
          Writing config before StartServices is the fix — do not move these back to Before=InstallFinalize.
-         WriteConfig/WriteAdvanced1/2/3/SetDataDir run on fresh install only (Condition NOT WIX_UPGRADE_DETECTED);
-         WriteAdvanced1/2/3 apply the optional fields via the update-secret merge flag between WriteConfig
-         (required fields) and SetDataDir (data directory), preserving that ordering guarantee. UpgradeConfig
-         runs on upgrade only (Condition WIX_UPGRADE_DETECTED) and performs the non-destructive reconcile
-         instead of rewriting the full config. -->
+         WriteConfig/WriteAdvanced1/2/3/SetDataDir run on fresh install only (Condition NOT Installed AND NOT
+         WIX_UPGRADE_DETECTED) — NOT Installed excludes repair (msiexec /f, ARP Repair, component self-heal),
+         where Installed is true and WIX_UPGRADE_DETECTED is unset, so these CAs must not re-run and blow away
+         the existing secret with an empty write. WriteAdvanced1/2/3 apply the optional fields via the
+         update-secret merge flag between WriteConfig (required fields) and SetDataDir (data directory),
+         preserving that ordering guarantee. UpgradeConfig runs on upgrade only (Condition WIX_UPGRADE_DETECTED)
+         and performs the non-destructive reconcile instead of rewriting the full config. -->
     <InstallExecuteSequence>
-      <Custom Action="WriteConfig" After="InstallFiles" Condition="NOT WIX_UPGRADE_DETECTED" />
-      <Custom Action="WriteAdvanced1" After="WriteConfig" Condition="NOT WIX_UPGRADE_DETECTED" />
-      <Custom Action="WriteAdvanced2" After="WriteAdvanced1" Condition="NOT WIX_UPGRADE_DETECTED" />
-      <Custom Action="WriteAdvanced3" After="WriteAdvanced2" Condition="NOT WIX_UPGRADE_DETECTED" />
-      <Custom Action="SetDataDir" After="WriteAdvanced3" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="WriteConfig" After="InstallFiles" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="WriteAdvanced1" After="WriteConfig" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="WriteAdvanced2" After="WriteAdvanced1" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="WriteAdvanced3" After="WriteAdvanced2" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="SetDataDir" After="WriteAdvanced3" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
       <!-- Upgrade path: run only the non-destructive reconcile. Still After InstallFiles (the exe must be on
            disk) and Before StartServices (so the full config exists before SCM launches the service). -->
       <Custom Action="UpgradeConfig" After="SetDataDir" Condition="WIX_UPGRADE_DETECTED" />

@@ -374,6 +374,23 @@ public class UpdateSecretCommandTests : IDisposable
         code.Should().Be(1, "no existing secret and none supplied must fail, as a fresh silent install does");
     }
 
+    [Fact]
+    public void Upgrade_against_corrupt_config_leaves_file_untouched()
+    {
+        // Corrupt JSON that would-be hold a secret: must never be repair-written over with defaults —
+        // it may be unparseable but still carry a secret we simply cannot read.
+        const string corrupt = "{ broken";
+        var configPath = Path.Combine(_tempDir, "appsettings.json");
+        File.WriteAllText(configPath, corrupt);
+
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--upgrade", "--secret", "repaired", "--url", "https://new:8443", "--mode", "Unprotected"],
+            _tempDir);
+
+        code.Should().Be(0, "an unreadable config must never fail or roll back the upgrade");
+        File.ReadAllText(configPath).Should().Be(corrupt, "the corrupt file must not be overwritten with defaults");
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private JsonDocument ReadConfig()

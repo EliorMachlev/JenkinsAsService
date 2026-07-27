@@ -342,45 +342,16 @@ public static class UpdateSecretCommand
 
     // ─── Upgrade mode ────────────────────────────────────────────────────────
 
-    private static int RunUpgrade(string basePath, ParseState args)
-    {
-        // 1. Reconcile appsettings.json to the current schema (add new keys, prune obsolete ones).
-        //    Secret-agnostic — the secret's value, being an in-schema key, is preserved untouched.
-        var (added, removed) = SecretWriter.NormalizeConfig(basePath);
-        foreach (var path in added)
-        {
-            Console.WriteLine($"Added missing setting: {path}");
-        }
-        foreach (var path in removed)
-        {
-            Console.WriteLine($"Removed obsolete setting: {path}");
-        }
+    // Distinguishes the three states RunUpgrade must react to: a present secret is preserved, no secret is
+    // a safe repair-write, and an unreadable file is left alone (it may hold a secret we simply can't parse).
+    private enum ConfigState { HasSecret, NoSecret, Unreadable }
 
-        // 2. Decryption-free, identity-independent secret-presence check: only inspect the raw string.
-        //    A present-but-undecryptable secret (User-DPAPI / TPM / Credential Manager under any identity)
-        //    counts as present and is left alone. A broken/incorrect secret likewise keeps failing, as
-        //    it did before the upgrade.
-        if (HasConfiguredSecret(basePath))
-        {
-            Console.WriteLine("Existing secret present — configuration preserved.");
-            return 0;
-        }
-
-        // 3. No secret on disk: repair by writing from the supplied args. Fails when none were supplied,
-        //    exactly as a fresh silent install with no secret fails.
-        Console.WriteLine("No existing secret found — writing configuration from supplied arguments.");
-        return RunSilent(basePath, args);
-    }
-
-    // True when the on-disk config has a non-empty Jenkins:Secret:Value. This is a plain string read of
-    // appsettings.json — no resolve, no decryption — so it works when this process runs as SYSTEM even if
-    // the secret is bound to a different service identity (User-DPAPI / TPM / Credential Manager).
-    private static bool HasConfiguredSecret(string basePath)
+    private static ConfigState InspectConfig(string basePath)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
         if (!File.Exists(configPath))
         {
-            return false;
+            return ConfigState.NoSecret; // nothing to lose -> repair is safe
         }
 
         try
@@ -390,11 +361,57 @@ public static class UpdateSecretCommand
                 .AddJsonFile(ConfigFileName, optional: true)
                 .Build();
             var value = config.GetSection(ConfigSectionName)[ConfigKeys.Secret.ValuePath];
-            return !string.IsNullOrWhiteSpace(value);
+            return string.IsNullOrWhiteSpace(value) ? ConfigState.NoSecret : ConfigState.HasSecret;
         }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException or InvalidOperationException)
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
+                                       or InvalidOperationException or InvalidDataException)
         {
-            return false; // unreadable/corrupt config → treat as no secret (repair path)
+            // InvalidDataException: ConfigurationBuilder wraps a malformed JSON file's JsonException here.
+            return ConfigState.Unreadable;
+        }
+    }
+
+    private static int RunUpgrade(string basePath, ParseState args)
+    {
+        // 1. Reconcile appsettings.json to the current schema (add new keys, prune obsolete ones).
+        //    Secret-agnostic — the secret's value, being an in-schema key, is preserved untouched.
+        //    Best-effort: a normalize failure must not roll back the upgrade (the service still runs on
+        //    whatever config is already on disk / its own defaults).
+        try
+        {
+            var (added, removed) = SecretWriter.NormalizeConfig(basePath);
+            foreach (var path in added)
+            {
+                Console.WriteLine($"Added missing setting: {path}");
+            }
+            foreach (var path in removed)
+            {
+                Console.WriteLine($"Removed obsolete setting: {path}");
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            Console.Error.WriteLine($"Warning: could not reconcile appsettings.json ({ex.Message}); continuing without changes.");
+        }
+
+        // 2. Decryption-free, identity-independent secret-presence check: only inspect the raw string.
+        //    A present-but-undecryptable secret (User-DPAPI / TPM / Credential Manager under any identity)
+        //    counts as present and is left alone. A broken/incorrect secret likewise keeps failing, as
+        //    it did before the upgrade.
+        switch (InspectConfig(basePath))
+        {
+            case ConfigState.HasSecret:
+                Console.WriteLine("Existing secret present — configuration preserved.");
+                return 0;
+            case ConfigState.Unreadable:
+                // Do NOT repair-write over an unparseable file — it may hold a secret we cannot read.
+                Console.Error.WriteLine("Warning: existing appsettings.json is unreadable — leaving it untouched. Re-run update-secret to repair.");
+                return 0;
+            default: // NoSecret (missing or parseable-empty): repair by writing from the supplied args.
+                     // Fails when none were supplied, exactly as a fresh silent install with no secret fails.
+                Console.WriteLine("No existing secret found — writing configuration from supplied arguments.");
+                return RunSilent(basePath, args);
         }
     }
 
