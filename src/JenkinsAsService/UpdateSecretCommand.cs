@@ -1,9 +1,5 @@
 // Copyright (c) 2024 All rights reserved
 
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-using Microsoft.Win32.SafeHandles;
-
 namespace JenkinsAsService;
 
 public static class UpdateSecretCommand
@@ -58,12 +54,6 @@ public static class UpdateSecretCommand
     private const string ConfigSectionName = ConfigKeys.Section;
     private const string EventLogSource = EventLogSourceInstaller.DefaultSource;
     private const string EventLogName = EventLogSourceInstaller.DefaultLogName;
-    private const char DomainSeparator = '\\';
-    private const string LocalDomain = ".";
-
-    // LogonUser logon-type / provider constants (advapi32)
-    private const int Logon32LogonInteractive = 2;
-    private const int Logon32ProviderDefault = 0;
 
     // Mutable accumulator used by ParseArgs; returned directly to avoid a 10-parameter constructor.
     private sealed class ParseState
@@ -303,9 +293,7 @@ public static class UpdateSecretCommand
 
         SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath,
             args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
-        var configPath = Path.Combine(basePath, ConfigFileName);
-        Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode.Value})");
-        return 0;
+        return ReportConfigWritten(basePath, args.Mode.Value);
     }
 
     private static int RunSilentImpersonated(string basePath, string secret, ParseState args)
@@ -325,7 +313,7 @@ public static class UpdateSecretCommand
 
         try
         {
-            RunImpersonated(args.Username, password, () =>
+            ImpersonationRunner.Run(args.Username, password, () =>
                 SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath,
                     args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
         }
@@ -335,8 +323,14 @@ public static class UpdateSecretCommand
             return 1;
         }
 
+        return ReportConfigWritten(basePath, args.Mode!.Value);
+    }
+
+    // Shared success tail for the two non-interactive write paths.
+    private static int ReportConfigWritten(string basePath, SecretMode mode)
+    {
         var configPath = Path.Combine(basePath, ConfigFileName);
-        Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode!.Value})");
+        Console.WriteLine($"Configuration written to {configPath} (mode: {mode})");
         return 0;
     }
 
@@ -423,21 +417,22 @@ public static class UpdateSecretCommand
         TryReadExistingConfig(basePath, configPath,
             out var existingServer, out var existingAgentName, out var existingJavaPath, out var existingMode);
 
-        var server = PromptServer(args.Url, existingServer);
+        var server = InteractiveConfigPrompts.PromptServer(args.Url, existingServer);
         if (server is null)
         {
             return 1;
         }
 
-        var secret = PromptSecret(args.SecretArg, args.SecretFile, args.SecretEnv);
+        var secret = InteractiveConfigPrompts.PromptSecret(
+            ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv));
         if (secret is null)
         {
             return 1;
         }
 
-        var selectedMode = PromptMode(args.Mode, existingMode);
-        var agentName = PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
-        var javaPath = PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
+        var selectedMode = InteractiveConfigPrompts.PromptMode(args.Mode, existingMode);
+        var agentName = InteractiveConfigPrompts.PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
+        var javaPath = InteractiveConfigPrompts.PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
 
         return WriteInteractiveConfig(basePath, secret, selectedMode, server, agentName, javaPath, args);
     }
@@ -451,13 +446,13 @@ public static class UpdateSecretCommand
         {
             if (args.Impersonate)
             {
-                var credentials = PromptImpersonationCredentials(args.Username);
+                var credentials = InteractiveConfigPrompts.PromptImpersonationCredentials(args.Username);
                 if (credentials is null)
                 {
                     return 1;
                 }
 
-                RunImpersonated(credentials.Value.Username, credentials.Value.Password, () =>
+                ImpersonationRunner.Run(credentials.Value.Username, credentials.Value.Password, () =>
                     SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
                         args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
             }
@@ -478,116 +473,6 @@ public static class UpdateSecretCommand
         Console.WriteLine($"  Mode: {selectedMode}");
         Console.WriteLine($"  URL:  {server}");
         return 0;
-    }
-
-    // ─── Prompt helpers ───────────────────────────────────────────────────────
-
-    private static string? PromptServer(string? argServer, string? existingServer)
-    {
-        if (!string.IsNullOrWhiteSpace(argServer))
-        {
-            return argServer;
-        }
-
-        var def = string.IsNullOrWhiteSpace(existingServer) ? "" : $" [{existingServer}]";
-        Console.Write($"Jenkins URL (with port){def}: ");
-        var input = Console.ReadLine()?.Trim();
-        var server = string.IsNullOrWhiteSpace(input) ? existingServer : input;
-
-        if (string.IsNullOrWhiteSpace(server))
-        {
-            Console.Error.WriteLine("Error: Jenkins URL is required.");
-            return null;
-        }
-
-        return server;
-    }
-
-    private static string? PromptSecret(string? secretArg, string? secretFile, string? secretEnv)
-    {
-        var secret = ResolveSecretInput(secretArg, secretFile, secretEnv);
-        if (!string.IsNullOrWhiteSpace(secret))
-        {
-            return secret;
-        }
-
-        Console.Write("Agent secret: ");
-        secret = ReadMaskedInput();
-        Console.WriteLine();
-
-        if (string.IsNullOrWhiteSpace(secret))
-        {
-            Console.Error.WriteLine("Error: Agent secret is required.");
-            return null;
-        }
-
-        return secret;
-    }
-
-    private static SecretMode PromptMode(SecretMode? modeArg, SecretMode existingMode)
-    {
-        if (modeArg.HasValue)
-        {
-            return modeArg.Value;
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("Secret protection mode:");
-        Console.WriteLine("  1. DPAPI — machine-scoped encryption (recommended)");
-        Console.WriteLine("  2. Environment Variable — system env var");
-        Console.WriteLine("  3. Credential Manager — Windows credential vault");
-        Console.WriteLine("  4. Unprotected — plaintext (dev only)");
-        Console.WriteLine("  5. TPM — hardware-backed, non-exportable key (strongest; needs TPM 2.0)");
-        Console.Write("Select [1-5]: ");
-        return Console.ReadLine()?.Trim() switch
-        {
-            "1" => SecretMode.Dpapi,
-            "2" => SecretMode.EnvironmentVariable,
-            "3" => SecretMode.CredentialManager,
-            "4" => SecretMode.Unprotected,
-            "5" => SecretMode.Tpm,
-            _ => existingMode
-        };
-    }
-
-    private static string? PromptText(string label, string? argValue, string? existing, string fallbackLabel)
-    {
-        if (argValue is not null)
-        {
-            return argValue;
-        }
-
-        var def = string.IsNullOrWhiteSpace(existing) ? fallbackLabel : existing;
-        Console.Write($"{label} (default: {def}): ");
-        var input = Console.ReadLine()?.Trim();
-        return string.IsNullOrWhiteSpace(input) ? existing : input;
-    }
-
-    private static (string Username, string Password)? PromptImpersonationCredentials(string? username)
-    {
-        if (string.IsNullOrWhiteSpace(username))
-        {
-            Console.Write("Impersonate as (e.g. DOMAIN\\ServiceAccount): ");
-            username = Console.ReadLine()?.Trim();
-        }
-
-        if (string.IsNullOrWhiteSpace(username))
-        {
-            Console.Error.WriteLine("Error: username is required for impersonation.");
-            return null;
-        }
-
-        Console.Write($"Password for {username}: ");
-        var password = ReadMaskedInput();
-        Console.WriteLine();
-
-        if (string.IsNullOrWhiteSpace(password))
-        {
-            Console.Error.WriteLine("Error: password is required for impersonation.");
-            return null;
-        }
-
-        return (username, password);
     }
 
     // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -770,85 +655,5 @@ public static class UpdateSecretCommand
 
         var sanitized = value.Trim().TrimEnd('"').Trim();
         return sanitized.Length == 0 ? null : Path.TrimEndingDirectorySeparator(sanitized);
-    }
-
-    private static string ReadMaskedInput()
-    {
-        var sb = new System.Text.StringBuilder();
-        while (true)
-        {
-            ConsoleKeyInfo key;
-            try
-            {
-                key = Console.ReadKey(intercept: true);
-            }
-            catch (InvalidOperationException)
-            {
-                return sb.ToString(); // stdin redirected — return what was captured
-            }
-
-            if (key.Key == ConsoleKey.Enter)
-            {
-                return sb.ToString();
-            }
-
-            if (key.Key == ConsoleKey.Backspace)
-            {
-                if (sb.Length > 0)
-                {
-                    sb.Length--;
-                    Console.Write("\b \b");
-                }
-            }
-            else
-            {
-                sb.Append(key.KeyChar);
-                Console.Write('*');
-            }
-        }
-    }
-
-    // ─── Impersonation ────────────────────────────────────────────────────────
-
-    // Runs action under the identity of the given local/domain account.
-    // The account must have "Log on locally" rights on this machine.
-    // Used for Credential Manager mode so secrets are stored in the service account's vault.
-    private static void RunImpersonated(string username, string password, Action action)
-    {
-        var domain = LocalDomain;
-        var user = username;
-
-        if (username.Contains(DomainSeparator))
-        {
-            var parts = username.Split(DomainSeparator, 2);
-            domain = parts[0];
-            user = parts[1];
-        }
-
-        if (!NativeMethods.LogonUser(user, domain, password,
-                Logon32LogonInteractive, Logon32ProviderDefault, out var token))
-        {
-            var err = Marshal.GetLastWin32Error();
-            throw new InvalidOperationException(
-                $"LogonUser failed for '{username}' (Win32 error {err}). " +
-                "Verify the credentials and that the account has 'Log on locally' rights.");
-        }
-
-        using (token)
-        {
-            WindowsIdentity.RunImpersonated(token, action);
-        }
-    }
-
-    private static class NativeMethods
-    {
-        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        internal static extern bool LogonUser(
-            string lpszUsername,
-            string lpszDomain,
-            string lpszPassword,
-            int dwLogonType,
-            int dwLogonProvider,
-            out SafeAccessTokenHandle phToken);
     }
 }
