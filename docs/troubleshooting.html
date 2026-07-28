@@ -160,6 +160,11 @@
             <td>The defense-in-depth ACL couldn't be applied; the secret file is still usable and already lives in a restricted folder &mdash; check the data-folder permissions.</td>
           </tr>
           <tr>
+            <td><code>Warning: could not delete secret file &lt;path&gt;. Delete it manually.</code></td>
+            <td>Warning</td>
+            <td>Emitted by <code>update-secret --secret-file</code> when the file it consumed could not be removed (held open, or ACL denies delete). The secret was applied, but a plaintext copy remains on disk &mdash; delete the named file manually.</td>
+          </tr>
+          <tr>
             <td>Agent connects then disconnects randomly</td>
             <td>Warning</td>
             <td><code>Connection:AgentName</code> and <code>Secret:Value</code> must match the Jenkins node config exactly; check network stability.</td>

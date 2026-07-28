@@ -490,11 +490,20 @@
   --java-path &lt;value&gt;    Java bin folder (default: JAVA_HOME)
   --impersonate          Run the write as a different user (Credential Manager / User-scope DPAPI)
   --username &lt;value&gt;     Username for impersonation (DOMAIN\user)
-  --silent               Non-interactive (all values from flags)</code></pre>
+  --silent               Non-interactive (all values from flags)
+  --upgrade              Reconcile appsettings.json to the current schema on MSI upgrade; preserve the existing secret.</code></pre>
 
     <div class="callout callout-tip">
       <div class="callout-title">Tip</div>
       <p>In silent mode with <code>--impersonate</code>, provide the password via the <code>JAS_IMPERSONATE_PASSWORD</code> environment variable to avoid command-line exposure.</p>
+    </div>
+
+    <h3 id="config-migration-on-upgrade">Config migration on MSI upgrade</h3>
+    <p>On an in-place MSI upgrade, the installer runs <code>update-secret --upgrade</code> as SYSTEM. It first reconciles <code>appsettings.json</code> to the current schema: settings the new version adds are written at their POCO defaults, settings the schema no longer defines are removed, and every value still in the schema &mdash; including the secret &mdash; is preserved as-is.</p>
+    <p>The check for an existing secret is a raw-string presence check on <code>Jenkins:Secret:Value</code>, not a decryption attempt &mdash; so it works as SYSTEM regardless of which identity the secret is bound to. A secret protected with User-scope DPAPI, TPM, or Credential Manager under the service account is preserved untouched rather than re-written. If no secret is present after reconciliation, the upgrade performs a full write from the <code>--secret</code>/<code>--url</code>/<code>--mode</code> values supplied to the CA; with none supplied, it fails the same way a fresh silent install with no secret does.</p>
+    <div class="callout callout-warning">
+      <div class="callout-title">Warning</div>
+      <p>Reconciliation prunes unrecognized keys. Hand-added settings under <code>Jenkins</code> or <code>Telemetry</code>, and any other top-level section, are removed on the next upgrade &mdash; configure only documented settings.</p>
     </div>
 
     <h2 id="telemetry-opentelemetry">Telemetry (OpenTelemetry)</h2>
