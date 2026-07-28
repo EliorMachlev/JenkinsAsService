@@ -215,10 +215,16 @@
     <hr>
 
     <h2 id="secretwriter-secretresolver-updatesecretcommand"><code>SecretWriter</code> / <code>SecretResolver</code> / <code>UpdateSecretCommand</code></h2>
-    <p><strong>Files:</strong> <code>SecretWriter.cs</code>, <code>SecretResolver.cs</code>, <code>UpdateSecretCommand.cs</code>, <code>SecretMode.cs</code></p>
+    <p><strong>Files:</strong> <code>SecretWriter.cs</code>, <code>SecretResolver.cs</code>, <code>UpdateSecretCommand.cs</code>, <code>SecretMode.cs</code>, <code>ServiceSettingsNormalizer.cs</code></p>
 
     <h3 id="secretwriter-writeconfig"><code>SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath)</code></h3>
     <p>Processes <code>secret</code> for the given <code>mode</code> (DPAPI encrypt / store env var / store CredMgr entry / leave plaintext), then writes the nested <code>appsettings.json</code> (sub-sections <code>Connection</code> / <code>Secret</code> / <code>Agent</code> / <code>Hardening</code> / <code>Logging</code> / <code>Recovery</code>). Preserves all existing top-level JSON sections (e.g. <code>Telemetry</code>) and existing sub-section fields not explicitly provided (<code>Agent.CustomArguments</code>, <code>Logging.DebugMode</code>, etc.).</p>
+
+    <h3 id="secretwriter-normalizeconfig"><code>SecretWriter.NormalizeConfig(basePath)</code></h3>
+    <p>Reconciles <code>appsettings.json</code> to the current schema on MSI upgrade, delegating the diff to <code>ServiceSettingsNormalizer.NormalizeJson</code>: adds keys the new schema defines (at their POCO defaults), preserves existing in-schema values, and prunes keys/sections the schema no longer defines. Rewrites the file only when something changed, atomically via a temp file + <code>File.Replace</code> so the hardened ACL is preserved. Never reads, resolves, or rewrites the secret value. Returns the added and removed dotted paths.</p>
+
+    <h3 id="servicesettingsnormalizer-normalizejson"><code>ServiceSettingsNormalizer.NormalizeJson(existingJson)</code></h3>
+    <p><strong>File:</strong> <code>ServiceSettingsNormalizer.cs</code>. Pure, deterministic, no I/O. Builds a schema tree from fresh <code>ServiceSettings</code> / <code>TelemetrySettings</code> POCOs (enums serialized as strings so defaults match the shipped <code>appsettings.json</code>) and returns <code>(mergedJson, addedPaths, removedPaths)</code>. Unparseable or non-object input is returned untouched (a no-op), so a corrupt config is never overwritten with defaults.</p>
 
     <h3 id="secretresolver-resolve"><code>SecretResolver.Resolve(ServiceSettings)</code></h3>
     <p>Resolves the raw secret at service startup:</p>
@@ -232,6 +238,8 @@
 
     <h3 id="updatesecretcommand-run"><code>UpdateSecretCommand.Run(args, basePath?)</code></h3>
     <p>CLI subcommand (<code>JenkinsAsService.exe update-secret</code>). Parses args manually (no System.CommandLine dependency). Returns <code>0</code> on success, <code>1</code> on error. Supports interactive and <code>--silent</code> modes; <code>--impersonate</code> wraps the write in <code>WindowsIdentity.RunImpersonated</code> via P/Invoke <code>LogonUser</code>.</p>
+
+    <p><strong>Non-interactive modes</strong> (used by the installer's custom actions): <code>--merge</code> applies only the optional fields to an existing config; <code>--set-data-dir</code> writes just <code>Agent:DataDirectory</code>; <code>--upgrade</code> reconciles the config to the current schema (via <code>NormalizeConfig</code>), then preserves an existing secret or repair-writes from the supplied args when none is present. The secret check reads only the raw <code>Secret:Value</code> string &mdash; no decryption &mdash; so it works as SYSTEM regardless of the service identity a User-scope DPAPI / TPM / Credential Manager secret is bound to.</p>
 
     <p><strong>Argument parsing internals:</strong></p>
     <ul>
