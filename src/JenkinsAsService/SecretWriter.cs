@@ -15,7 +15,7 @@ public static class SecretWriter
     private const string EnvVarName = "JENKINS_AGENT_SECRET";
     private const string CredTargetName = "JenkinsAsService/AgentSecret";
     private const string CredUserName = "JenkinsAgent";
-    private const string ConfigFileName = "appsettings.json";
+    private const string ConfigFileName = ConfigKeys.FileName;
     private const string ConfigSectionName = ConfigKeys.Section;
 
     /// <summary>
@@ -107,6 +107,59 @@ public static class SecretWriter
             GetOrCreate(jenkins, ConfigKeys.Recovery.Name)[ConfigKeys.Recovery.MaxRetries] = maxRetries;
 
         WriteRoot(configPath, existingRoot, jenkins);
+    }
+
+    /// <summary>
+    /// Reconciles appsettings.json to the current schema (adds missing keys at their POCO defaults,
+    /// prunes keys/sections the schema no longer defines) via <see cref="ServiceSettingsNormalizer"/>.
+    /// Rewrites the file only when something changed, atomically via a temp file + <c>File.Replace</c>,
+    /// which preserves the destination file's DACL — so the hardened ACL survives. Never reads, resolves,
+    /// or rewrites the secret value (it is an in-schema key, preserved by the reconcile). Returns the
+    /// dotted paths added and removed, for the caller to log.
+    /// </summary>
+    public static (IReadOnlyList<string> added, IReadOnlyList<string> removed) NormalizeConfig(string basePath)
+    {
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        var existingJson = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
+
+        var (merged, added, removed) = ServiceSettingsNormalizer.NormalizeJson(existingJson);
+
+        if (added.Count == 0 && removed.Count == 0)
+        {
+            return (added, removed); // nothing changed — leave the file (and its ACL/ordering) untouched
+        }
+
+        if (File.Exists(configPath))
+        {
+            // Atomic replace: File.Replace keeps the destination's security descriptor (DACL), so the
+            // ConfigAclHardener-applied ACL is preserved across the rewrite.
+            var tempPath = configPath + ".tmp";
+            File.WriteAllText(tempPath, merged, Encoding.UTF8);
+            try
+            {
+                File.Replace(tempPath, configPath, null);
+            }
+            catch
+            {
+                // Don't orphan the temp file if the replace itself fails.
+                try
+                {
+                    File.Delete(tempPath);
+                }
+                catch (Exception deleteEx) when (deleteEx is IOException or UnauthorizedAccessException)
+                {
+                    // best-effort cleanup — surface the original failure
+                }
+
+                throw;
+            }
+        }
+        else
+        {
+            File.WriteAllText(configPath, merged, Encoding.UTF8);
+        }
+
+        return (added, removed);
     }
 
     private static JsonObject GetOrCreate(JsonObject parent, string key)
@@ -266,11 +319,8 @@ public static class SecretWriter
 
     private static string ProtectDpapi(string secret, DpapiScope scope)
     {
-        var protectionScope = scope == DpapiScope.User
-            ? DataProtectionScope.CurrentUser
-            : DataProtectionScope.LocalMachine;
         var plainBytes = Encoding.UTF8.GetBytes(secret);
-        var encrypted = ProtectedData.Protect(plainBytes, SecretResolver.DpapiEntropy, protectionScope);
+        var encrypted = ProtectedData.Protect(plainBytes, SecretResolver.DpapiEntropy, scope.ToProtectionScope());
         return Convert.ToBase64String(encrypted);
     }
 

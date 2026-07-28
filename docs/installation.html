@@ -292,9 +292,14 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       <li>Configures Windows-level service recovery automatically (<code>util:ServiceConfig</code> &mdash; restart on all 3 failures after 10s, reset daily)</li>
       <li>Starts the service after install</li>
       <li>Stops and removes the service on uninstall</li>
-      <li>Supports in-place upgrades (same <code>UpgradeCode</code> across versions)</li>
+      <li>Supports in-place upgrades (same <code>UpgradeCode</code> across versions), reconciling <code>appsettings.json</code> to the new schema without disturbing your settings or secret</li>
       <li>Default secret protection mode: <code>Dpapi</code> (machine-scoped encryption at rest)</li>
     </ul>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Configuration on upgrade</div>
+      <p>An in-place upgrade reconciles the existing <code>appsettings.json</code> to the new version's schema: settings introduced in the release appear at their defaults, settings the schema no longer defines are removed, and your existing values &mdash; including the secret &mdash; are preserved. The secret is detected by a decryption-free presence check, so a secret bound to the service account (User-scope DPAPI, TPM, or Credential Manager) survives the upgrade untouched; if no secret is present, the upgrade writes a fresh configuration from the supplied properties. Because unknown keys are pruned, configure only documented settings. See <a href="configuration.html#config-migration-on-upgrade">Configuration &rarr; Config migration on MSI upgrade</a>.</p>
+    </div>
 
     <div class="callout callout-note">
       <div class="callout-title">Service account</div>

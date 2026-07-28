@@ -83,6 +83,44 @@ public sealed class AgentSettings
     /// <c>%ProgramData%\JenkinsAsService</c>.
     /// </summary>
     public string DataDirectory { get; set; } = "";
+
+    /// <summary>
+    /// Opt-in interactive-desktop launch (<c>Jenkins:Agent:LaunchInInteractiveSession</c>). When enabled,
+    /// the Java agent is started in the active console session (Session 1) instead of the service's
+    /// non-interactive Session 0, so GUI processes it spawns downstream (e.g. a Selenium/NUnit browser) are
+    /// visible on the logged-in desktop. <strong>Off by default and deliberately unsupported.</strong> See
+    /// <see cref="InteractiveSessionSettings"/> for the security implications.
+    /// </summary>
+    public InteractiveSessionSettings LaunchInInteractiveSession { get; set; } = new();
+}
+
+/// <summary>
+/// Interactive-desktop launch options (<c>Jenkins:Agent:LaunchInInteractiveSession</c>).
+/// <para>
+/// <strong>SECURITY WARNING.</strong> This feature is a deliberate isolation downgrade. Crossing from the
+/// service's Session 0 into the interactive session requires <c>SeTcb</c> privilege, which means running
+/// the service as <c>LocalSystem</c> (or granting a named account a privilege that is LocalSystem-equivalent
+/// and enables trivial privilege escalation). It also requires a user logged into the console. Only enable
+/// it on a throwaway/debug machine to watch a browser test — never on a hardened production build node.
+/// </para>
+/// </summary>
+public sealed class InteractiveSessionSettings
+{
+    /// <summary>
+    /// Master switch. When <c>false</c> (default) the agent always launches normally in Session 0 and none
+    /// of the interactive-launch code path is reachable.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// When <c>true</c> (default), the interactive launch is attempted <em>only</em> if the service is
+    /// running as <c>LocalSystem</c>; under any other identity it logs a prominent warning and falls back to
+    /// a normal Session 0 (headless) launch — the agent stays up, just invisible. Set <c>false</c> to also
+    /// attempt the launch under a non-LocalSystem account that has been granted <c>SeTcbPrivilege</c>. That
+    /// is <strong>strongly discouraged</strong>: <c>SeTcbPrivilege</c> is LocalSystem-equivalent, so this
+    /// switch does not reduce the blast radius — it only hides it behind a named account.
+    /// </summary>
+    public bool LocalSystemOnly { get; set; } = true;
 }
 
 /// <summary>Process-hardening toggles for the spawned agent (<c>Jenkins:Hardening</c>).</summary>

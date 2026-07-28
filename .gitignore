@@ -52,3 +52,7 @@ remoting/
 # Node tooling for docs linting (Stylelint) — never committed
 node_modules/
 package-lock.json
+
+# Superpowers process artifacts (design specs, implementation plans, SDD ledger)
+docs/superpowers/
+.superpowers/

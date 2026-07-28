@@ -1,9 +1,5 @@
 // Copyright (c) 2024 All rights reserved
 
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-using Microsoft.Win32.SafeHandles;
-
 namespace JenkinsAsService;
 
 public static class UpdateSecretCommand
@@ -40,6 +36,10 @@ public static class UpdateSecretCommand
           --custom-args <value>   Extra java.exe arguments
           --sanitize-env <bool>   Sanitize the agent child environment (true/false)
           --allowed-env <value>   Extra env var names to pass through (semicolon/comma separated)
+          --upgrade               Reconcile appsettings.json to the current schema on MSI upgrade:
+                                  add new settings at their defaults, prune settings the schema no longer
+                                  defines, and preserve existing values and the secret. If no secret is
+                                  present, falls back to a full write from --secret/--url/--mode.
           --debug <bool>          Verbose Java agent logging (true/false)
           --compact-log <bool>    Compact JSON log format (true/false)
           --retained-logs <int>   Number of rolled log files to keep
@@ -50,16 +50,10 @@ public static class UpdateSecretCommand
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
 
-    private const string ConfigFileName = "appsettings.json";
+    private const string ConfigFileName = ConfigKeys.FileName;
     private const string ConfigSectionName = ConfigKeys.Section;
     private const string EventLogSource = EventLogSourceInstaller.DefaultSource;
     private const string EventLogName = EventLogSourceInstaller.DefaultLogName;
-    private const char DomainSeparator = '\\';
-    private const string LocalDomain = ".";
-
-    // LogonUser logon-type / provider constants (advapi32)
-    private const int Logon32LogonInteractive = 2;
-    private const int Logon32ProviderDefault = 0;
 
     // Mutable accumulator used by ParseArgs; returned directly to avoid a 10-parameter constructor.
     private sealed class ParseState
@@ -79,6 +73,7 @@ public static class UpdateSecretCommand
         public bool Silent;
         public bool Impersonate;
         public bool Merge;
+        public bool Upgrade;
         public ConnectionMethod? Method;
         public bool? ViaFile;
         public string? CustomArgs;
@@ -138,6 +133,13 @@ public static class UpdateSecretCommand
             });
             Console.WriteLine("Optional configuration merged into appsettings.json.");
             return 0;
+        }
+
+        // Installer-only path: reconcile the config to the current schema on MSI upgrade, then decide
+        // whether the secret must be (re)written. Runs as SYSTEM; never resolves/decrypts the secret.
+        if (parsed.Upgrade)
+        {
+            return RunUpgrade(basePath, parsed);
         }
 
         return parsed.Silent
@@ -248,6 +250,9 @@ public static class UpdateSecretCommand
             case "--merge":
                 state.Merge = true;
                 return true;
+            case "--upgrade":
+                state.Upgrade = true;
+                return true;
             default:
                 return false;
         }
@@ -288,9 +293,7 @@ public static class UpdateSecretCommand
 
         SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath,
             args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
-        var configPath = Path.Combine(basePath, ConfigFileName);
-        Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode.Value})");
-        return 0;
+        return ReportConfigWritten(basePath, args.Mode.Value);
     }
 
     private static int RunSilentImpersonated(string basePath, string secret, ParseState args)
@@ -310,7 +313,7 @@ public static class UpdateSecretCommand
 
         try
         {
-            RunImpersonated(args.Username, password, () =>
+            ImpersonationRunner.Run(args.Username, password, () =>
                 SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath,
                     args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
         }
@@ -320,9 +323,90 @@ public static class UpdateSecretCommand
             return 1;
         }
 
+        return ReportConfigWritten(basePath, args.Mode!.Value);
+    }
+
+    // Shared success tail for the two non-interactive write paths.
+    private static int ReportConfigWritten(string basePath, SecretMode mode)
+    {
         var configPath = Path.Combine(basePath, ConfigFileName);
-        Console.WriteLine($"Configuration written to {configPath} (mode: {args.Mode!.Value})");
+        Console.WriteLine($"Configuration written to {configPath} (mode: {mode})");
         return 0;
+    }
+
+    // ─── Upgrade mode ────────────────────────────────────────────────────────
+
+    // Distinguishes the three states RunUpgrade must react to: a present secret is preserved, no secret is
+    // a safe repair-write, and an unreadable file is left alone (it may hold a secret we simply can't parse).
+    private enum ConfigState { HasSecret, NoSecret, Unreadable }
+
+    private static ConfigState InspectConfig(string basePath)
+    {
+        var configPath = Path.Combine(basePath, ConfigFileName);
+        if (!File.Exists(configPath))
+        {
+            return ConfigState.NoSecret; // nothing to lose -> repair is safe
+        }
+
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .SetBasePath(basePath)
+                .AddJsonFile(ConfigFileName, optional: true)
+                .Build();
+            var value = config.GetSection(ConfigSectionName)[ConfigKeys.Secret.ValuePath];
+            return string.IsNullOrWhiteSpace(value) ? ConfigState.NoSecret : ConfigState.HasSecret;
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
+                                       or InvalidOperationException or InvalidDataException)
+        {
+            // InvalidDataException: ConfigurationBuilder wraps a malformed JSON file's JsonException here.
+            return ConfigState.Unreadable;
+        }
+    }
+
+    private static int RunUpgrade(string basePath, ParseState args)
+    {
+        // 1. Reconcile appsettings.json to the current schema (add new keys, prune obsolete ones).
+        //    Secret-agnostic — the secret's value, being an in-schema key, is preserved untouched.
+        //    Best-effort: a normalize failure must not roll back the upgrade (the service still runs on
+        //    whatever config is already on disk / its own defaults).
+        try
+        {
+            var (added, removed) = SecretWriter.NormalizeConfig(basePath);
+            foreach (var path in added)
+            {
+                Console.WriteLine($"Added missing setting: {path}");
+            }
+            foreach (var path in removed)
+            {
+                Console.WriteLine($"Removed obsolete setting: {path}");
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            Console.Error.WriteLine($"Warning: could not reconcile appsettings.json ({ex.Message}); continuing without changes.");
+        }
+
+        // 2. Decryption-free, identity-independent secret-presence check: only inspect the raw string.
+        //    A present-but-undecryptable secret (User-DPAPI / TPM / Credential Manager under any identity)
+        //    counts as present and is left alone. A broken/incorrect secret likewise keeps failing, as
+        //    it did before the upgrade.
+        switch (InspectConfig(basePath))
+        {
+            case ConfigState.HasSecret:
+                Console.WriteLine("Existing secret present — configuration preserved.");
+                return 0;
+            case ConfigState.Unreadable:
+                // Do NOT repair-write over an unparseable file — it may hold a secret we cannot read.
+                Console.Error.WriteLine("Warning: existing appsettings.json is unreadable — leaving it untouched. Re-run update-secret to repair.");
+                return 0;
+            default: // NoSecret (missing or parseable-empty): repair by writing from the supplied args.
+                     // Fails when none were supplied, exactly as a fresh silent install with no secret fails.
+                Console.WriteLine("No existing secret found — writing configuration from supplied arguments.");
+                return RunSilent(basePath, args);
+        }
     }
 
     // ─── Interactive mode ─────────────────────────────────────────────────────
@@ -333,21 +417,22 @@ public static class UpdateSecretCommand
         TryReadExistingConfig(basePath, configPath,
             out var existingServer, out var existingAgentName, out var existingJavaPath, out var existingMode);
 
-        var server = PromptServer(args.Url, existingServer);
+        var server = InteractiveConfigPrompts.PromptServer(args.Url, existingServer);
         if (server is null)
         {
             return 1;
         }
 
-        var secret = PromptSecret(args.SecretArg, args.SecretFile, args.SecretEnv);
+        var secret = InteractiveConfigPrompts.PromptSecret(
+            ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv));
         if (secret is null)
         {
             return 1;
         }
 
-        var selectedMode = PromptMode(args.Mode, existingMode);
-        var agentName = PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
-        var javaPath = PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
+        var selectedMode = InteractiveConfigPrompts.PromptMode(args.Mode, existingMode);
+        var agentName = InteractiveConfigPrompts.PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
+        var javaPath = InteractiveConfigPrompts.PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
 
         return WriteInteractiveConfig(basePath, secret, selectedMode, server, agentName, javaPath, args);
     }
@@ -361,13 +446,13 @@ public static class UpdateSecretCommand
         {
             if (args.Impersonate)
             {
-                var credentials = PromptImpersonationCredentials(args.Username);
+                var credentials = InteractiveConfigPrompts.PromptImpersonationCredentials(args.Username);
                 if (credentials is null)
                 {
                     return 1;
                 }
 
-                RunImpersonated(credentials.Value.Username, credentials.Value.Password, () =>
+                ImpersonationRunner.Run(credentials.Value.Username, credentials.Value.Password, () =>
                     SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
                         args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
             }
@@ -388,116 +473,6 @@ public static class UpdateSecretCommand
         Console.WriteLine($"  Mode: {selectedMode}");
         Console.WriteLine($"  URL:  {server}");
         return 0;
-    }
-
-    // ─── Prompt helpers ───────────────────────────────────────────────────────
-
-    private static string? PromptServer(string? argServer, string? existingServer)
-    {
-        if (!string.IsNullOrWhiteSpace(argServer))
-        {
-            return argServer;
-        }
-
-        var def = string.IsNullOrWhiteSpace(existingServer) ? "" : $" [{existingServer}]";
-        Console.Write($"Jenkins URL (with port){def}: ");
-        var input = Console.ReadLine()?.Trim();
-        var server = string.IsNullOrWhiteSpace(input) ? existingServer : input;
-
-        if (string.IsNullOrWhiteSpace(server))
-        {
-            Console.Error.WriteLine("Error: Jenkins URL is required.");
-            return null;
-        }
-
-        return server;
-    }
-
-    private static string? PromptSecret(string? secretArg, string? secretFile, string? secretEnv)
-    {
-        var secret = ResolveSecretInput(secretArg, secretFile, secretEnv);
-        if (!string.IsNullOrWhiteSpace(secret))
-        {
-            return secret;
-        }
-
-        Console.Write("Agent secret: ");
-        secret = ReadMaskedInput();
-        Console.WriteLine();
-
-        if (string.IsNullOrWhiteSpace(secret))
-        {
-            Console.Error.WriteLine("Error: Agent secret is required.");
-            return null;
-        }
-
-        return secret;
-    }
-
-    private static SecretMode PromptMode(SecretMode? modeArg, SecretMode existingMode)
-    {
-        if (modeArg.HasValue)
-        {
-            return modeArg.Value;
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("Secret protection mode:");
-        Console.WriteLine("  1. DPAPI — machine-scoped encryption (recommended)");
-        Console.WriteLine("  2. Environment Variable — system env var");
-        Console.WriteLine("  3. Credential Manager — Windows credential vault");
-        Console.WriteLine("  4. Unprotected — plaintext (dev only)");
-        Console.WriteLine("  5. TPM — hardware-backed, non-exportable key (strongest; needs TPM 2.0)");
-        Console.Write("Select [1-5]: ");
-        return Console.ReadLine()?.Trim() switch
-        {
-            "1" => SecretMode.Dpapi,
-            "2" => SecretMode.EnvironmentVariable,
-            "3" => SecretMode.CredentialManager,
-            "4" => SecretMode.Unprotected,
-            "5" => SecretMode.Tpm,
-            _ => existingMode
-        };
-    }
-
-    private static string? PromptText(string label, string? argValue, string? existing, string fallbackLabel)
-    {
-        if (argValue is not null)
-        {
-            return argValue;
-        }
-
-        var def = string.IsNullOrWhiteSpace(existing) ? fallbackLabel : existing;
-        Console.Write($"{label} (default: {def}): ");
-        var input = Console.ReadLine()?.Trim();
-        return string.IsNullOrWhiteSpace(input) ? existing : input;
-    }
-
-    private static (string Username, string Password)? PromptImpersonationCredentials(string? username)
-    {
-        if (string.IsNullOrWhiteSpace(username))
-        {
-            Console.Write("Impersonate as (e.g. DOMAIN\\ServiceAccount): ");
-            username = Console.ReadLine()?.Trim();
-        }
-
-        if (string.IsNullOrWhiteSpace(username))
-        {
-            Console.Error.WriteLine("Error: username is required for impersonation.");
-            return null;
-        }
-
-        Console.Write($"Password for {username}: ");
-        var password = ReadMaskedInput();
-        Console.WriteLine();
-
-        if (string.IsNullOrWhiteSpace(password))
-        {
-            Console.Error.WriteLine("Error: password is required for impersonation.");
-            return null;
-        }
-
-        return (username, password);
     }
 
     // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -569,7 +544,10 @@ public static class UpdateSecretCommand
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // best-effort delete — if it fails the file remains but operation continues
+                // Best-effort delete — the operation continues, but a plaintext secret is now left on disk,
+                // so surface it: the caller should remove the file manually.
+                Console.Error.WriteLine(
+                    $"Warning: could not delete secret file '{secretFile}' ({ex.Message}). Delete it manually.");
             }
 
             return secret;
@@ -680,85 +658,5 @@ public static class UpdateSecretCommand
 
         var sanitized = value.Trim().TrimEnd('"').Trim();
         return sanitized.Length == 0 ? null : Path.TrimEndingDirectorySeparator(sanitized);
-    }
-
-    private static string ReadMaskedInput()
-    {
-        var sb = new System.Text.StringBuilder();
-        while (true)
-        {
-            ConsoleKeyInfo key;
-            try
-            {
-                key = Console.ReadKey(intercept: true);
-            }
-            catch (InvalidOperationException)
-            {
-                return sb.ToString(); // stdin redirected — return what was captured
-            }
-
-            if (key.Key == ConsoleKey.Enter)
-            {
-                return sb.ToString();
-            }
-
-            if (key.Key == ConsoleKey.Backspace)
-            {
-                if (sb.Length > 0)
-                {
-                    sb.Length--;
-                    Console.Write("\b \b");
-                }
-            }
-            else
-            {
-                sb.Append(key.KeyChar);
-                Console.Write('*');
-            }
-        }
-    }
-
-    // ─── Impersonation ────────────────────────────────────────────────────────
-
-    // Runs action under the identity of the given local/domain account.
-    // The account must have "Log on locally" rights on this machine.
-    // Used for Credential Manager mode so secrets are stored in the service account's vault.
-    private static void RunImpersonated(string username, string password, Action action)
-    {
-        var domain = LocalDomain;
-        var user = username;
-
-        if (username.Contains(DomainSeparator))
-        {
-            var parts = username.Split(DomainSeparator, 2);
-            domain = parts[0];
-            user = parts[1];
-        }
-
-        if (!NativeMethods.LogonUser(user, domain, password,
-                Logon32LogonInteractive, Logon32ProviderDefault, out var token))
-        {
-            var err = Marshal.GetLastWin32Error();
-            throw new InvalidOperationException(
-                $"LogonUser failed for '{username}' (Win32 error {err}). " +
-                "Verify the credentials and that the account has 'Log on locally' rights.");
-        }
-
-        using (token)
-        {
-            WindowsIdentity.RunImpersonated(token, action);
-        }
-    }
-
-    private static class NativeMethods
-    {
-        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        internal static extern bool LogonUser(
-            string lpszUsername,
-            string lpszDomain,
-            string lpszPassword,
-            int dwLogonType,
-            int dwLogonProvider,
-            out SafeAccessTokenHandle phToken);
     }
 }
