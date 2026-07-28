@@ -9,7 +9,7 @@ using Serilog.Events;
 using Serilog.Formatting.Compact;
 
 const string UpdateSecretCommandName = "update-secret";
-const string ConfigFileName = "appsettings.json";
+const string ConfigFileName = ConfigKeys.FileName;
 const string ConfigSectionName = ConfigKeys.Section;
 const string DebugModeKey = ConfigKeys.Logging.DebugModePath;
 const string CompactLogKey = ConfigKeys.Logging.CompactLogPath;

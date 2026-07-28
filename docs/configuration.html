@@ -133,6 +133,18 @@
             <td>Writable directory root for runtime artifacts, kept separate from the read-only install folder. Holds logs + secret file at the root, the cached <code>agent.jar</code> under <code>agent\</code>, and the Jenkins <code>-workDir</code> under <code>work\</code>. Env vars are expanded. The MSI sets this to the chosen <code>DATAFOLDER</code>. See <a href="#data-dir-split">Data directory split</a>.</td>
           </tr>
           <tr>
+            <td><code>Agent:LaunchInInteractiveSession:Enabled</code></td>
+            <td>No</td>
+            <td><code>false</code></td>
+            <td>⚠️ <strong>Isolation downgrade — off by default.</strong> Launch the agent on the interactive desktop (Session 1) so GUI processes it spawns (e.g. a Selenium/NUnit browser) are visible to a logged-in user. Requires <code>LocalSystem</code> + an active console session. See <a href="#interactive-session">Interactive-session launch</a>.</td>
+          </tr>
+          <tr>
+            <td><code>Agent:LaunchInInteractiveSession:LocalSystemOnly</code></td>
+            <td>No</td>
+            <td><code>true</code></td>
+            <td>Gate the interactive launch on the service running as <code>LocalSystem</code>. When <code>true</code> (default), a non-LocalSystem identity logs a warning and falls back to a normal Session 0 launch. Set <code>false</code> to also attempt it under an account granted <code>SeTcbPrivilege</code> — discouraged (that privilege is LocalSystem-equivalent). See <a href="#interactive-session">Interactive-session launch</a>.</td>
+          </tr>
+          <tr>
             <td><code>Hardening:SanitizeEnvironment</code></td>
             <td>No</td>
             <td><code>true</code></td>
@@ -190,7 +202,11 @@
     "Agent": {
       "JavaPath": "",
       "CustomArguments": "",
-      "DataDirectory": ""
+      "DataDirectory": "",
+      "LaunchInInteractiveSession": {
+        "Enabled": false,
+        "LocalSystemOnly": true
+      }
     },
     "Hardening": {
       "SanitizeEnvironment": true,
@@ -420,6 +436,45 @@
     <p>Because the install folder is not writable by the agent identity, a malicious pipeline running inside the agent cannot overwrite the service binary and wait for a restart &mdash; a local privilege-escalation / persistence vector that a single shared folder can't close (the same identity needs write for data but must not have it for the binary). The MSI sets <code>Agent:DataDirectory</code> to the chosen <code>DATAFOLDER</code>; for portable/manual deployments the service defaults to <code>%ProgramData%\JenkinsAsService</code> and creates it on first run.</p>
     <p>Inside the data folder the cached <code>agent.jar</code> and its integrity sidecars live in the <code>agent\</code> subfolder, kept out of the <code>work\</code> subfolder (the Jenkins <code>-workDir</code>) where builds churn &mdash; so a <code>git clean</code> or a workspace-path collision can't clobber the binary the watchdog launches. On download the jar's SHA-256 is recorded next to it; on every subsequent start, if the controller answers the ETag check with <code>304 Not Modified</code>, the cached jar is re-hashed and compared &mdash; any mismatch (tamper or corruption) forces an unconditional re-download rather than launching the altered jar. This is trust-on-first-use local-integrity checking; to also pin <em>who</em> the jar came from, set <a href="#cert-pinning"><code>Connection:ControllerCertThumbprint</code></a>.</p>
 
+    <h3 id="interactive-session">Interactive-session launch (visible GUI / browser tests)</h3>
+    <div class="callout callout-warning">
+      <div class="callout-title">⚠️ Security warning — risky, unsupported, opt-in</div>
+      <p>This feature is a <strong>deliberate isolation downgrade and can lead to privilege escalation.</strong> A Windows service always runs in the non-interactive <strong>Session 0</strong>; to launch the agent on a user's visible desktop the service must cross into the interactive session, which requires <code>SeTcbPrivilege</code> &mdash; i.e. running as <code>LocalSystem</code> (or granting a named account a privilege that is <em>LocalSystem-equivalent</em> and trivially escalatable to SYSTEM). It also requires a user logged into the console. Enabling it undoes the least-privilege posture that is the whole point of running the agent as a hardened service. <strong>Use it only on a throwaway/debug machine to watch a browser test &mdash; never on a hardened production build node.</strong> Security reports about this feature are <a href="https://github.com/EliorMachlev/JenkinsAsService/blob/main/Security.md">out of scope</a>.</p>
+    </div>
+    <p>By default a Selenium/NUnit browser your pipeline launches is a grandchild of the Session 0 agent, so it renders on Session 0's hidden desktop &mdash; you can't watch it (headless-only in practice). Set <code>Agent:LaunchInInteractiveSession:Enabled: true</code> to start the <strong>whole agent</strong> in the active console session instead, so every child it spawns (job → browser) inherits the visible desktop.</p>
+    <p>The launch preconditions are checked at runtime. If any is missing, the service logs a prominent warning and <strong>falls back to a normal Session 0 (headless) launch &mdash; the agent stays up, just invisible</strong>; it never fails because of this setting. Because the shipped default identity (<code>NT SERVICE\Jenkins</code>) lacks the required privilege, the feature is effectively <em>double opt-in</em>: flipping the flag alone does nothing until you also reconfigure the service identity.</p>
+    <h4>Prerequisites</h4>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>Prerequisites</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>LocalSystemOnly: true</code> (default)</td>
+            <td>
+              <ol>
+                <li><code>Agent:LaunchInInteractiveSession:Enabled: true</code>.</li>
+                <li>Service configured to run as <strong><code>LocalSystem</code></strong> (<code>sc.exe config Jenkins obj= LocalSystem</code>) &mdash; not the default virtual account.</li>
+                <li>A user <strong>logged into the console session</strong> (interactive logon or autologon).</li>
+              </ol>
+            </td>
+          </tr>
+          <tr>
+            <td><code>LocalSystemOnly: false</code> (discouraged)</td>
+            <td>
+              <ol>
+                <li><code>Agent:LaunchInInteractiveSession:Enabled: true</code> and <code>LocalSystemOnly: false</code>.</li>
+                <li>Service runs as a domain/local account that has been granted <strong><code>SeTcbPrivilege</code></strong> ("Act as part of the operating system") via User Rights Assignment. <em>This makes the account LocalSystem-equivalent &mdash; it does not reduce risk, it only hides it behind a named identity.</em></li>
+                <li>A user <strong>logged into the console session</strong>.</li>
+              </ol>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>When the prerequisites are absent the fallback warning names the cause (e.g. <em>"not running as LocalSystem"</em>, <em>"no active console session"</em>, or the Win32 error from <code>WTSQueryUserToken</code>), so you can tell a misconfiguration from a bug. Process-environment sanitization (<a href="#env-sanitization"><code>Hardening:SanitizeEnvironment</code></a>) still applies to the interactive launch, and the agent tree is placed in a kill-on-close Job Object so a stop/restart still reaps the browser and build children.</p>
+
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>
     <pre data-lang="text"><code>JenkinsAsService.exe update-secret [options]
@@ -435,11 +490,20 @@
   --java-path &lt;value&gt;    Java bin folder (default: JAVA_HOME)
   --impersonate          Run the write as a different user (Credential Manager / User-scope DPAPI)
   --username &lt;value&gt;     Username for impersonation (DOMAIN\user)
-  --silent               Non-interactive (all values from flags)</code></pre>
+  --silent               Non-interactive (all values from flags)
+  --upgrade              Reconcile appsettings.json to the current schema on MSI upgrade; preserve the existing secret.</code></pre>
 
     <div class="callout callout-tip">
       <div class="callout-title">Tip</div>
       <p>In silent mode with <code>--impersonate</code>, provide the password via the <code>JAS_IMPERSONATE_PASSWORD</code> environment variable to avoid command-line exposure.</p>
+    </div>
+
+    <h3 id="config-migration-on-upgrade">Config migration on MSI upgrade</h3>
+    <p>On an in-place MSI upgrade, the installer runs <code>update-secret --upgrade</code> as SYSTEM. It first reconciles <code>appsettings.json</code> to the current schema: settings the new version adds are written at their POCO defaults, settings the schema no longer defines are removed, and every value still in the schema &mdash; including the secret &mdash; is preserved as-is.</p>
+    <p>The check for an existing secret is a raw-string presence check on <code>Jenkins:Secret:Value</code>, not a decryption attempt &mdash; so it works as SYSTEM regardless of which identity the secret is bound to. A secret protected with User-scope DPAPI, TPM, or Credential Manager under the service account is preserved untouched rather than re-written. If no secret is present after reconciliation, the upgrade performs a full write from the <code>--secret</code>/<code>--url</code>/<code>--mode</code> values supplied to the CA; with none supplied, it fails the same way a fresh silent install with no secret does.</p>
+    <div class="callout callout-warning">
+      <div class="callout-title">Warning</div>
+      <p>Reconciliation prunes unrecognized keys. Hand-added settings under <code>Jenkins</code> or <code>Telemetry</code>, and any other top-level section, are removed on the next upgrade &mdash; configure only documented settings.</p>
     </div>
 
     <h2 id="telemetry-opentelemetry">Telemetry (OpenTelemetry)</h2>

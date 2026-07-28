@@ -197,6 +197,15 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _effectiveMethod = AgentTransport.InitialMethod(_settings.Connection.Method);
         _logger.LogInformation("Connection method: {Configured} (starting transport: {Effective})",
             _settings.Connection.Method, _effectiveMethod);
+
+        if (_settings.Agent.LaunchInInteractiveSession.Enabled)
+        {
+            _logger.LogWarning(
+                "Agent:LaunchInInteractiveSession is ENABLED — the agent will be launched on the interactive " +
+                "desktop (Session 1) when a console session and the required privilege are present. This is an " +
+                "isolation downgrade (LocalSystem / SeTcbPrivilege required) and is unsupported; do not enable " +
+                "it on hardened production build nodes. See docs/configuration.html.");
+        }
     }
 
     private void ResolveJavaPath()
