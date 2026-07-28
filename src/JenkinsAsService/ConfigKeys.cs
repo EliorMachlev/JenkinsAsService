@@ -15,6 +15,10 @@ internal static class ConfigKeys
     /// <summary>Top-level telemetry section (sibling of <see cref="Section"/>, binds to <c>TelemetrySettings</c>).</summary>
     internal const string TelemetrySection = "Telemetry";
 
+    /// <summary>The settings file name, resolved relative to the application base directory. Single source
+    /// of truth for the startup reader, the writer, and the CLI so the literal never drifts between them.</summary>
+    internal const string FileName = "appsettings.json";
+
     internal static class Connection
     {
         internal const string Name = "Connection";

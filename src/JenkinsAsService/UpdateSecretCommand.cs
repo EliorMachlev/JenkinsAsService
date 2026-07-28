@@ -50,7 +50,7 @@ public static class UpdateSecretCommand
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
 
-    private const string ConfigFileName = "appsettings.json";
+    private const string ConfigFileName = ConfigKeys.FileName;
     private const string ConfigSectionName = ConfigKeys.Section;
     private const string EventLogSource = EventLogSourceInstaller.DefaultSource;
     private const string EventLogName = EventLogSourceInstaller.DefaultLogName;
@@ -544,7 +544,10 @@ public static class UpdateSecretCommand
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // best-effort delete — if it fails the file remains but operation continues
+                // Best-effort delete — the operation continues, but a plaintext secret is now left on disk,
+                // so surface it: the caller should remove the file manually.
+                Console.Error.WriteLine(
+                    $"Warning: could not delete secret file '{secretFile}' ({ex.Message}). Delete it manually.");
             }
 
             return secret;

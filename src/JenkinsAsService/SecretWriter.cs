@@ -15,7 +15,7 @@ public static class SecretWriter
     private const string EnvVarName = "JENKINS_AGENT_SECRET";
     private const string CredTargetName = "JenkinsAsService/AgentSecret";
     private const string CredUserName = "JenkinsAgent";
-    private const string ConfigFileName = "appsettings.json";
+    private const string ConfigFileName = ConfigKeys.FileName;
     private const string ConfigSectionName = ConfigKeys.Section;
 
     /// <summary>
@@ -319,11 +319,8 @@ public static class SecretWriter
 
     private static string ProtectDpapi(string secret, DpapiScope scope)
     {
-        var protectionScope = scope == DpapiScope.User
-            ? DataProtectionScope.CurrentUser
-            : DataProtectionScope.LocalMachine;
         var plainBytes = Encoding.UTF8.GetBytes(secret);
-        var encrypted = ProtectedData.Protect(plainBytes, SecretResolver.DpapiEntropy, protectionScope);
+        var encrypted = ProtectedData.Protect(plainBytes, SecretResolver.DpapiEntropy, scope.ToProtectionScope());
         return Convert.ToBase64String(encrypted);
     }
 

@@ -1,5 +1,7 @@
 // Copyright (c) 2024 All rights reserved
 
+using System.Security.Cryptography;
+
 namespace JenkinsAsService;
 
 /// <summary>
@@ -21,4 +23,12 @@ public enum DpapiScope
     /// with virtual accounts or gMSA, which cannot be logged on with a password.
     /// </summary>
     User = 1
+}
+
+internal static class DpapiScopeExtensions
+{
+    /// <summary>Maps the domain scope to the Win32 DPAPI flag. Shared by the write and read sides so the
+    /// two can never disagree on which key protects the secret.</summary>
+    internal static DataProtectionScope ToProtectionScope(this DpapiScope scope) =>
+        scope == DpapiScope.User ? DataProtectionScope.CurrentUser : DataProtectionScope.LocalMachine;
 }

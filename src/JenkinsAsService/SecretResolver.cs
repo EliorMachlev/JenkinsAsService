@@ -43,13 +43,9 @@ public sealed class SecretResolver : ISecretResolver
                 "AgentSecret is not valid Base64. Re-run the installer with DPAPI mode to re-encrypt.", ex);
         }
 
-        var protectionScope = scope == DpapiScope.User
-            ? DataProtectionScope.CurrentUser
-            : DataProtectionScope.LocalMachine;
-
         try
         {
-            var plain = ProtectedData.Unprotect(encrypted, DpapiEntropy, protectionScope);
+            var plain = ProtectedData.Unprotect(encrypted, DpapiEntropy, scope.ToProtectionScope());
             return Encoding.UTF8.GetString(plain);
         }
         catch (CryptographicException ex)
