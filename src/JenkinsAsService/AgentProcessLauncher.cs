@@ -2,6 +2,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using Microsoft.Extensions.Options;
 
 namespace JenkinsAsService;
 
@@ -33,7 +34,33 @@ public interface IAgentProcess : IDisposable
 /// <summary>Production launcher backed by <see cref="System.Diagnostics.Process"/>.</summary>
 internal sealed class AgentProcessLauncher : IAgentProcessLauncher
 {
+    private readonly ILogger<AgentProcessLauncher> _logger;
+    private readonly ServiceSettings _settings;
+
+    public AgentProcessLauncher(ILogger<AgentProcessLauncher> logger, IOptions<ServiceSettings> settings)
+    {
+        _logger = logger;
+        _settings = settings.Value;
+    }
+
     public IAgentProcess Start(ProcessStartInfo startInfo, Action<string> onOutputLine)
+    {
+        // Opt-in interactive-desktop launch. Only reachable when explicitly enabled; on any precondition
+        // failure (not LocalSystem, no console session, privilege missing) InteractiveSessionLauncher logs a
+        // prominent warning and returns false, and we fall through to the normal Session 0 launch below so
+        // the agent stays up (headless) instead of failing.
+        var interactive = _settings.Agent.LaunchInInteractiveSession;
+        if (interactive.Enabled && OperatingSystem.IsWindows()
+            && InteractiveSessionLauncher.TryStart(
+                startInfo, onOutputLine, interactive.LocalSystemOnly, _logger, out var interactiveProcess))
+        {
+            return interactiveProcess;
+        }
+
+        return StartInSession0(startInfo, onOutputLine);
+    }
+
+    private static IAgentProcess StartInSession0(ProcessStartInfo startInfo, Action<string> onOutputLine)
     {
         var handle = new SystemAgentProcess(startInfo, onOutputLine);
         try

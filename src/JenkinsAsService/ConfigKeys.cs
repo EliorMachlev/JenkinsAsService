@@ -53,6 +53,13 @@ internal static class ConfigKeys
 
         internal const string JavaPathPath = Name + ":" + JavaPath;
         internal const string DataDirectoryPath = Name + ":" + DataDirectory;
+
+        internal static class LaunchInInteractiveSession
+        {
+            internal const string Name = "LaunchInInteractiveSession";
+            internal const string Enabled = "Enabled";
+            internal const string LocalSystemOnly = "LocalSystemOnly";
+        }
     }
 
     internal static class Hardening
