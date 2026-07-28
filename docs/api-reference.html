@@ -215,7 +215,7 @@
     <hr>
 
     <h2 id="secretwriter-secretresolver-updatesecretcommand"><code>SecretWriter</code> / <code>SecretResolver</code> / <code>UpdateSecretCommand</code></h2>
-    <p><strong>Files:</strong> <code>SecretWriter.cs</code>, <code>SecretResolver.cs</code>, <code>UpdateSecretCommand.cs</code>, <code>SecretMode.cs</code>, <code>ServiceSettingsNormalizer.cs</code></p>
+    <p><strong>Files:</strong> <code>SecretWriter.cs</code>, <code>SecretResolver.cs</code>, <code>UpdateSecretCommand.cs</code>, <code>InteractiveConfigPrompts.cs</code>, <code>ImpersonationRunner.cs</code>, <code>SecretMode.cs</code>, <code>ServiceSettingsNormalizer.cs</code></p>
 
     <h3 id="secretwriter-writeconfig"><code>SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath)</code></h3>
     <p>Processes <code>secret</code> for the given <code>mode</code> (DPAPI encrypt / store env var / store CredMgr entry / leave plaintext), then writes the nested <code>appsettings.json</code> (sub-sections <code>Connection</code> / <code>Secret</code> / <code>Agent</code> / <code>Hardening</code> / <code>Logging</code> / <code>Recovery</code>). Preserves all existing top-level JSON sections (e.g. <code>Telemetry</code>) and existing sub-section fields not explicitly provided (<code>Agent.CustomArguments</code>, <code>Logging.DebugMode</code>, etc.).</p>
@@ -237,7 +237,7 @@
     </ul>
 
     <h3 id="updatesecretcommand-run"><code>UpdateSecretCommand.Run(args, basePath?)</code></h3>
-    <p>CLI subcommand (<code>JenkinsAsService.exe update-secret</code>). Parses args manually (no System.CommandLine dependency). Returns <code>0</code> on success, <code>1</code> on error. Supports interactive and <code>--silent</code> modes; <code>--impersonate</code> wraps the write in <code>WindowsIdentity.RunImpersonated</code> via P/Invoke <code>LogonUser</code>.</p>
+    <p>CLI subcommand (<code>JenkinsAsService.exe update-secret</code>). Parses args manually (no System.CommandLine dependency). Returns <code>0</code> on success, <code>1</code> on error. Supports interactive and <code>--silent</code> modes. The interactive console prompts (server / secret / mode, masked input) live in <code>InteractiveConfigPrompts</code>; <code>--impersonate</code> wraps the write in <code>WindowsIdentity.RunImpersonated</code> via P/Invoke <code>LogonUser</code>, isolated in <code>ImpersonationRunner</code>.</p>
 
     <p><strong>Non-interactive modes</strong> (used by the installer's custom actions): <code>--merge</code> applies only the optional fields to an existing config; <code>--set-data-dir</code> writes just <code>Agent:DataDirectory</code>; <code>--upgrade</code> reconciles the config to the current schema (via <code>NormalizeConfig</code>), then preserves an existing secret or repair-writes from the supplied args when none is present. The secret check reads only the raw <code>Secret:Value</code> string &mdash; no decryption &mdash; so it works as SYSTEM regardless of the service identity a User-scope DPAPI / TPM / Credential Manager secret is bound to.</p>
 
