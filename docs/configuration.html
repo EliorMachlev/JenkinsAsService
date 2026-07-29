@@ -154,7 +154,7 @@
             <td><code>Agent:LaunchInInteractiveSession:PreferDisconnectedSession</code></td>
             <td>No</td>
             <td><code>false</code></td>
-            <td>Prefer a session that is <strong>not</strong> <code>Active</code> — a disconnected RDP session, or an autologon console session with a client attached elsewhere. The unattended build desktop normally sits non-Active while an <code>Active</code> session usually belongs to somebody working right then, so this keeps the agent off an operator's desktop when they sign in to watch. A preference, not a filter: a lone <code>Active</code> session is still used, and <code>TargetUser</code> still wins outright. Defaults to <code>false</code> (prefer <code>Active</code>).</td>
+            <td>Prefer a session that is <strong>not</strong> <code>Active</code> — a disconnected RDP session, or an autologon console session with a client attached elsewhere. The unattended build desktop normally sits non-Active while an <code>Active</code> session usually belongs to somebody working right then, so this keeps the agent off an operator's desktop when they sign in to watch. A preference, not a filter: a lone <code>Active</code> session is still used, and <code>TargetUser</code> still wins outright. The tie-break flips with it &mdash; <code>true</code> takes the <strong>highest</strong> session id (ids increase as sessions are created, so that is the newest, skipping stale disconnected ones), while the default takes the lowest. Defaults to <code>false</code> (prefer <code>Active</code>).</td>
           </tr>
           <tr>
             <td><code>Agent:LaunchInInteractiveSession:RequireInteractiveSession</code></td>
@@ -471,7 +471,7 @@
       <li>The session must have a <strong>logged-on user</strong>. This is the authoritative signal that a token exists &mdash; a console session parked at the logon screen reports as <em>connected</em> but has no user, and querying it fails with <code>ERROR_NO_TOKEN</code>.</li>
       <li><strong>Disconnected sessions qualify.</strong> Closing an RDP window leaves the user logged on and the desktop alive, along with any browser already running on it. An RDP-only server is therefore fully supported &mdash; you do not need to be attached for the agent to launch or keep working.</li>
       <li>A <strong>locked</strong> session qualifies: the user is still logged on and the desktop still exists.</li>
-      <li>Among candidates, an <code>Active</code> session wins, then the lowest session id &mdash; so the choice is stable across restarts. Set <code>PreferDisconnectedSession: true</code> to invert the first key and favour the unattended desktop instead, or <code>TargetUser</code> to pin it explicitly when several people may be signed in.</li>
+      <li>Among candidates, an <code>Active</code> session wins, then the lowest session id &mdash; so the choice is stable across restarts. <code>PreferDisconnectedSession: true</code> inverts both keys: non-Active first, then the <strong>highest</strong> session id, i.e. the newest session. Set <code>TargetUser</code> to pin it explicitly instead when several people may be signed in.</li>
     </ul>
     <p>The chosen session id is written to the log at launch. If selection fails, the warning lists every session it saw (id, user, state) so the cause is visible without reproducing.</p>
     <div class="callout callout-warning">

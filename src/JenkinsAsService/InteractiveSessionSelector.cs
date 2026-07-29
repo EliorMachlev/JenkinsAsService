@@ -81,7 +81,7 @@ internal static class InteractiveSessionSelector
         var candidates = sessions
             .Where(IsUsableTarget)
             .OrderBy(s => Rank(s.State, preferDisconnected))
-            .ThenBy(s => s.SessionId)
+            .ThenBy(s => TieBreak(s.SessionId, preferDisconnected))
             .ToList();
 
         if (candidates.Count == 0)
@@ -105,10 +105,7 @@ internal static class InteractiveSessionSelector
         return true;
     }
 
-    /// <summary>
-    /// Primary ordering key. Both directions still fall back to the lowest session id, so the choice stays
-    /// stable across restarts whichever preference is configured.
-    /// </summary>
+    /// <summary>Primary ordering key — which connect state is favoured.</summary>
     private static int Rank(SessionConnectState state, bool preferDisconnected)
     {
         var isActive = state == SessionConnectState.Active;
@@ -116,6 +113,15 @@ internal static class InteractiveSessionSelector
             ? isActive ? 1 : 0
             : isActive ? 0 : 1;
     }
+
+    /// <summary>
+    /// Secondary ordering key. Session ids are handed out in increasing order, so the <em>highest</em> id is
+    /// the most recently created session. Under <c>preferDisconnected</c> that is the one to take: stale
+    /// disconnected sessions accumulate over a machine's uptime, and the newest is the live desktop. The
+    /// default direction stays lowest-first, which keeps a plain console-session setup on session 1.
+    /// </summary>
+    private static long TieBreak(uint sessionId, bool preferDisconnected) =>
+        preferDisconnected ? -(long)sessionId : sessionId;
 
     /// <summary>
     /// A session can host the agent when it is interactive, has somebody logged on, and is in a state that

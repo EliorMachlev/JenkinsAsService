@@ -229,8 +229,10 @@ public class InteractiveSessionSelectorTests
     }
 
     [Fact]
-    public void Prefer_non_active_keeps_the_lowest_session_id_tie_break()
+    public void Prefer_non_active_tie_breaks_on_the_highest_session_id_as_the_newest_session()
     {
+        // Session ids increase as sessions are created, so the highest is the newest. Stale disconnected
+        // sessions pile up over a machine's uptime; the newest one is the live desktop.
         var sessions = new[]
         {
             new SessionInfo(5, "b", SessionConnectState.Disconnected),
@@ -240,7 +242,39 @@ public class InteractiveSessionSelectorTests
         InteractiveSessionSelector.TrySelect(
             sessions, targetUser: null, out var sessionId, out _, preferDisconnected: true).Should().BeTrue();
 
+        sessionId.Should().Be(5);
+    }
+
+    [Fact]
+    public void Default_direction_still_tie_breaks_on_the_lowest_session_id()
+    {
+        // Unchanged for the default ranking — a console-session setup stays pinned to session 1.
+        var sessions = new[]
+        {
+            new SessionInfo(5, "b", SessionConnectState.Active),
+            new SessionInfo(3, "a", SessionConnectState.Active),
+        };
+
+        InteractiveSessionSelector.TrySelect(sessions, targetUser: null, out var sessionId, out _)
+            .Should().BeTrue();
+
         sessionId.Should().Be(3);
+    }
+
+    [Fact]
+    public void Prefer_non_active_picks_the_newest_of_several_disconnected_sessions()
+    {
+        var sessions = new[]
+        {
+            new SessionInfo(2, "master", SessionConnectState.Disconnected),
+            new SessionInfo(7, "master", SessionConnectState.Disconnected),
+            new SessionInfo(4, "master", SessionConnectState.Disconnected),
+        };
+
+        InteractiveSessionSelector.TrySelect(
+            sessions, targetUser: null, out var sessionId, out _, preferDisconnected: true).Should().BeTrue();
+
+        sessionId.Should().Be(7);
     }
 
     [Fact]

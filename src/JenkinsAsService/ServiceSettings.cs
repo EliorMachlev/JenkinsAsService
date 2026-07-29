@@ -145,8 +145,10 @@ public sealed class InteractiveSessionSettings
     /// an autologon console session with a client attached elsewhere. The unattended build desktop normally
     /// sits non-Active, while an <c>Active</c> session usually belongs to somebody working at that moment, so
     /// this keeps the agent off an operator's desktop when they sign in to watch a run. Defaults to
-    /// <c>false</c> (prefer <c>Active</c>). Either way the lowest session id breaks ties, so the choice is
-    /// stable across restarts. <see cref="TargetUser"/> still wins outright when set.
+    /// <c>false</c> (prefer <c>Active</c>). The tie-break flips with it: <c>true</c> takes the
+    /// <em>highest</em> session id — ids increase as sessions are created, so that is the newest session and
+    /// skips stale disconnected ones — while the default takes the lowest, keeping a console-session setup on
+    /// session 1. <see cref="TargetUser"/> still wins outright when set.
     /// </summary>
     public bool PreferDisconnectedSession { get; set; }
 }
