@@ -43,6 +43,14 @@ public static class SecretWriter
         {
             ConfigAclHardener.Harden(configPath, serviceAccount);
         }
+
+        // Emit every schema key on a fresh install. BuildJenkinsSection only sets the keys this writer knows,
+        // so newer POCO keys (e.g. Agent:LaunchInInteractiveSession) and the whole Telemetry section would
+        // otherwise be absent until an MSI upgrade ran the reconcile. Reconcile here to the same POCO schema
+        // the upgrade path uses, so fresh-install output matches upgrade output and can't drift as the schema
+        // grows. Adds missing keys at their defaults; the secret is an in-schema value (preserved verbatim),
+        // and File.Replace keeps the hardened DACL just applied.
+        NormalizeConfig(basePath);
     }
 
     /// <summary>
