@@ -15,7 +15,7 @@ Out of scope:
 - The Java runtime or JDK (report to your JDK vendor)
 - Third-party NuGet packages (report to the package maintainer; see [Dependencies](#dependencies) below)
 - Windows OS or DPAPI/Credential Manager subsystems (report to Microsoft)
-- **The interactive-session launch feature** (`Agent:LaunchInInteractiveSession`). This opt-in setting is a **documented, deliberate isolation downgrade** — it is off by default and, by design, requires `LocalSystem`/`SeTcbPrivilege` and an interactive logon, which inherently enable privilege escalation. Reduced isolation, privilege-escalation, or session-boundary reports that stem from **enabling this feature** are **not accepted** as vulnerabilities; they are the explicitly warned-about cost of turning it on. (A defect where the feature acts **without** being enabled, or fails to fall back safely, *is* in scope.)
+- **The interactive-session launch feature** (`Agent:LaunchInInteractiveSession`). This opt-in setting is a **documented, deliberate isolation downgrade** — it is off by default and, by design, requires `LocalSystem` (or a named account granted `SeTcbPrivilege`, `SeAssignPrimaryTokenPrivilege` and `SeIncreaseQuotaPrivilege`) plus an interactive logon, which inherently enable privilege escalation. Reduced isolation, privilege-escalation, or session-boundary reports that stem from **enabling this feature** are **not accepted** as vulnerabilities; they are the explicitly warned-about cost of turning it on. (A defect where the feature acts **without** being enabled, or fails to fall back safely, *is* in scope.)
 
 ## Supported Versions
 

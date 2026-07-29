@@ -23,6 +23,13 @@ namespace JenkinsAsService;
 /// logged-in console session, missing privilege — is reported via a warning and returns <c>false</c> so the
 /// caller falls back to a normal Session 0 (headless) launch; the service never fails because of this.
 /// </para>
+/// <para>
+/// A privilege granted through User Rights Assignment lands in the service token <em>present but disabled</em>,
+/// and a Windows access check only passes when it is <em>enabled</em> — so <see cref="RequiredPrivileges"/> are
+/// enabled explicitly before use. LocalSystem's token has them enabled already, which is why the named-account
+/// path (<c>LocalSystemOnly: false</c>) previously failed with <c>ERROR_PRIVILEGE_NOT_HELD</c> no matter how
+/// correctly the rights were assigned.
+/// </para>
 /// The interop here cannot be exercised by the unit suite (no interactive session / privilege in CI); it is
 /// compile-verified only, in the same class as the TPM code path.
 /// </summary>
@@ -44,6 +51,24 @@ internal static class InteractiveSessionLauncher
 
     private const int JobObjectExtendedLimitInformation = 9;
     private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+
+    // ── Privilege constants ───────────────────────────────────────────────────
+    private const uint TokenAdjustPrivileges = 0x0020;
+    private const uint TokenQuery = 0x0008;
+    private const uint SePrivilegeEnabled = 0x00000002;
+    private const int ErrorNotAllAssigned = 1300; // AdjustTokenPrivileges: privilege absent from the token
+
+    private const string TcbPrivilege = "SeTcbPrivilege";
+    private const string AssignPrimaryTokenPrivilege = "SeAssignPrimaryTokenPrivilege";
+    private const string IncreaseQuotaPrivilege = "SeIncreaseQuotaPrivilege";
+
+    /// <summary>
+    /// Privileges the interactive launch needs enabled in the service's own token: <c>SeTcbPrivilege</c> for
+    /// <c>WTSQueryUserToken</c>, plus <c>SeAssignPrimaryTokenPrivilege</c> and <c>SeIncreaseQuotaPrivilege</c>
+    /// for <c>CreateProcessAsUser</c> with another user's token.
+    /// </summary>
+    internal static readonly string[] RequiredPrivileges =
+        [TcbPrivilege, AssignPrimaryTokenPrivilege, IncreaseQuotaPrivilege];
 
     /// <summary>
     /// Attempts an interactive-session launch. Returns <c>true</c> with a live <paramref name="process"/> on
@@ -76,13 +101,19 @@ internal static class InteractiveSessionLauncher
             return false;
         }
 
+        if (!TryEnableRequiredPrivileges(logger))
+        {
+            return false;
+        }
+
         if (!WTSQueryUserToken(sessionId, out var userToken))
         {
             var err = Marshal.GetLastWin32Error();
             logger.LogWarning(
                 "Agent:LaunchInInteractiveSession is enabled but acquiring the console session token failed " +
-                "(Win32 error {Error} — typically SeTcbPrivilege not held, i.e. the account is not LocalSystem). " +
-                "Falling back to a Session 0 (headless) launch.", err);
+                "(Win32 error {Error}). The required privileges were enabled successfully, so this is not a " +
+                "missing user right — a locked or disconnected console session is the usual cause. Falling " +
+                "back to a Session 0 (headless) launch.", err);
             return false;
         }
 
@@ -114,6 +145,93 @@ internal static class InteractiveSessionLauncher
         using var identity = WindowsIdentity.GetCurrent();
         return identity.IsSystem; // true only for the LocalSystem account (S-1-5-18)
     }
+
+    /// <summary>
+    /// Enables every <see cref="RequiredPrivileges"/> entry in the service's own token, reporting the specific
+    /// cause on failure. Run for all identities — under LocalSystem the privileges are already enabled and each
+    /// call is a cheap no-op, so there is no identity branch to get wrong.
+    /// </summary>
+    private static bool TryEnableRequiredPrivileges(ILogger logger)
+    {
+        foreach (var privilege in RequiredPrivileges)
+        {
+            if (TryEnablePrivilege(privilege, out var error))
+            {
+                continue;
+            }
+
+            if (error == ErrorNotAllAssigned)
+            {
+                logger.LogWarning(
+                    "Agent:LaunchInInteractiveSession is enabled but the service account does not hold " +
+                    "{Privilege}. Grant it via User Rights Assignment (\"{FriendlyName}\") and then RESTART the " +
+                    "service — a token receives its privileges at logon, so a policy refresh alone does not " +
+                    "reach the running process. Falling back to a Session 0 (headless) launch.",
+                    privilege, FriendlyName(privilege));
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Agent:LaunchInInteractiveSession is enabled but enabling {Privilege} failed (Win32 error " +
+                    "{Error}) — falling back to a Session 0 (headless) launch.", privilege, error);
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Enables a single privilege in the current process token. Returns <c>false</c> with
+    /// <paramref name="error"/> set to <see cref="ErrorNotAllAssigned"/> when the privilege is not assigned to
+    /// the account at all — the one signal that separates "never granted" from "granted but disabled", which
+    /// both surface downstream as the same <c>ERROR_PRIVILEGE_NOT_HELD</c>.
+    /// </summary>
+    private static bool TryEnablePrivilege(string privilege, out int error)
+    {
+        if (!OpenProcessToken(GetCurrentProcess(), TokenAdjustPrivileges | TokenQuery, out var token))
+        {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+
+        try
+        {
+            if (!LookupPrivilegeValue(null, privilege, out var luid))
+            {
+                error = Marshal.GetLastWin32Error();
+                return false;
+            }
+
+            var privileges = new TOKEN_PRIVILEGES
+            {
+                PrivilegeCount = 1,
+                Luid = luid,
+                Attributes = SePrivilegeEnabled,
+            };
+
+            // AdjustTokenPrivileges reports success even when it changed nothing: a privilege the token does
+            // not hold leaves ERROR_NOT_ALL_ASSIGNED behind. The last error is the only usable verdict here.
+            var adjusted = AdjustTokenPrivileges(
+                token, disableAllPrivileges: false, ref privileges, 0, IntPtr.Zero, IntPtr.Zero);
+            error = Marshal.GetLastWin32Error();
+            return adjusted && error == 0;
+        }
+        finally
+        {
+            CloseHandle(token);
+        }
+    }
+
+    /// <summary>Maps a privilege constant to the label Windows shows in User Rights Assignment.</summary>
+    internal static string FriendlyName(string privilege) => privilege switch
+    {
+        TcbPrivilege => "Act as part of the operating system",
+        AssignPrimaryTokenPrivilege => "Replace a process level token",
+        IncreaseQuotaPrivilege => "Adjust memory quotas for a process",
+        _ => privilege,
+    };
 
     private static IAgentProcess Launch(
         IntPtr userToken, ProcessStartInfo startInfo, Action<string> onOutputLine, uint sessionId)
@@ -425,6 +543,23 @@ internal static class InteractiveSessionLauncher
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
 
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool LookupPrivilegeValue(string? lpSystemName, string lpName, out LUID lpLuid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AdjustTokenPrivileges(
+        IntPtr tokenHandle, [MarshalAs(UnmanagedType.Bool)] bool disableAllPrivileges,
+        ref TOKEN_PRIVILEGES newState, uint bufferLength, IntPtr previousState, IntPtr returnLength);
+
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DuplicateTokenEx(
@@ -506,6 +641,23 @@ internal static class InteractiveSessionLauncher
         public IntPtr hThread;
         public int dwProcessId;
         public int dwThreadId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LUID
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    // Single-entry form: PrivilegeCount is always 1 here, so the trailing LUID_AND_ATTRIBUTES array
+    // collapses to one inline element and needs no manual marshalling.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TOKEN_PRIVILEGES
+    {
+        public uint PrivilegeCount;
+        public LUID Luid;
+        public uint Attributes;
     }
 
     [StructLayout(LayoutKind.Sequential)]
