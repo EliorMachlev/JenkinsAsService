@@ -142,7 +142,7 @@
             <td><code>Agent:LaunchInInteractiveSession:LocalSystemOnly</code></td>
             <td>No</td>
             <td><code>true</code></td>
-            <td>Gate the interactive launch on the service running as <code>LocalSystem</code>. When <code>true</code> (default), a non-LocalSystem identity logs a warning and falls back to a normal Session 0 launch. Set <code>false</code> to also attempt it under an account granted <code>SeTcbPrivilege</code> — discouraged (that privilege is LocalSystem-equivalent). See <a href="#interactive-session">Interactive-session launch</a>.</td>
+            <td>Gate the interactive launch on the service running as <code>LocalSystem</code>. When <code>true</code> (default), a non-LocalSystem identity logs a warning and falls back to a normal Session 0 launch. Set <code>false</code> to also attempt it under an account granted all <a href="#interactive-session-privileges">three required privileges</a> — discouraged (<code>SeTcbPrivilege</code> alone is LocalSystem-equivalent). See <a href="#interactive-session">Interactive-session launch</a>.</td>
           </tr>
           <tr>
             <td><code>Hardening:SanitizeEnvironment</code></td>
@@ -439,7 +439,7 @@
     <h3 id="interactive-session">Interactive-session launch (visible GUI / browser tests)</h3>
     <div class="callout callout-warning">
       <div class="callout-title">⚠️ Security warning — risky, unsupported, opt-in</div>
-      <p>This feature is a <strong>deliberate isolation downgrade and can lead to privilege escalation.</strong> A Windows service always runs in the non-interactive <strong>Session 0</strong>; to launch the agent on a user's visible desktop the service must cross into the interactive session, which requires <code>SeTcbPrivilege</code> &mdash; i.e. running as <code>LocalSystem</code> (or granting a named account a privilege that is <em>LocalSystem-equivalent</em> and trivially escalatable to SYSTEM). It also requires a user logged into the console. Enabling it undoes the least-privilege posture that is the whole point of running the agent as a hardened service. <strong>Use it only on a throwaway/debug machine to watch a browser test &mdash; never on a hardened production build node.</strong> Security reports about this feature are <a href="https://github.com/EliorMachlev/JenkinsAsService/blob/main/Security.md">out of scope</a>.</p>
+      <p>This feature is a <strong>deliberate isolation downgrade and can lead to privilege escalation.</strong> A Windows service always runs in the non-interactive <strong>Session 0</strong>; to launch the agent on a user's visible desktop the service must cross into the interactive session, which requires <code>SeTcbPrivilege</code> plus two further <a href="#interactive-session-privileges">process-creation privileges</a> &mdash; i.e. running as <code>LocalSystem</code> (or granting a named account a privilege that is <em>LocalSystem-equivalent</em> and trivially escalatable to SYSTEM). It also requires a user logged into the console. Enabling it undoes the least-privilege posture that is the whole point of running the agent as a hardened service. <strong>Use it only on a throwaway/debug machine to watch a browser test &mdash; never on a hardened production build node.</strong> Security reports about this feature are <a href="https://github.com/EliorMachlev/JenkinsAsService/blob/main/Security.md">out of scope</a>.</p>
     </div>
     <p>By default a Selenium/NUnit browser your pipeline launches is a grandchild of the Session 0 agent, so it renders on Session 0's hidden desktop &mdash; you can't watch it (headless-only in practice). Set <code>Agent:LaunchInInteractiveSession:Enabled: true</code> to start the <strong>whole agent</strong> in the active console session instead, so every child it spawns (job → browser) inherits the visible desktop.</p>
     <p>The launch preconditions are checked at runtime. If any is missing, the service logs a prominent warning and <strong>falls back to a normal Session 0 (headless) launch &mdash; the agent stays up, just invisible</strong>; it never fails because of this setting. Because the shipped default identity (<code>NT SERVICE\Jenkins</code>) lacks the required privilege, the feature is effectively <em>double opt-in</em>: flipping the flag alone does nothing until you also reconfigure the service identity.</p>
@@ -465,7 +465,8 @@
             <td>
               <ol>
                 <li><code>Agent:LaunchInInteractiveSession:Enabled: true</code> and <code>LocalSystemOnly: false</code>.</li>
-                <li>Service runs as a domain/local account that has been granted <strong><code>SeTcbPrivilege</code></strong> ("Act as part of the operating system") via User Rights Assignment. <em>This makes the account LocalSystem-equivalent &mdash; it does not reduce risk, it only hides it behind a named identity.</em></li>
+                <li>Service runs as a domain/local account granted <strong>all three <a href="#interactive-session-privileges">required privileges</a></strong> via User Rights Assignment &mdash; not just <code>SeTcbPrivilege</code>. <em>This makes the account LocalSystem-equivalent &mdash; it does not reduce risk, it only hides it behind a named identity.</em></li>
+                <li>The service <strong>restarted</strong> after the rights were granted (see below).</li>
                 <li>A user <strong>logged into the console session</strong>.</li>
               </ol>
             </td>
@@ -473,7 +474,44 @@
         </tbody>
       </table>
     </div>
-    <p>When the prerequisites are absent the fallback warning names the cause (e.g. <em>"not running as LocalSystem"</em>, <em>"no active console session"</em>, or the Win32 error from <code>WTSQueryUserToken</code>), so you can tell a misconfiguration from a bug. Process-environment sanitization (<a href="#env-sanitization"><code>Hardening:SanitizeEnvironment</code></a>) still applies to the interactive launch, and the agent tree is placed in a kill-on-close Job Object so a stop/restart still reaps the browser and build children.</p>
+
+    <h4 id="interactive-session-privileges">Required privileges</h4>
+    <p>Three separate user rights are involved, one per Win32 call the launch makes. Granting only <code>SeTcbPrivilege</code> gets past the session-token query and then fails at process creation:</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Privilege</th><th>User Rights Assignment label</th><th>Needed by</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>SeTcbPrivilege</code></td>
+            <td>Act as part of the operating system</td>
+            <td><code>WTSQueryUserToken</code> &mdash; obtain the console session's user token</td>
+          </tr>
+          <tr>
+            <td><code>SeAssignPrimaryTokenPrivilege</code></td>
+            <td>Replace a process level token</td>
+            <td><code>CreateProcessAsUser</code> &mdash; start a process with another user's token</td>
+          </tr>
+          <tr>
+            <td><code>SeIncreaseQuotaPrivilege</code></td>
+            <td>Adjust memory quotas for a process</td>
+            <td><code>CreateProcessAsUser</code> &mdash; assign the new process's quota</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p><code>LocalSystem</code> holds all three by default, which is why the default <code>LocalSystemOnly: true</code> path needs no policy changes at all.</p>
+    <div class="callout callout-warning">
+      <div class="callout-title">Granting a right is not enough &mdash; restart the service</div>
+      <p>An access token receives its privileges <strong>at logon</strong>. Editing User Rights Assignment (or running <code>gpupdate</code>) does not reach an already-running service &mdash; the process keeps its old token until it is restarted. After granting the rights, run <code>Restart-Service Jenkins</code> (or reboot) and confirm the PID changed.</p>
+      <p>A privilege also arrives in the token <strong>present but disabled</strong>, and a Windows access check only passes when it is <em>enabled</em>. The service enables all three explicitly before use; if one is not assigned to the account at all, the fallback warning names the exact privilege and its User Rights Assignment label rather than surfacing an opaque <code>ERROR_PRIVILEGE_NOT_HELD</code>.</p>
+    </div>
+    <div class="callout callout-warning">
+      <div class="callout-title">Domain policy can silently revoke these</div>
+      <p>User Rights Assignment is <strong>winner-takes-all, not merged</strong>: if any domain GPO defines one of these rights, it replaces the local list wholesale on every policy refresh (~90 minutes, and at every boot), discarding a local grant. A domain GPO also cannot name a <em>local</em> account, so switching to a dedicated local user does not avoid this. Check which GPO wins with <code>gpresult /scope computer /h report.html</code> (Security Settings &rarr; Local Policies/User Rights Assignment); a durable fix requires changing the domain policy or exempting the machine from it. On a domain-managed build node, running as <code>LocalSystem</code> is usually the only configuration that stays working.</p>
+    </div>
+    <p>When the prerequisites are absent the fallback warning names the cause (e.g. <em>"not running as LocalSystem"</em>, <em>"the service account does not hold SeAssignPrimaryTokenPrivilege"</em>, <em>"no active console session"</em>, or the Win32 error from <code>WTSQueryUserToken</code>), so you can tell a misconfiguration from a bug. Process-environment sanitization (<a href="#env-sanitization"><code>Hardening:SanitizeEnvironment</code></a>) still applies to the interactive launch, and the agent tree is placed in a kill-on-close Job Object so a stop/restart still reaps the browser and build children.</p>
 
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>
