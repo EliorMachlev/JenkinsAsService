@@ -184,6 +184,66 @@ public class InteractiveSessionSelectorTests
     }
 
     [Fact]
+    public void Prefers_a_non_active_session_when_configured_to_avoid_an_operators_desktop()
+    {
+        // The unattended build desktop sits disconnected; the Active session is the operator who just signed
+        // in to watch. Preferring non-Active keeps the agent off their desktop without needing a TargetUser.
+        var sessions = new[]
+        {
+            new SessionInfo(1, "buildacct", SessionConnectState.Disconnected),
+            new SessionInfo(2, "operator", SessionConnectState.Active),
+        };
+
+        InteractiveSessionSelector.TrySelect(
+            sessions, targetUser: null, out var sessionId, out _, preferDisconnected: true).Should().BeTrue();
+
+        sessionId.Should().Be(1);
+    }
+
+    [Fact]
+    public void Prefer_non_active_still_takes_an_active_session_when_it_is_the_only_one()
+    {
+        // It is a preference, not a filter — a lone Active session must not be rejected.
+        var sessions = new[] { new SessionInfo(2, "master", SessionConnectState.Active) };
+
+        InteractiveSessionSelector.TrySelect(
+            sessions, targetUser: null, out var sessionId, out _, preferDisconnected: true).Should().BeTrue();
+
+        sessionId.Should().Be(2);
+    }
+
+    [Fact]
+    public void Target_user_still_wins_over_the_non_active_preference()
+    {
+        // An explicit pin is a stronger statement than a ranking heuristic.
+        var sessions = new[]
+        {
+            new SessionInfo(1, "someoneelse", SessionConnectState.Disconnected),
+            new SessionInfo(2, "master", SessionConnectState.Active),
+        };
+
+        InteractiveSessionSelector.TrySelect(
+            sessions, "master", out var sessionId, out _, preferDisconnected: true).Should().BeTrue();
+
+        sessionId.Should().Be(2);
+    }
+
+    [Fact]
+    public void Prefer_non_active_keeps_the_lowest_session_id_tie_break()
+    {
+        var sessions = new[]
+        {
+            new SessionInfo(5, "b", SessionConnectState.Disconnected),
+            new SessionInfo(3, "a", SessionConnectState.Connected),
+        };
+
+        InteractiveSessionSelector.TrySelect(
+            sessions, targetUser: null, out var sessionId, out _, preferDisconnected: true).Should().BeTrue();
+
+        sessionId.Should().Be(3);
+    }
+
+    [Fact]
     public void Describe_lists_interactive_sessions_and_hides_the_services_session()
     {
         var sessions = new[] { Services(), EmptyConsole(), new SessionInfo(2, "master", SessionConnectState.Active) };

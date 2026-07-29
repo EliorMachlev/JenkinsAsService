@@ -63,17 +63,24 @@ internal static class InteractiveSessionSelector
     /// against the session's user name; an optional <c>DOMAIN\</c> prefix is ignored. When empty, any logged-on
     /// user qualifies.
     /// </param>
+    /// <param name="preferDisconnected">
+    /// When <c>true</c>, rank sessions that are <em>not</em> <see cref="SessionConnectState.Active"/> first.
+    /// An unattended build desktop (autologon console, or an RDP session whose window was closed) sits
+    /// non-Active, while an <c>Active</c> session usually belongs to somebody working at that moment — so
+    /// this keeps the agent off an operator's desktop when they sign in to watch.
+    /// </param>
     internal static bool TrySelect(
         IReadOnlyList<SessionInfo> sessions,
         string? targetUser,
         out uint sessionId,
-        out SessionSelectionFailure failure)
+        out SessionSelectionFailure failure,
+        bool preferDisconnected = false)
     {
         sessionId = 0;
 
         var candidates = sessions
             .Where(IsUsableTarget)
-            .OrderBy(s => s.State == SessionConnectState.Active ? 0 : 1)
+            .OrderBy(s => Rank(s.State, preferDisconnected))
             .ThenBy(s => s.SessionId)
             .ToList();
 
@@ -96,6 +103,18 @@ internal static class InteractiveSessionSelector
         sessionId = candidates[0].SessionId;
         failure = SessionSelectionFailure.None;
         return true;
+    }
+
+    /// <summary>
+    /// Primary ordering key. Both directions still fall back to the lowest session id, so the choice stays
+    /// stable across restarts whichever preference is configured.
+    /// </summary>
+    private static int Rank(SessionConnectState state, bool preferDisconnected)
+    {
+        var isActive = state == SessionConnectState.Active;
+        return preferDisconnected
+            ? isActive ? 1 : 0
+            : isActive ? 0 : 1;
     }
 
     /// <summary>

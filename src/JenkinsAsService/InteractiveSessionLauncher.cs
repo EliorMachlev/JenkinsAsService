@@ -88,6 +88,7 @@ internal static class InteractiveSessionLauncher
         Action<string> onOutputLine,
         bool localSystemOnly,
         string? targetUser,
+        bool preferDisconnected,
         ILogger logger,
         [NotNullWhen(true)] out IAgentProcess? process)
     {
@@ -118,7 +119,8 @@ internal static class InteractiveSessionLauncher
             return false;
         }
 
-        if (!InteractiveSessionSelector.TrySelect(sessions, targetUser, out var sessionId, out var failure))
+        if (!InteractiveSessionSelector.TrySelect(
+                sessions, targetUser, out var sessionId, out var failure, preferDisconnected))
         {
             LogNoTargetSession(logger, sessions, targetUser, failure);
             return false;

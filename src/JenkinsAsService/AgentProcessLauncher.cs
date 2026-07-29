@@ -54,7 +54,7 @@ internal sealed class AgentProcessLauncher : IAgentProcessLauncher
         {
             if (InteractiveSessionLauncher.TryStart(
                     startInfo, onOutputLine, interactive.LocalSystemOnly, interactive.TargetUser,
-                    _logger, out var interactiveProcess))
+                    interactive.PreferDisconnectedSession, _logger, out var interactiveProcess))
             {
                 return interactiveProcess;
             }

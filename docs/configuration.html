@@ -151,6 +151,12 @@
             <td>Pin the launch to one user's session, e.g. <code>buildbot</code> or <code>DOMAIN\buildbot</code> (case-insensitive; a domain prefix is ignored). When empty, any logged-on user qualifies — preferring an <code>Active</code> session, then the lowest session id. Set this where more than one person may sign in, so the agent cannot land on an operator's ad-hoc RDP desktop instead of the dedicated build desktop.</td>
           </tr>
           <tr>
+            <td><code>Agent:LaunchInInteractiveSession:PreferDisconnectedSession</code></td>
+            <td>No</td>
+            <td><code>false</code></td>
+            <td>Prefer a session that is <strong>not</strong> <code>Active</code> — a disconnected RDP session, or an autologon console session with a client attached elsewhere. The unattended build desktop normally sits non-Active while an <code>Active</code> session usually belongs to somebody working right then, so this keeps the agent off an operator's desktop when they sign in to watch. A preference, not a filter: a lone <code>Active</code> session is still used, and <code>TargetUser</code> still wins outright. Defaults to <code>false</code> (prefer <code>Active</code>).</td>
+          </tr>
+          <tr>
             <td><code>Agent:LaunchInInteractiveSession:RequireInteractiveSession</code></td>
             <td>No</td>
             <td><code>false</code></td>
@@ -219,7 +225,8 @@
         "Enabled": false,
         "LocalSystemOnly": true,
         "TargetUser": "",
-        "RequireInteractiveSession": false
+        "RequireInteractiveSession": false,
+        "PreferDisconnectedSession": false
       }
     },
     "Hardening": {
@@ -464,7 +471,7 @@
       <li>The session must have a <strong>logged-on user</strong>. This is the authoritative signal that a token exists &mdash; a console session parked at the logon screen reports as <em>connected</em> but has no user, and querying it fails with <code>ERROR_NO_TOKEN</code>.</li>
       <li><strong>Disconnected sessions qualify.</strong> Closing an RDP window leaves the user logged on and the desktop alive, along with any browser already running on it. An RDP-only server is therefore fully supported &mdash; you do not need to be attached for the agent to launch or keep working.</li>
       <li>A <strong>locked</strong> session qualifies: the user is still logged on and the desktop still exists.</li>
-      <li>Among candidates, an <code>Active</code> session wins, then the lowest session id &mdash; so the choice is stable across restarts. Set <a href="#configuration"><code>TargetUser</code></a> to pin it explicitly when several people may be signed in.</li>
+      <li>Among candidates, an <code>Active</code> session wins, then the lowest session id &mdash; so the choice is stable across restarts. Set <code>PreferDisconnectedSession: true</code> to invert the first key and favour the unattended desktop instead, or <code>TargetUser</code> to pin it explicitly when several people may be signed in.</li>
     </ul>
     <p>The chosen session id is written to the log at launch. If selection fails, the warning lists every session it saw (id, user, state) so the cause is visible without reproducing.</p>
     <div class="callout callout-warning">
@@ -548,7 +555,11 @@
       <div class="callout-title">Do not use the registry method</div>
       <p>Setting <code>DefaultUserName</code>/<code>DefaultPassword</code> under <code>Winlogon</code> stores the password <strong>in cleartext</strong>, readable by any local user. Use the Sysinternals tool. Either way, autologon means anyone with physical or console access lands on a logged-on desktop &mdash; use a dedicated low-privilege build account, never a domain admin.</p>
     </div>
-    <p>With autologon in place, pair it with <code>TargetUser: "&lt;that account&gt;"</code> so the agent always lands on the build desktop even when an operator is also signed in over RDP, and <code>RequireInteractiveSession: true</code> so a misconfiguration surfaces as an offline node rather than invisible failing tests.</p>
+    <p>With autologon in place, pair it with <code>TargetUser: "&lt;that account&gt;"</code> so the agent always lands on the build desktop even when an operator is also signed in over RDP, and <code>RequireInteractiveSession: true</code> so a misconfiguration surfaces as an offline node rather than invisible failing tests. If you would rather not pin a name, <code>PreferDisconnectedSession: true</code> achieves much of the same effect: the autologon desktop is normally non-Active while an operator who just signed in is Active, so the agent keeps to the build desktop.</p>
+    <div class="callout callout-warning">
+      <div class="callout-title">Autologon fires at boot only</div>
+      <p><strong>Signing out</strong> of the autologon session does not re-trigger it &mdash; the session is gone until the next reboot, and a pinned node stays offline until then. Locking the session is fine, and disconnecting an RDP client is fine; only a sign-out removes the desktop. If it happens, reboot rather than signing back in manually, so the console session is recreated by winlogon under the same account.</p>
+    </div>
     <div class="callout callout-warning">
       <div class="callout-title">Granting a right is not enough &mdash; restart the service</div>
       <p>An access token receives its privileges <strong>at logon</strong>. Editing User Rights Assignment (or running <code>gpupdate</code>) does not reach an already-running service &mdash; the process keeps its old token until it is restarted. After granting the rights, run <code>Restart-Service Jenkins</code> (or reboot) and confirm the PID changed.</p>
