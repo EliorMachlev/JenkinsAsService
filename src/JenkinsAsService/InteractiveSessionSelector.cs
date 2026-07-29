@@ -28,12 +28,27 @@ internal enum SessionConnectState
 internal readonly record struct SessionInfo(
     uint SessionId, string? UserName, SessionConnectState State, string? WinStationName = null)
 {
+    /// <summary>The WinStation name Windows gives the physical console session.</summary>
+    internal const string ConsoleWinStationName = "Console";
+
     /// <summary>
     /// True for the physical console. With autologon configured this session exists from boot and never ends,
     /// which makes it the always-available fallback — and therefore the one to rank last among equals.
     /// </summary>
     internal bool IsConsole =>
-        string.Equals(WinStationName?.Trim(), "Console", StringComparison.OrdinalIgnoreCase);
+        string.Equals(WinStationName?.Trim(), ConsoleWinStationName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when this session still owns a desktop a process could be launched onto. The logged-on user — not
+    /// the connect state — is the authoritative signal that a token exists, so the state test only excludes the
+    /// definitively dead states (listeners, resetting, down). <see cref="SessionConnectState.Connected"/> is
+    /// allowed: an autologon console session sits there while an RDP client is attached elsewhere.
+    /// </summary>
+    internal bool HasLiveDesktop =>
+        !string.IsNullOrWhiteSpace(UserName)
+        && State is SessionConnectState.Active
+            or SessionConnectState.Connected
+            or SessionConnectState.Disconnected;
 }
 
 /// <summary>Why no session could be targeted — drives the operator-facing warning.</summary>
@@ -67,6 +82,13 @@ internal static class InteractiveSessionSelector
     /// <summary>Session 0 is the non-interactive services session — never a valid target.</summary>
     internal const uint ServicesSessionId = 0;
 
+    /// <summary>Placeholder used by <see cref="Describe"/> for an absent user or an empty session list.</summary>
+    private const string NoneMarker = "<none>";
+
+    /// <summary>Ordering weights for the console key — a remote session wins ties against the console.</summary>
+    private const int RemoteRank = 0;
+    private const int ConsoleRank = 1;
+
     /// <summary>
     /// Picks the session to launch the agent in. Three ordering keys, applied in this order:
     /// <list type="number">
@@ -99,15 +121,11 @@ internal static class InteractiveSessionSelector
         out SessionSelectionFailure failure,
         bool preferDisconnected = false)
     {
-        sessionId = 0;
+        sessionId = ServicesSessionId;
 
-        var candidates = sessions
-            .Where(IsUsableTarget)
-            .OrderBy(s => Rank(s.State, preferDisconnected))
-            .ThenBy(s => s.IsConsole ? 1 : 0)
-            .ThenBy(s => TieBreak(s.SessionId, preferDisconnected))
-            .ToList();
-
+        // Two-phase on purpose: "nobody is signed in anywhere" and "sessions exist but not TargetUser's" call
+        // for different operator actions, so the filters cannot collapse into one Where.
+        var candidates = RankCandidates(sessions, preferDisconnected).ToList();
         if (candidates.Count == 0)
         {
             failure = SessionSelectionFailure.NoInteractiveSession;
@@ -128,6 +146,24 @@ internal static class InteractiveSessionSelector
         failure = SessionSelectionFailure.None;
         return true;
     }
+
+    /// <summary>
+    /// The usable sessions in preference order — the single definition of the three ordering keys documented on
+    /// <see cref="TrySelect"/>. <c>TargetUser</c> filtering is applied by the caller, which needs to tell
+    /// "no usable session" apart from "no session for that user".
+    /// </summary>
+    private static IEnumerable<SessionInfo> RankCandidates(
+        IReadOnlyList<SessionInfo> sessions, bool preferDisconnected) =>
+        sessions
+            .Where(IsUsableTarget)
+            .OrderBy(s => StateRank(s.State, preferDisconnected))
+            .ThenBy(s => s.IsConsole ? ConsoleRank : RemoteRank)
+            .ThenBy(s => TieBreak(s.SessionId, preferDisconnected));
+
+    /// <summary>The session <see cref="TrySelect"/> would choose right now, or null when none qualifies.</summary>
+    private static uint? SelectBest(
+        IReadOnlyList<SessionInfo> sessions, string? targetUser, bool preferDisconnected) =>
+        TrySelect(sessions, targetUser, out var best, out _, preferDisconnected) ? best : null;
 
     /// <summary>
     /// Decides whether a <em>running</em> agent should be torn down and relaunched because its session is no
@@ -153,14 +189,13 @@ internal static class InteractiveSessionSelector
             return false;
         }
 
-        var best = TrySelect(sessions, targetUser, out var bestSessionId, out _, preferDisconnected)
-            ? bestSessionId
-            : (uint?)null;
+        var best = SelectBest(sessions, targetUser, preferDisconnected);
+        var upgrades = mode == SessionMigrationMode.Always;
 
         if (currentSessionId is not { } current)
         {
             // Running headless. Only an "upgrade" can apply — there is no lost session to react to.
-            if (mode != SessionMigrationMode.Always || best is not { } target)
+            if (!upgrades || best is not { } target)
             {
                 return false;
             }
@@ -171,14 +206,13 @@ internal static class InteractiveSessionSelector
 
         // The session the agent lives in disappeared (signed out, reset, or the pinned user logged off). The
         // desktop is already gone, so relaunching costs nothing that was not lost — both non-Off modes act.
-        if (!sessions.Any(s => s.SessionId == current && IsUsableTarget(s)
-                               && (string.IsNullOrWhiteSpace(targetUser) || MatchesUser(s.UserName, targetUser))))
+        if (!sessions.Any(s => s.SessionId == current && Qualifies(s, targetUser)))
         {
             reason = $"session {current} is no longer a usable interactive session";
             return true;
         }
 
-        if (mode != SessionMigrationMode.Always || best is not { } preferred || preferred == current)
+        if (!upgrades || best is not { } preferred || preferred == current)
         {
             return false;
         }
@@ -188,7 +222,7 @@ internal static class InteractiveSessionSelector
     }
 
     /// <summary>Primary ordering key — which connect state is favoured.</summary>
-    private static int Rank(SessionConnectState state, bool preferDisconnected)
+    private static int StateRank(SessionConnectState state, bool preferDisconnected)
     {
         var isActive = state == SessionConnectState.Active;
         return preferDisconnected
@@ -206,17 +240,21 @@ internal static class InteractiveSessionSelector
         preferDisconnected ? -(long)sessionId : sessionId;
 
     /// <summary>
-    /// A session can host the agent when it is interactive, has somebody logged on, and is in a state that
-    /// still owns a desktop. The user name — not the connect state — is the authoritative signal that a token
-    /// exists, so the state filter only excludes the definitively dead states (listeners, resetting, down).
-    /// <c>Connected</c> is allowed: an autologon console session sits there while an RDP client is attached.
+    /// A session can host the agent when it is interactive (never Session 0) and still owns a live desktop —
+    /// see <see cref="SessionInfo.HasLiveDesktop"/> for why the logged-on user rather than the connect state
+    /// carries that verdict.
     /// </summary>
     private static bool IsUsableTarget(SessionInfo session) =>
-        session.SessionId != ServicesSessionId
-        && !string.IsNullOrWhiteSpace(session.UserName)
-        && session.State is SessionConnectState.Active
-            or SessionConnectState.Connected
-            or SessionConnectState.Disconnected;
+        session.SessionId != ServicesSessionId && session.HasLiveDesktop;
+
+    /// <summary>
+    /// Full eligibility including the optional <c>TargetUser</c> pin — the same test the ranked candidate list
+    /// plus the caller's user filter apply, expressed once so <see cref="ShouldMigrate"/> cannot drift from
+    /// <see cref="TrySelect"/> about what "still a valid session" means.
+    /// </summary>
+    private static bool Qualifies(SessionInfo session, string? targetUser) =>
+        IsUsableTarget(session)
+        && (string.IsNullOrWhiteSpace(targetUser) || MatchesUser(session.UserName, targetUser));
 
     /// <summary>Matches a session user against the configured target, tolerating a <c>DOMAIN\</c> prefix.</summary>
     private static bool MatchesUser(string? sessionUser, string targetUser)
@@ -240,10 +278,11 @@ internal static class InteractiveSessionSelector
     internal static string Describe(IReadOnlyList<SessionInfo> sessions)
     {
         var interactive = sessions.Where(s => s.SessionId != ServicesSessionId).ToList();
-        return interactive.Count == 0
-            ? "<none>"
-            : string.Join(", ", interactive.Select(s =>
-                $"{s.SessionId}:{(string.IsNullOrWhiteSpace(s.UserName) ? "<none>" : s.UserName)}/{s.State}"
-                + (string.IsNullOrWhiteSpace(s.WinStationName) ? "" : $"/{s.WinStationName}")));
+        return interactive.Count == 0 ? NoneMarker : string.Join(", ", interactive.Select(Describe));
     }
+
+    private static string Describe(SessionInfo session) =>
+        $"{session.SessionId}:{(string.IsNullOrWhiteSpace(session.UserName) ? NoneMarker : session.UserName)}"
+        + $"/{session.State}"
+        + (string.IsNullOrWhiteSpace(session.WinStationName) ? "" : $"/{session.WinStationName}");
 }

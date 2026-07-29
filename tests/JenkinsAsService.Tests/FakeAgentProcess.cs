@@ -22,8 +22,15 @@ internal sealed class FakeAgentProcess : IAgentProcess
     public bool HasExited { get; private set; }
     public int ExitCode { get; private set; }
     public Task Exited => _exit.Task;
-    public bool WasKilled { get; private set; }
-    public bool WasDisposed { get; private set; }
+    public bool WasKilled => KillCount > 0;
+    public bool WasDisposed => DisposeCount > 0;
+
+    /// <summary>
+    /// Kill/dispose call counts. StopAsync and the supervision loop both call the worker's KillAgent; if that
+    /// does not take the agent atomically, both threads can drive the same instance through Kill/Dispose twice.
+    /// </summary>
+    public int KillCount;
+    public int DisposeCount;
 
     /// <summary>Simulates the process exiting on its own with the given code.</summary>
     public void SignalExit(int exitCode = 1)
@@ -35,12 +42,12 @@ internal sealed class FakeAgentProcess : IAgentProcess
 
     public void Kill()
     {
-        WasKilled = true;
+        Interlocked.Increment(ref KillCount);
         HasExited = true;
         _exit.TrySetResult();
     }
 
-    public void Dispose() => WasDisposed = true;
+    public void Dispose() => Interlocked.Increment(ref DisposeCount);
 }
 
 /// <summary>
