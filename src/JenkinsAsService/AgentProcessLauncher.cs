@@ -67,8 +67,9 @@ internal sealed class AgentProcessLauncher : IAgentProcessLauncher
             }
 
             // RequireInteractiveSession turns the headless fallback into a retry: throwing here lands in
-            // TryBringUpAgent's catch, so the supervision loop backs off and tries again instead of running
-            // GUI tests on a desktop that does not exist. The node stays offline until someone signs in.
+            // TryBringUpAgent's catch, so the supervision loop backs off and tries again. This is a
+            // visibility guarantee, not a correctness one — GUI tests do run on Session 0's own window
+            // station, just where nobody can see them. The node stays offline until someone signs in.
             if (interactive.RequireInteractiveSession)
             {
                 throw new InvalidOperationException(

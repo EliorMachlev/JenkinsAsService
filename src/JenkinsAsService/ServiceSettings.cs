@@ -134,9 +134,15 @@ public sealed class InteractiveSessionSettings
     /// <summary>
     /// When <c>true</c>, an interactive launch that cannot find a usable session is a hard failure: the agent
     /// is not started headless, and the supervision loop retries with its normal backoff until a desktop
-    /// exists. The Jenkins node stays <em>offline</em> instead of silently running GUI tests in Session 0
-    /// where they have no desktop and fail in ways that look like test bugs. Defaults to <c>false</c>
-    /// (fall back to a headless launch), which keeps the agent up at the cost of that ambiguity.
+    /// exists. The Jenkins node stays <em>offline</em> instead of running the job where nobody can watch it.
+    /// <para>
+    /// Note this is about <em>visibility, not correctness</em>. Session 0 has its own window station and
+    /// desktop (<c>Service-0x0-3e7$\Default</c>), so a Selenium/NUnit browser still launches and the tests
+    /// still pass there — they simply render where no display can show them. Set this when the whole point of
+    /// the run is to observe it, so a silent fallback can't leave you watching an empty desktop while the job
+    /// executes out of sight. Defaults to <c>false</c> (fall back to a headless launch), which keeps the node
+    /// online and the tests running.
+    /// </para>
     /// </summary>
     public bool RequireInteractiveSession { get; set; }
 

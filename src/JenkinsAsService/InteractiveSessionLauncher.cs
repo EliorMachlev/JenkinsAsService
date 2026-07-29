@@ -223,9 +223,10 @@ internal static class InteractiveSessionLauncher
 
         logger.LogWarning(
             "Agent:LaunchInInteractiveSession is enabled but no session has a logged-on user, so there is no " +
-            "desktop to launch on. Sessions seen: {Sessions}. Sign in to the machine (console or RDP), or " +
-            "configure autologon so a desktop exists from boot. Falling back to a Session 0 (headless) launch " +
-            "— GUI processes the agent spawns will have no visible desktop.",
+            "visible desktop to launch on. Sessions seen: {Sessions}. Sign in to the machine (console or RDP), " +
+            "or configure autologon so a desktop exists from boot. Falling back to a Session 0 (headless) " +
+            "launch — jobs still run and GUI tests still pass on Session 0's own window station, they just " +
+            "render where no display can show them.",
             InteractiveSessionSelector.Describe(sessions));
     }
 
