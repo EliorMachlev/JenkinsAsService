@@ -121,6 +121,24 @@ public sealed class InteractiveSessionSettings
     /// switch does not reduce the blast radius — it only hides it behind a named account.
     /// </summary>
     public bool LocalSystemOnly { get; set; } = true;
+
+    /// <summary>
+    /// Optional user name to pin the launch to (e.g. <c>buildbot</c> or <c>DOMAIN\buildbot</c>; matched
+    /// case-insensitively and a domain prefix is ignored). When empty (default) any logged-on user's session
+    /// qualifies, preferring an <c>Active</c> session and then the lowest session id. Set this on a machine
+    /// where more than one person may be signed in, so the agent cannot land on an operator's ad-hoc RDP
+    /// desktop instead of the dedicated build desktop.
+    /// </summary>
+    public string TargetUser { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When <c>true</c>, an interactive launch that cannot find a usable session is a hard failure: the agent
+    /// is not started headless, and the supervision loop retries with its normal backoff until a desktop
+    /// exists. The Jenkins node stays <em>offline</em> instead of silently running GUI tests in Session 0
+    /// where they have no desktop and fail in ways that look like test bugs. Defaults to <c>false</c>
+    /// (fall back to a headless launch), which keeps the agent up at the cost of that ambiguity.
+    /// </summary>
+    public bool RequireInteractiveSession { get; set; }
 }
 
 /// <summary>Process-hardening toggles for the spawned agent (<c>Jenkins:Hardening</c>).</summary>

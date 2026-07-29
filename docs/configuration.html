@@ -136,13 +136,25 @@
             <td><code>Agent:LaunchInInteractiveSession:Enabled</code></td>
             <td>No</td>
             <td><code>false</code></td>
-            <td>⚠️ <strong>Isolation downgrade — off by default.</strong> Launch the agent on the interactive desktop (Session 1) so GUI processes it spawns (e.g. a Selenium/NUnit browser) are visible to a logged-in user. Requires <code>LocalSystem</code> + an active console session. See <a href="#interactive-session">Interactive-session launch</a>.</td>
+            <td>⚠️ <strong>Isolation downgrade — off by default.</strong> Launch the agent on the desktop of a logged-on session so GUI processes it spawns (e.g. a Selenium/NUnit browser) are visible. Requires <code>LocalSystem</code> + a session with a logged-on user (console or RDP, including disconnected). See <a href="#interactive-session">Interactive-session launch</a>.</td>
           </tr>
           <tr>
             <td><code>Agent:LaunchInInteractiveSession:LocalSystemOnly</code></td>
             <td>No</td>
             <td><code>true</code></td>
-            <td>Gate the interactive launch on the service running as <code>LocalSystem</code>. When <code>true</code> (default), a non-LocalSystem identity logs a warning and falls back to a normal Session 0 launch. Set <code>false</code> to also attempt it under an account granted all <a href="#interactive-session-privileges">three required privileges</a> — discouraged (<code>SeTcbPrivilege</code> alone is LocalSystem-equivalent). See <a href="#interactive-session">Interactive-session launch</a>.</td>
+            <td>Gate the interactive launch on the service running as <code>LocalSystem</code>. When <code>true</code> (default), a non-LocalSystem identity logs a warning and falls back to a normal Session 0 launch. Set <code>false</code> to also attempt it under an account granted all <a href="#interactive-session-privileges">three required privileges</a> — discouraged, and note that the privileges alone are <em>not sufficient</em>: see <a href="#interactive-session-named-account">the named-account caveat</a>. See <a href="#interactive-session">Interactive-session launch</a>.</td>
+          </tr>
+          <tr>
+            <td><code>Agent:LaunchInInteractiveSession:TargetUser</code></td>
+            <td>No</td>
+            <td><em>(empty)</em></td>
+            <td>Pin the launch to one user's session, e.g. <code>buildbot</code> or <code>DOMAIN\buildbot</code> (case-insensitive; a domain prefix is ignored). When empty, any logged-on user qualifies — preferring an <code>Active</code> session, then the lowest session id. Set this where more than one person may sign in, so the agent cannot land on an operator's ad-hoc RDP desktop instead of the dedicated build desktop.</td>
+          </tr>
+          <tr>
+            <td><code>Agent:LaunchInInteractiveSession:RequireInteractiveSession</code></td>
+            <td>No</td>
+            <td><code>false</code></td>
+            <td>When <code>true</code>, refuse the headless fallback: if no usable session exists the agent is <strong>not</strong> started, and the supervision loop retries with its normal backoff until a desktop appears. The Jenkins node stays <em>offline</em> rather than silently running GUI tests on Session 0's hidden desktop, where they fail in ways that look like test bugs. Recommended on a dedicated visible-test node.</td>
           </tr>
           <tr>
             <td><code>Hardening:SanitizeEnvironment</code></td>
@@ -205,7 +217,9 @@
       "DataDirectory": "",
       "LaunchInInteractiveSession": {
         "Enabled": false,
-        "LocalSystemOnly": true
+        "LocalSystemOnly": true,
+        "TargetUser": "",
+        "RequireInteractiveSession": false
       }
     },
     "Hardening": {
@@ -441,7 +455,22 @@
       <div class="callout-title">⚠️ Security warning — risky, unsupported, opt-in</div>
       <p>This feature is a <strong>deliberate isolation downgrade and can lead to privilege escalation.</strong> A Windows service always runs in the non-interactive <strong>Session 0</strong>; to launch the agent on a user's visible desktop the service must cross into the interactive session, which requires <code>SeTcbPrivilege</code> plus two further <a href="#interactive-session-privileges">process-creation privileges</a> &mdash; i.e. running as <code>LocalSystem</code> (or granting a named account a privilege that is <em>LocalSystem-equivalent</em> and trivially escalatable to SYSTEM). It also requires a user logged into the console. Enabling it undoes the least-privilege posture that is the whole point of running the agent as a hardened service. <strong>Use it only on a throwaway/debug machine to watch a browser test &mdash; never on a hardened production build node.</strong> Security reports about this feature are <a href="https://github.com/EliorMachlev/JenkinsAsService/blob/main/Security.md">out of scope</a>.</p>
     </div>
-    <p>By default a Selenium/NUnit browser your pipeline launches is a grandchild of the Session 0 agent, so it renders on Session 0's hidden desktop &mdash; you can't watch it (headless-only in practice). Set <code>Agent:LaunchInInteractiveSession:Enabled: true</code> to start the <strong>whole agent</strong> in the active console session instead, so every child it spawns (job → browser) inherits the visible desktop.</p>
+    <p>By default a Selenium/NUnit browser your pipeline launches is a grandchild of the Session 0 agent, so it renders on Session 0's hidden desktop &mdash; you can't watch it (headless-only in practice). Set <code>Agent:LaunchInInteractiveSession:Enabled: true</code> to start the <strong>whole agent</strong> on a logged-on user's desktop instead, so every child it spawns (job → browser) inherits the visible desktop.</p>
+
+    <h4 id="interactive-session-selection">Which session is chosen</h4>
+    <p>The service enumerates every terminal session and picks a target by this policy:</p>
+    <ul>
+      <li>Session 0 (services) is never a target.</li>
+      <li>The session must have a <strong>logged-on user</strong>. This is the authoritative signal that a token exists &mdash; a console session parked at the logon screen reports as <em>connected</em> but has no user, and querying it fails with <code>ERROR_NO_TOKEN</code>.</li>
+      <li><strong>Disconnected sessions qualify.</strong> Closing an RDP window leaves the user logged on and the desktop alive, along with any browser already running on it. An RDP-only server is therefore fully supported &mdash; you do not need to be attached for the agent to launch or keep working.</li>
+      <li>A <strong>locked</strong> session qualifies: the user is still logged on and the desktop still exists.</li>
+      <li>Among candidates, an <code>Active</code> session wins, then the lowest session id &mdash; so the choice is stable across restarts. Set <a href="#configuration"><code>TargetUser</code></a> to pin it explicitly when several people may be signed in.</li>
+    </ul>
+    <p>The chosen session id is written to the log at launch. If selection fails, the warning lists every session it saw (id, user, state) so the cause is visible without reproducing.</p>
+    <div class="callout callout-warning">
+      <div class="callout-title">The session is chosen once, per agent launch</div>
+      <p>Signing in <em>after</em> the agent has already started headless does not retarget the running agent &mdash; it keeps its session until it exits and the watchdog brings it up again. On a machine that may reboot with nobody signed in, either configure <strong>autologon</strong> so a desktop exists from boot, or set <code>RequireInteractiveSession: true</code> so the service waits for one instead of starting an invisible agent.</p>
+    </div>
     <p>The launch preconditions are checked at runtime. If any is missing, the service logs a prominent warning and <strong>falls back to a normal Session 0 (headless) launch &mdash; the agent stays up, just invisible</strong>; it never fails because of this setting. Because the shipped default identity (<code>NT SERVICE\Jenkins</code>) lacks the required privilege, the feature is effectively <em>double opt-in</em>: flipping the flag alone does nothing until you also reconfigure the service identity.</p>
     <h4>Prerequisites</h4>
     <div class="table-wrap">
@@ -456,7 +485,7 @@
               <ol>
                 <li><code>Agent:LaunchInInteractiveSession:Enabled: true</code>.</li>
                 <li>Service configured to run as <strong><code>LocalSystem</code></strong> (<code>sc.exe config Jenkins obj= LocalSystem</code>) &mdash; not the default virtual account.</li>
-                <li>A user <strong>logged into the console session</strong> (interactive logon or autologon).</li>
+                <li>A user <strong>logged on to some session</strong> &mdash; console (interactive logon or autologon) or RDP, connected or disconnected. See <a href="#interactive-session-selection">Which session is chosen</a>.</li>
               </ol>
             </td>
           </tr>
@@ -467,7 +496,8 @@
                 <li><code>Agent:LaunchInInteractiveSession:Enabled: true</code> and <code>LocalSystemOnly: false</code>.</li>
                 <li>Service runs as a domain/local account granted <strong>all three <a href="#interactive-session-privileges">required privileges</a></strong> via User Rights Assignment &mdash; not just <code>SeTcbPrivilege</code>. <em>This makes the account LocalSystem-equivalent &mdash; it does not reduce risk, it only hides it behind a named identity.</em></li>
                 <li>The service <strong>restarted</strong> after the rights were granted (see below).</li>
-                <li>A user <strong>logged into the console session</strong>.</li>
+                <li>The account must additionally be a member of <strong>Administrators</strong> &mdash; see <a href="#interactive-session-named-account">the caveat below</a>.</li>
+                <li>A user <strong>logged on to some session</strong>.</li>
               </ol>
             </td>
           </tr>
@@ -502,6 +532,23 @@
       </table>
     </div>
     <p><code>LocalSystem</code> holds all three by default, which is why the default <code>LocalSystemOnly: true</code> path needs no policy changes at all.</p>
+
+    <div class="callout callout-warning" id="interactive-session-named-account">
+      <div class="callout-title">The three privileges are necessary but not sufficient for a named account</div>
+      <p><code>WTSQueryUserToken</code> applies a <strong>second</strong> check after the privilege check: an access check on the target session itself, performed by the Terminal Services service. <code>SeTcbPrivilege</code> gets you past the first gate and straight into the second.</p>
+      <p>Observed on a real node: a low-privilege local account with all three rights assigned <em>and enabled</em> failed with <code>ERROR_ACCESS_DENIED (5)</code>. Reconfiguring the same service to <code>LocalSystem</code>, changing nothing else, got past it. If you use <code>LocalSystemOnly: false</code>, the account must also be a member of <strong>Administrators</strong> &mdash; and at that point it is administratively equivalent to <code>LocalSystem</code> anyway, which is the whole reason this mode is discouraged. <strong>Run the service as <code>LocalSystem</code>.</strong></p>
+    </div>
+
+    <h4 id="interactive-session-autologon">Autologon: a desktop that exists from boot</h4>
+    <p>The most robust setup for a dedicated visible-test node is a console session that logs on automatically at boot. The desktop then always exists &mdash; no dependency on an operator being connected, and reboots recover unattended. Your own RDP session becomes purely a window to watch through.</p>
+    <p>Configure it with Sysinternals <a href="https://learn.microsoft.com/sysinternals/downloads/autologon">Autologon</a>, which stores the password as an <strong>LSA secret</strong> rather than in cleartext:</p>
+    <pre><code>Autologon64.exe &lt;username&gt; &lt;domain-or-.&gt; &lt;password&gt;
+# then reboot; the console session (id 1) comes up already logged on</code></pre>
+    <div class="callout callout-warning">
+      <div class="callout-title">Do not use the registry method</div>
+      <p>Setting <code>DefaultUserName</code>/<code>DefaultPassword</code> under <code>Winlogon</code> stores the password <strong>in cleartext</strong>, readable by any local user. Use the Sysinternals tool. Either way, autologon means anyone with physical or console access lands on a logged-on desktop &mdash; use a dedicated low-privilege build account, never a domain admin.</p>
+    </div>
+    <p>With autologon in place, pair it with <code>TargetUser: "&lt;that account&gt;"</code> so the agent always lands on the build desktop even when an operator is also signed in over RDP, and <code>RequireInteractiveSession: true</code> so a misconfiguration surfaces as an offline node rather than invisible failing tests.</p>
     <div class="callout callout-warning">
       <div class="callout-title">Granting a right is not enough &mdash; restart the service</div>
       <p>An access token receives its privileges <strong>at logon</strong>. Editing User Rights Assignment (or running <code>gpupdate</code>) does not reach an already-running service &mdash; the process keeps its old token until it is restarted. After granting the rights, run <code>Restart-Service Jenkins</code> (or reboot) and confirm the PID changed.</p>

@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Security;
 using System.Security.Principal;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -36,7 +37,15 @@ namespace JenkinsAsService;
 [SupportedOSPlatform("windows")]
 internal static class InteractiveSessionLauncher
 {
-    private const uint InvalidSessionId = 0xFFFFFFFF;
+    // ── Session enumeration ───────────────────────────────────────────────────
+    private static readonly IntPtr WtsCurrentServerHandle = IntPtr.Zero;
+    private const int WtsUserNameInfoClass = 5; // WTS_INFO_CLASS.WTSUserName
+
+    // ── WTSQueryUserToken failure codes we translate for the operator ─────────
+    private const int ErrorAccessDenied = 5;
+    private const int ErrorInvalidParameter = 87;
+    private const int ErrorNoToken = 1008;
+    private const int ErrorPrivilegeNotHeld = 1314;
 
     // ── Token / process creation constants ────────────────────────────────────
     private const uint MaximumAllowed = 0x02000000;
@@ -78,6 +87,7 @@ internal static class InteractiveSessionLauncher
         ProcessStartInfo startInfo,
         Action<string> onOutputLine,
         bool localSystemOnly,
+        string? targetUser,
         ILogger logger,
         [NotNullWhen(true)] out IAgentProcess? process)
     {
@@ -87,17 +97,30 @@ internal static class InteractiveSessionLauncher
         {
             logger.LogWarning(
                 "Agent:LaunchInInteractiveSession is enabled but the service is not running as LocalSystem " +
-                "(LocalSystemOnly=true) — falling back to a Session 0 (headless) launch. Run the service as " +
-                "LocalSystem, or set LocalSystemOnly=false to attempt it under an account granted SeTcbPrivilege.");
+                "(LocalSystemOnly=true, current identity {Identity}) — falling back to a Session 0 (headless) " +
+                "launch. Run the service as LocalSystem; LocalSystemOnly=false additionally requires the " +
+                "account to be an Administrators member, because WTSQueryUserToken performs its own access " +
+                "check on the target session beyond SeTcbPrivilege.", CurrentIdentityName());
             return false;
         }
 
-        var sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == InvalidSessionId)
+        IReadOnlyList<SessionInfo> sessions;
+        try
+        {
+            sessions = EnumerateSessions();
+        }
+        catch (Win32Exception ex)
         {
             logger.LogWarning(
-                "Agent:LaunchInInteractiveSession is enabled but there is no active console session " +
-                "(no user is logged in) — falling back to a Session 0 (headless) launch.");
+                "Agent:LaunchInInteractiveSession is enabled but enumerating terminal sessions failed " +
+                "(Win32 error {Error}: {Message}) — falling back to a Session 0 (headless) launch.",
+                ex.NativeErrorCode, ex.Message);
+            return false;
+        }
+
+        if (!InteractiveSessionSelector.TrySelect(sessions, targetUser, out var sessionId, out var failure))
+        {
+            LogNoTargetSession(logger, sessions, targetUser, failure);
             return false;
         }
 
@@ -110,10 +133,11 @@ internal static class InteractiveSessionLauncher
         {
             var err = Marshal.GetLastWin32Error();
             logger.LogWarning(
-                "Agent:LaunchInInteractiveSession is enabled but acquiring the console session token failed " +
-                "(Win32 error {Error}). The required privileges were enabled successfully, so this is not a " +
-                "missing user right — a locked or disconnected console session is the usual cause. Falling " +
-                "back to a Session 0 (headless) launch.", err);
+                "Agent:LaunchInInteractiveSession is enabled but acquiring the user token for session " +
+                "{Session} failed: {Explanation} (Win32 error {Error}). Service identity {Identity}; sessions " +
+                "seen: {Sessions}. Falling back to a Session 0 (headless) launch.",
+                sessionId, DescribeTokenError(err), err, CurrentIdentityName(),
+                InteractiveSessionSelector.Describe(sessions));
             return false;
         }
 
@@ -144,6 +168,113 @@ internal static class InteractiveSessionLauncher
     {
         using var identity = WindowsIdentity.GetCurrent();
         return identity.IsSystem; // true only for the LocalSystem account (S-1-5-18)
+    }
+
+    private static string CurrentIdentityName()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            return identity.Name;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or SecurityException)
+        {
+            return "<unknown>";
+        }
+    }
+
+    /// <summary>
+    /// Turns a <c>WTSQueryUserToken</c> failure into the operator action that actually resolves it. Every code
+    /// here has been observed on a real node; the previous single catch-all message asserted "locked console
+    /// session" for all of them and sent the investigation the wrong way.
+    /// </summary>
+    internal static string DescribeTokenError(int error) => error switch
+    {
+        ErrorAccessDenied =>
+            "the service identity may not query that session's token. WTSQueryUserToken enforces an access " +
+            "check on the session in addition to SeTcbPrivilege, which a non-administrative account fails — " +
+            "run the service as LocalSystem",
+        ErrorNoToken =>
+            "the session has no logged-on user token. Nobody is signed in to it (a console session parked at " +
+            "the logon screen looks connected but has no user) — sign in on that session, or configure " +
+            "autologon so a desktop exists from boot",
+        ErrorPrivilegeNotHeld =>
+            "the service token does not hold SeTcbPrivilege. Grant \"Act as part of the operating system\" via " +
+            "User Rights Assignment and RESTART the service",
+        ErrorInvalidParameter => "the session id is not valid — the session ended between enumeration and use",
+        _ => "unexpected failure",
+    };
+
+    /// <summary>Explains a failed session selection in terms of what the operator has to change.</summary>
+    private static void LogNoTargetSession(
+        ILogger logger, IReadOnlyList<SessionInfo> sessions, string? targetUser, SessionSelectionFailure failure)
+    {
+        if (failure == SessionSelectionFailure.TargetUserNotLoggedOn)
+        {
+            logger.LogWarning(
+                "Agent:LaunchInInteractiveSession is enabled but the configured TargetUser {TargetUser} is not " +
+                "logged on. Sessions seen: {Sessions}. Sign in as that user, or clear TargetUser to accept any " +
+                "logged-on user. Falling back to a Session 0 (headless) launch.",
+                targetUser, InteractiveSessionSelector.Describe(sessions));
+            return;
+        }
+
+        logger.LogWarning(
+            "Agent:LaunchInInteractiveSession is enabled but no session has a logged-on user, so there is no " +
+            "desktop to launch on. Sessions seen: {Sessions}. Sign in to the machine (console or RDP), or " +
+            "configure autologon so a desktop exists from boot. Falling back to a Session 0 (headless) launch " +
+            "— GUI processes the agent spawns will have no visible desktop.",
+            InteractiveSessionSelector.Describe(sessions));
+    }
+
+    /// <summary>
+    /// Enumerates every terminal session with its logged-on user. Deliberately replaces
+    /// <c>WTSGetActiveConsoleSessionId</c>, which reports the physical console even when it is empty and cannot
+    /// see an RDP session at all. Interop only — the choice among these lives in
+    /// <see cref="InteractiveSessionSelector"/> so it can be unit-tested.
+    /// </summary>
+    private static IReadOnlyList<SessionInfo> EnumerateSessions()
+    {
+        if (!WTSEnumerateSessions(WtsCurrentServerHandle, 0, 1, out var buffer, out var count))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "WTSEnumerateSessions failed");
+        }
+
+        try
+        {
+            var sessions = new List<SessionInfo>(count);
+            var stride = Marshal.SizeOf<WTS_SESSION_INFO>();
+            for (var i = 0; i < count; i++)
+            {
+                var entry = Marshal.PtrToStructure<WTS_SESSION_INFO>(IntPtr.Add(buffer, i * stride));
+                sessions.Add(new SessionInfo(
+                    entry.SessionId, QueryUserName(entry.SessionId), (SessionConnectState)entry.State));
+            }
+
+            return sessions;
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
+        }
+    }
+
+    /// <summary>The logged-on user of a session, or null when nobody is signed in to it.</summary>
+    private static string? QueryUserName(uint sessionId)
+    {
+        if (!WTSQuerySessionInformation(WtsCurrentServerHandle, sessionId, WtsUserNameInfoClass, out var buffer, out _))
+        {
+            return null; // treated as "no user" — the selector rejects it either way
+        }
+
+        try
+        {
+            return Marshal.PtrToStringUni(buffer);
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
+        }
     }
 
     /// <summary>
@@ -536,12 +667,30 @@ internal static class InteractiveSessionLauncher
 
     // ── P/Invoke ──────────────────────────────────────────────────────────────
 
-    [DllImport("kernel32.dll")]
-    private static extern uint WTSGetActiveConsoleSessionId();
-
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
+
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSEnumerateSessions(
+        IntPtr hServer, uint reserved, uint version, out IntPtr ppSessionInfo, out int pCount);
+
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSQuerySessionInformation(
+        IntPtr hServer, uint sessionId, int wtsInfoClass, out IntPtr ppBuffer, out uint pBytesReturned);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr pMemory);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WTS_SESSION_INFO
+    {
+        public uint SessionId;
+        public IntPtr pWinStationName;
+        public int State;
+    }
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr GetCurrentProcess();

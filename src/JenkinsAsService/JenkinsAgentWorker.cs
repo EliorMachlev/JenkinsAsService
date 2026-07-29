@@ -201,10 +201,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
         if (_settings.Agent.LaunchInInteractiveSession.Enabled)
         {
             _logger.LogWarning(
-                "Agent:LaunchInInteractiveSession is ENABLED — the agent will be launched on the interactive " +
-                "desktop (Session 1) when a console session and the required privilege are present. This is an " +
-                "isolation downgrade (LocalSystem / SeTcbPrivilege required) and is unsupported; do not enable " +
-                "it on hardened production build nodes. See docs/configuration.html.");
+                "Agent:LaunchInInteractiveSession is ENABLED — the agent will be launched on the desktop of a " +
+                "logged-on session (console or RDP, including disconnected) when one exists and the required " +
+                "privileges are present; the chosen session is logged at launch. This is an isolation " +
+                "downgrade (LocalSystem required) and is unsupported; do not enable it on hardened production " +
+                "build nodes. See docs/configuration.html.");
         }
     }
 

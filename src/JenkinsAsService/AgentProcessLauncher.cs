@@ -46,15 +46,28 @@ internal sealed class AgentProcessLauncher : IAgentProcessLauncher
     public IAgentProcess Start(ProcessStartInfo startInfo, Action<string> onOutputLine)
     {
         // Opt-in interactive-desktop launch. Only reachable when explicitly enabled; on any precondition
-        // failure (not LocalSystem, no console session, privilege missing) InteractiveSessionLauncher logs a
-        // prominent warning and returns false, and we fall through to the normal Session 0 launch below so
-        // the agent stays up (headless) instead of failing.
+        // failure (not LocalSystem, no session with a logged-on user, privilege missing)
+        // InteractiveSessionLauncher logs a prominent warning and returns false, and we fall through to the
+        // normal Session 0 launch below so the agent stays up (headless) instead of failing.
         var interactive = _settings.Agent.LaunchInInteractiveSession;
-        if (interactive.Enabled && OperatingSystem.IsWindows()
-            && InteractiveSessionLauncher.TryStart(
-                startInfo, onOutputLine, interactive.LocalSystemOnly, _logger, out var interactiveProcess))
+        if (interactive.Enabled && OperatingSystem.IsWindows())
         {
-            return interactiveProcess;
+            if (InteractiveSessionLauncher.TryStart(
+                    startInfo, onOutputLine, interactive.LocalSystemOnly, interactive.TargetUser,
+                    _logger, out var interactiveProcess))
+            {
+                return interactiveProcess;
+            }
+
+            // RequireInteractiveSession turns the headless fallback into a retry: throwing here lands in
+            // TryBringUpAgent's catch, so the supervision loop backs off and tries again instead of running
+            // GUI tests on a desktop that does not exist. The node stays offline until someone signs in.
+            if (interactive.RequireInteractiveSession)
+            {
+                throw new InvalidOperationException(
+                    "Agent:LaunchInInteractiveSession:RequireInteractiveSession is set and no interactive " +
+                    "session is available — refusing a headless launch; will retry.");
+            }
         }
 
         return StartInSession0(startInfo, onOutputLine);
