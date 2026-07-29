@@ -440,6 +440,16 @@ public sealed class JenkinsAgentWorker : BackgroundService
                     _logger.LogInformation("Watchdog: Agent stable for {Seconds}s. Crash counter reset.", _stabilityMs / 1000);
                 }
 
+                // Re-target the interactive session if it changed under us. Killing here — rather than after
+                // the exit is observed below — keeps this off the crash path entirely, so a migration never
+                // counts toward Recovery:MaxRetries. The loop top then sees a null agent and brings up a fresh
+                // one, which re-runs selection (and falls back to Session 0 if no desktop qualifies).
+                if (ShouldMigrateInteractiveSession(agent))
+                {
+                    KillAgent();
+                    bringUpAttempts = 0; // a deliberate move is not a failed connect attempt — no backoff
+                }
+
                 continue;
             }
 
@@ -472,6 +482,40 @@ public sealed class JenkinsAgentWorker : BackgroundService
     /// One bring-up attempt: connectivity → jar download → start. Returns false (to be retried with backoff)
     /// both when the controller is unreachable and when download/start fails. Never counts toward give-up.
     /// </summary>
+    /// <summary>
+    /// Whether the running agent should be relaunched because the interactive session it lives in is no longer
+    /// the right one. Interop lives here; the policy is in <see cref="InteractiveSessionSelector.ShouldMigrate"/>.
+    /// </summary>
+    private bool ShouldMigrateInteractiveSession(IAgentProcess agent)
+    {
+        var interactive = _settings.Agent.LaunchInInteractiveSession;
+        if (!interactive.Enabled
+            || interactive.SessionMigration == SessionMigrationMode.Off
+            || !OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        if (!InteractiveSessionLauncher.TryEnumerateSessions(_logger, out var sessions))
+        {
+            return false; // transient enumeration failure must not disturb a healthy agent
+        }
+
+        if (!InteractiveSessionSelector.ShouldMigrate(
+                sessions, agent.InteractiveSessionId, interactive.TargetUser,
+                interactive.PreferDisconnectedSession, interactive.SessionMigration, out var reason))
+        {
+            return false;
+        }
+
+        _logger.LogWarning(
+            "Watchdog: restarting the agent to move it to a different desktop — {Reason} " +
+            "(SessionMigration={Mode}). Any build in flight on this node will be interrupted. " +
+            "Sessions seen: {Sessions}.",
+            reason, interactive.SessionMigration, InteractiveSessionSelector.Describe(sessions));
+        return true;
+    }
+
     private async Task<bool> TryBringUpAgent(CancellationToken ct)
     {
         try

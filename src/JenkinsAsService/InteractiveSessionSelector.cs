@@ -19,8 +19,22 @@ internal enum SessionConnectState
     Init = 9,
 }
 
-/// <summary>One enumerated session. <paramref name="UserName"/> is null/empty when nobody is logged on.</summary>
-internal readonly record struct SessionInfo(uint SessionId, string? UserName, SessionConnectState State);
+/// <summary>
+/// One enumerated session. <paramref name="UserName"/> is null/empty when nobody is logged on.
+/// <paramref name="WinStationName"/> is the WinStation (<c>"Console"</c>, <c>"RDP-Tcp#3"</c>, <c>"Services"</c>)
+/// — the reliable way to tell the physical console from a remote session, since session ids carry no such
+/// meaning beyond 0.
+/// </summary>
+internal readonly record struct SessionInfo(
+    uint SessionId, string? UserName, SessionConnectState State, string? WinStationName = null)
+{
+    /// <summary>
+    /// True for the physical console. With autologon configured this session exists from boot and never ends,
+    /// which makes it the always-available fallback — and therefore the one to rank last among equals.
+    /// </summary>
+    internal bool IsConsole =>
+        string.Equals(WinStationName?.Trim(), "Console", StringComparison.OrdinalIgnoreCase);
+}
 
 /// <summary>Why no session could be targeted — drives the operator-facing warning.</summary>
 internal enum SessionSelectionFailure
@@ -54,8 +68,17 @@ internal static class InteractiveSessionSelector
     internal const uint ServicesSessionId = 0;
 
     /// <summary>
-    /// Picks the session to launch the agent in. Prefers an <see cref="SessionConnectState.Active"/> session,
-    /// then the lowest session id, so the choice is stable across restarts when several qualify.
+    /// Picks the session to launch the agent in. Three ordering keys, applied in this order:
+    /// <list type="number">
+    /// <item>connect state — <see cref="SessionConnectState.Active"/> first, or last under
+    /// <paramref name="preferDisconnected"/>;</item>
+    /// <item>console last — a remote session beats the physical console <em>at the same state rank</em>, which
+    /// is what makes an autologon console desktop the fallback rather than the default. Placing this key
+    /// <em>below</em> the state rank is deliberate: it must not let an operator's freshly-signed-in
+    /// <c>Active</c> RDP session steal the agent while <paramref name="preferDisconnected"/> is set;</item>
+    /// <item>session id — lowest, or highest (newest) under <paramref name="preferDisconnected"/>.</item>
+    /// </list>
+    /// The result is stable across restarts whenever the set of sessions is.
     /// </summary>
     /// <param name="sessions">Sessions as enumerated from the OS.</param>
     /// <param name="targetUser">
@@ -81,6 +104,7 @@ internal static class InteractiveSessionSelector
         var candidates = sessions
             .Where(IsUsableTarget)
             .OrderBy(s => Rank(s.State, preferDisconnected))
+            .ThenBy(s => s.IsConsole ? 1 : 0)
             .ThenBy(s => TieBreak(s.SessionId, preferDisconnected))
             .ToList();
 
@@ -102,6 +126,64 @@ internal static class InteractiveSessionSelector
 
         sessionId = candidates[0].SessionId;
         failure = SessionSelectionFailure.None;
+        return true;
+    }
+
+    /// <summary>
+    /// Decides whether a <em>running</em> agent should be torn down and relaunched because its session is no
+    /// longer the right one. Pure, so the policy is unit-testable; the worker performs the kill and lets the
+    /// normal bring-up path re-run <see cref="TrySelect"/> (including the Session 0 headless fallback, which is
+    /// why no replacement session id is returned here).
+    /// </summary>
+    /// <param name="currentSessionId">
+    /// The session the agent is running in, or <c>null</c> when it was launched headless in Session 0.
+    /// </param>
+    /// <param name="reason">Operator-facing phrase for the log line; empty when no migration is due.</param>
+    internal static bool ShouldMigrate(
+        IReadOnlyList<SessionInfo> sessions,
+        uint? currentSessionId,
+        string? targetUser,
+        bool preferDisconnected,
+        SessionMigrationMode mode,
+        out string reason)
+    {
+        reason = string.Empty;
+        if (mode == SessionMigrationMode.Off)
+        {
+            return false;
+        }
+
+        var best = TrySelect(sessions, targetUser, out var bestSessionId, out _, preferDisconnected)
+            ? bestSessionId
+            : (uint?)null;
+
+        if (currentSessionId is not { } current)
+        {
+            // Running headless. Only an "upgrade" can apply — there is no lost session to react to.
+            if (mode != SessionMigrationMode.Always || best is not { } target)
+            {
+                return false;
+            }
+
+            reason = $"an interactive session is now available (session {target}) and the agent is running headless";
+            return true;
+        }
+
+        // The session the agent lives in disappeared (signed out, reset, or the pinned user logged off). The
+        // desktop is already gone, so relaunching costs nothing that was not lost — both non-Off modes act.
+        if (!sessions.Any(s => s.SessionId == current && IsUsableTarget(s)
+                               && (string.IsNullOrWhiteSpace(targetUser) || MatchesUser(s.UserName, targetUser))))
+        {
+            reason = $"session {current} is no longer a usable interactive session";
+            return true;
+        }
+
+        if (mode != SessionMigrationMode.Always || best is not { } preferred || preferred == current)
+        {
+            return false;
+        }
+
+        reason = $"session {preferred} now ranks above the agent's current session {current}";
         return true;
     }
 
@@ -161,6 +243,7 @@ internal static class InteractiveSessionSelector
         return interactive.Count == 0
             ? "<none>"
             : string.Join(", ", interactive.Select(s =>
-                $"{s.SessionId}:{(string.IsNullOrWhiteSpace(s.UserName) ? "<none>" : s.UserName)}/{s.State}"));
+                $"{s.SessionId}:{(string.IsNullOrWhiteSpace(s.UserName) ? "<none>" : s.UserName)}/{s.State}"
+                + (string.IsNullOrWhiteSpace(s.WinStationName) ? "" : $"/{s.WinStationName}")));
     }
 }

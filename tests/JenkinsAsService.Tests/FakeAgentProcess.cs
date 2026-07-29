@@ -15,6 +15,10 @@ internal sealed class FakeAgentProcess : IAgentProcess
     private readonly TaskCompletionSource _exit = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public int Id { get; } = Random.Shared.Next(1000, 9999);
+
+    /// <summary>Settable so a test can pretend the fake was launched into an interactive session.</summary>
+    public uint? InteractiveSessionId { get; set; }
+
     public bool HasExited { get; private set; }
     public int ExitCode { get; private set; }
     public Task Exited => _exit.Task;

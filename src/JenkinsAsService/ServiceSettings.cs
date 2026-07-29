@@ -123,9 +123,9 @@ public sealed class InteractiveSessionSettings
     public bool LocalSystemOnly { get; set; } = true;
 
     /// <summary>
-    /// Optional user name to pin the launch to (e.g. <c>buildbot</c> or <c>DOMAIN\buildbot</c>; matched
+    /// Optional user name to pin the launch to (e.g. <c>svc-build</c> or <c>DOMAIN\svc-build</c>; matched
     /// case-insensitively and a domain prefix is ignored). When empty (default) any logged-on user's session
-    /// qualifies, preferring an <c>Active</c> session and then the lowest session id. Set this on a machine
+    /// qualifies, ranked by <see cref="InteractiveSessionSelector.TrySelect"/>. Set this on a machine
     /// where more than one person may be signed in, so the agent cannot land on an operator's ad-hoc RDP
     /// desktop instead of the dedicated build desktop.
     /// </summary>
@@ -151,6 +151,21 @@ public sealed class InteractiveSessionSettings
     /// session 1. <see cref="TargetUser"/> still wins outright when set.
     /// </summary>
     public bool PreferDisconnectedSession { get; set; }
+
+    /// <summary>
+    /// Whether the watchdog re-targets the session while the agent is already running: <c>Off</c> (default —
+    /// chosen once at launch), <c>OnSessionLost</c> (relaunch when the agent's session ends), or <c>Always</c>
+    /// (also relaunch when a better-ranked session appears, e.g. an RDP session starting while the agent sits
+    /// on the autologon console, or a headless Session 0 fallback that can now be upgraded).
+    /// <para>
+    /// A process cannot be moved between sessions, so <strong>every migration kills and relaunches the Java
+    /// agent</strong> — the Jenkins node drops and any build in flight dies. <c>OnSessionLost</c> is safe by
+    /// construction (that desktop is already gone); <c>Always</c> trades build interruptions for staying on
+    /// the preferred desktop. The check runs once per stability window, so migrations cannot flap faster
+    /// than that.
+    /// </para>
+    /// </summary>
+    public SessionMigrationMode SessionMigration { get; set; } = SessionMigrationMode.Off;
 }
 
 /// <summary>Process-hardening toggles for the spawned agent (<c>Jenkins:Hardening</c>).</summary>

@@ -148,7 +148,7 @@
             <td><code>Agent:LaunchInInteractiveSession:TargetUser</code></td>
             <td>No</td>
             <td><em>(empty)</em></td>
-            <td>Pin the launch to one user's session, e.g. <code>buildbot</code> or <code>DOMAIN\buildbot</code> (case-insensitive; a domain prefix is ignored). When empty, any logged-on user qualifies — preferring an <code>Active</code> session, then the lowest session id. Set this where more than one person may sign in, so the agent cannot land on an operator's ad-hoc RDP desktop instead of the dedicated build desktop.</td>
+            <td>Pin the launch to one user's session, e.g. <code>&lt;build-account&gt;</code> or <code>DOMAIN\&lt;build-account&gt;</code> (case-insensitive; a domain prefix is ignored). When empty, any logged-on user qualifies, ranked as described in <a href="#interactive-session-selection">Which session is chosen</a>. Set this where more than one person may sign in, so the agent cannot land on an operator's ad-hoc RDP desktop instead of the dedicated build desktop.</td>
           </tr>
           <tr>
             <td><code>Agent:LaunchInInteractiveSession:PreferDisconnectedSession</code></td>
@@ -161,6 +161,12 @@
             <td>No</td>
             <td><code>false</code></td>
             <td>When <code>true</code>, refuse the headless fallback: if no usable session exists the agent is <strong>not</strong> started, and the supervision loop retries with its normal backoff until a desktop appears. The Jenkins node stays <em>offline</em> rather than silently running GUI tests on Session 0's hidden desktop, where they fail in ways that look like test bugs. Recommended on a dedicated visible-test node.</td>
+          </tr>
+          <tr>
+            <td><code>Agent:LaunchInInteractiveSession:SessionMigration</code></td>
+            <td>No</td>
+            <td><code>Off</code></td>
+            <td>Whether the watchdog re-targets the session while the agent is <em>already running</em>. <code>Off</code> (default) chooses once at launch and never revisits it. <code>OnSessionLost</code> relaunches when the agent's own session ends. <code>Always</code> also relaunches when a better-ranked session appears &mdash; an RDP session starting while the agent sits on the autologon console, or a headless Session 0 fallback that can now be upgraded to a real desktop. <strong>A process cannot be moved between sessions, so every migration kills and relaunches the agent: the node drops and any build in flight dies.</strong> See <a href="#interactive-session-migration">Following the session while running</a>.</td>
           </tr>
           <tr>
             <td><code>Hardening:SanitizeEnvironment</code></td>
@@ -226,7 +232,8 @@
         "LocalSystemOnly": true,
         "TargetUser": "",
         "RequireInteractiveSession": false,
-        "PreferDisconnectedSession": false
+        "PreferDisconnectedSession": false,
+        "SessionMigration": "Off"
       }
     },
     "Hardening": {
@@ -471,13 +478,48 @@
       <li>The session must have a <strong>logged-on user</strong>. This is the authoritative signal that a token exists &mdash; a console session parked at the logon screen reports as <em>connected</em> but has no user, and querying it fails with <code>ERROR_NO_TOKEN</code>.</li>
       <li><strong>Disconnected sessions qualify.</strong> Closing an RDP window leaves the user logged on and the desktop alive, along with any browser already running on it. An RDP-only server is therefore fully supported &mdash; you do not need to be attached for the agent to launch or keep working.</li>
       <li>A <strong>locked</strong> session qualifies: the user is still logged on and the desktop still exists.</li>
-      <li>Among candidates, an <code>Active</code> session wins, then the lowest session id &mdash; so the choice is stable across restarts. <code>PreferDisconnectedSession: true</code> inverts both keys: non-Active first, then the <strong>highest</strong> session id, i.e. the newest session. Set <code>TargetUser</code> to pin it explicitly instead when several people may be signed in.</li>
     </ul>
+    <p>Candidates are then ranked on three keys, in this order:</p>
+    <ol>
+      <li><strong>Connect state</strong> &mdash; an <code>Active</code> session wins, or loses, under <code>PreferDisconnectedSession: true</code>.</li>
+      <li><strong>Console last</strong> &mdash; a remote (RDP) session beats the physical console <em>at the same connect state</em>. This is what makes an autologon console desktop the <em>fallback</em> rather than the permanent default: without it the console would win the id tie-break from boot and no RDP session could ever take over. The console is identified by its WinStation name (<code>Console</code> vs <code>RDP-Tcp#3</code>), not by its session id.</li>
+      <li><strong>Session id</strong> &mdash; the lowest, or the <strong>highest</strong> (newest) under <code>PreferDisconnectedSession: true</code>.</li>
+    </ol>
+    <p>The console key deliberately sits <em>below</em> the connect state, not above it. With <code>PreferDisconnectedSession: true</code> an operator signing in over RDP creates an <code>Active</code> session that still loses to the non-Active build desktop &mdash; watching a run never steals the agent. Set <code>TargetUser</code> to pin the session explicitly instead when several people may be signed in.</p>
     <p>The chosen session id is written to the log at launch. If selection fails, the warning lists every session it saw (id, user, state) so the cause is visible without reproducing.</p>
     <div class="callout callout-warning">
-      <div class="callout-title">The session is chosen once, per agent launch</div>
-      <p>Signing in <em>after</em> the agent has already started headless does not retarget the running agent &mdash; it keeps its session until it exits and the watchdog brings it up again. On a machine that may reboot with nobody signed in, either configure <strong>autologon</strong> so a desktop exists from boot, or set <code>RequireInteractiveSession: true</code> so the service waits for one instead of starting an invisible agent.</p>
+      <div class="callout-title">By default the session is chosen once, per agent launch</div>
+      <p>Signing in <em>after</em> the agent has already started headless does not retarget the running agent &mdash; it keeps its session until it exits and the watchdog brings it up again. On a machine that may reboot with nobody signed in, either configure <strong>autologon</strong> so a desktop exists from boot, or set <code>RequireInteractiveSession: true</code> so the service waits for one instead of starting an invisible agent. To let the watchdog follow the session while the agent runs, see <a href="#interactive-session-migration">Following the session while running</a>.</p>
     </div>
+    <h4 id="interactive-session-migration">Following the session while running</h4>
+    <p>Sessions come and go while the agent is up: an operator opens an RDP session, closes it, signs out. <code>SessionMigration</code> controls whether the watchdog reacts. It re-runs the selection policy once per stability window (60&nbsp;s) while the agent is alive, so migrations can never flap faster than that.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>Behaviour</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Off</code> <em>(default)</em></td>
+            <td>The session is chosen at launch and never revisited. The agent stays where it is until it exits for its own reasons.</td>
+          </tr>
+          <tr>
+            <td><code>OnSessionLost</code></td>
+            <td>Relaunch when the agent's own session stops qualifying &mdash; it ended, its user signed out, or (with <code>TargetUser</code> set) that user moved elsewhere. Safe by construction: the desktop the agent was placed on is already gone, so nothing usable is interrupted.</td>
+          </tr>
+          <tr>
+            <td><code>Always</code></td>
+            <td>Also relaunch when a <em>better-ranked</em> session appears: an RDP session starting while the agent sits on the autologon console, or a headless Session 0 fallback that can now be upgraded to a real desktop. Keeps the agent on the preferred desktop at the cost of restarting it whenever that changes.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-warning">
+      <div class="callout-title">Migration restarts the agent &mdash; and kills the running build</div>
+      <p>Windows offers no way to move a running process between sessions, so every migration is a kill and relaunch of the Java agent. The Jenkins node goes offline for a few seconds and <strong>any build executing on it dies</strong>. That is why the default is <code>Off</code>. <code>OnSessionLost</code> costs nothing in practice; <code>Always</code> is the one that can interrupt healthy work, so use it on a dedicated visible-test node rather than a shared build node.</p>
+    </div>
+    <p>Migrations are deliberate, not failures: the kill happens off the crash path, so it never counts toward <code>Recovery:MaxRetries</code> and no backoff is applied before the relaunch. The relaunch runs the full bring-up path, which means it re-selects from scratch and <strong>falls back to a headless Session 0 launch if no session qualifies at that moment</strong> &mdash; unless <code>RequireInteractiveSession: true</code>, which makes it wait for a desktop instead.</p>
+    <p>The typical dedicated-node setup is autologon plus <code>SessionMigration: Always</code>: the autologon console desktop is always there as the floor, the agent moves up to an RDP session when one appears, moves back down when it goes, and only ever lands headless if the autologon session itself has been signed out.</p>
     <p>The launch preconditions are checked at runtime. If any is missing, the service logs a prominent warning and <strong>falls back to a normal Session 0 (headless) launch &mdash; the agent stays up, just invisible</strong>; it never fails because of this setting. Because the shipped default identity (<code>NT SERVICE\Jenkins</code>) lacks the required privilege, the feature is effectively <em>double opt-in</em>: flipping the flag alone does nothing until you also reconfigure the service identity.</p>
     <h4>Prerequisites</h4>
     <div class="table-wrap">

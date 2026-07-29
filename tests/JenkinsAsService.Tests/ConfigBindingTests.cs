@@ -31,7 +31,7 @@ public class ConfigBindingTests
           "Jenkins": {
             "Connection": { "Url": "https://ci.example.com:8443", "Method": "Https", "AgentName": "node-1", "ControllerCertThumbprint": "AABB" },
             "Secret": { "Value": "cipher", "Mode": "Tpm", "DpapiScope": "User", "ViaFile": false },
-            "Agent": { "JavaPath": "C:/jdk/bin", "CustomArguments": "-noCertificateCheck", "DataDirectory": "D:/data", "LaunchInInteractiveSession": { "Enabled": true, "LocalSystemOnly": false } },
+            "Agent": { "JavaPath": "C:/jdk/bin", "CustomArguments": "-noCertificateCheck", "DataDirectory": "D:/data", "LaunchInInteractiveSession": { "Enabled": true, "LocalSystemOnly": false, "SessionMigration": "Always" } },
             "Hardening": { "SanitizeEnvironment": false, "AllowedEnvironmentVariables": "MAVEN_OPTS" },
             "Logging": { "DebugMode": true, "CompactLog": true, "RetainedLogs": 7 },
             "Recovery": { "MaxRetries": 5 }
@@ -54,6 +54,7 @@ public class ConfigBindingTests
         s.Agent.DataDirectory.Should().Be("D:/data");
         s.Agent.LaunchInInteractiveSession.Enabled.Should().BeTrue();
         s.Agent.LaunchInInteractiveSession.LocalSystemOnly.Should().BeFalse();
+        s.Agent.LaunchInInteractiveSession.SessionMigration.Should().Be(SessionMigrationMode.Always);
         s.Hardening.SanitizeEnvironment.Should().BeFalse();
         s.Hardening.AllowedEnvironmentVariables.Should().Be("MAVEN_OPTS");
         s.Logging.DebugMode.Should().BeTrue();
@@ -83,6 +84,8 @@ public class ConfigBindingTests
         s.Secret.ViaFile.Should().BeTrue();
         s.Agent.LaunchInInteractiveSession.Enabled.Should().BeFalse("interactive launch is off by default");
         s.Agent.LaunchInInteractiveSession.LocalSystemOnly.Should().BeTrue("the LocalSystem gate defaults on");
+        s.Agent.LaunchInInteractiveSession.SessionMigration.Should()
+            .Be(SessionMigrationMode.Off, "migration restarts the agent, so it must be opt-in");
         s.Logging.RetainedLogs.Should().Be(3);
         s.Recovery.MaxRetries.Should().Be(0);
     }

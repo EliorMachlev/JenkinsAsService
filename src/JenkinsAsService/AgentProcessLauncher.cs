@@ -24,6 +24,13 @@ public interface IAgentProcess : IDisposable
     bool HasExited { get; }
     int ExitCode { get; }
 
+    /// <summary>
+    /// The interactive session the agent was launched into, or <c>null</c> for a normal Session 0 (headless)
+    /// launch. The watchdog compares this against the session it would choose now to decide whether a
+    /// migration is due — see <see cref="SessionMigrationMode"/>.
+    /// </summary>
+    uint? InteractiveSessionId { get; }
+
     /// <summary>Completes when the process exits (from natural death or <see cref="Kill"/>).</summary>
     Task Exited { get; }
 
@@ -131,6 +138,7 @@ internal sealed class AgentProcessLauncher : IAgentProcessLauncher
         }
 
         public int Id => _process.Id;
+        public uint? InteractiveSessionId => null; // Session 0 launch
         public bool HasExited => _process.HasExited;
         public int ExitCode => _process.ExitCode;
         public Task Exited => _exitTcs.Task;

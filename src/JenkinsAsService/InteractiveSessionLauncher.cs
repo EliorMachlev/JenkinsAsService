@@ -235,6 +235,27 @@ internal static class InteractiveSessionLauncher
     /// see an RDP session at all. Interop only — the choice among these lives in
     /// <see cref="InteractiveSessionSelector"/> so it can be unit-tested.
     /// </summary>
+    /// <summary>
+    /// Non-throwing enumeration for the watchdog's periodic session-migration check. A transient failure there
+    /// must not disturb a healthy agent, so it reports <c>false</c> and the check is simply skipped this round.
+    /// </summary>
+    internal static bool TryEnumerateSessions(ILogger logger, out IReadOnlyList<SessionInfo> sessions)
+    {
+        try
+        {
+            sessions = EnumerateSessions();
+            return true;
+        }
+        catch (Win32Exception ex)
+        {
+            logger.LogDebug(
+                "Enumerating terminal sessions for the migration check failed (Win32 error {Error}) — " +
+                "leaving the agent where it is.", ex.NativeErrorCode);
+            sessions = [];
+            return false;
+        }
+    }
+
     private static IReadOnlyList<SessionInfo> EnumerateSessions()
     {
         if (!WTSEnumerateSessions(WtsCurrentServerHandle, 0, 1, out var buffer, out var count))
@@ -250,7 +271,8 @@ internal static class InteractiveSessionLauncher
             {
                 var entry = Marshal.PtrToStructure<WTS_SESSION_INFO>(IntPtr.Add(buffer, i * stride));
                 sessions.Add(new SessionInfo(
-                    entry.SessionId, QueryUserName(entry.SessionId), (SessionConnectState)entry.State));
+                    entry.SessionId, QueryUserName(entry.SessionId), (SessionConnectState)entry.State,
+                    Marshal.PtrToStringUni(entry.pWinStationName)));
             }
 
             return sessions;
@@ -423,7 +445,8 @@ internal static class InteractiveSessionLauncher
             CloseHandle(pi.hThread);
 
             var effectiveJob = assignedToJob ? jobHandle : IntPtr.Zero;
-            var process = new InteractiveAgentProcess(pi.hProcess, pi.dwProcessId, effectiveJob, stdout, stderr, onOutputLine);
+            var process = new InteractiveAgentProcess(
+                pi.hProcess, pi.dwProcessId, sessionId, effectiveJob, stdout, stderr, onOutputLine);
             transferred = true;
             return process;
         }
@@ -568,11 +591,12 @@ internal static class InteractiveSessionLauncher
         private volatile bool _hasExited;
 
         public InteractiveAgentProcess(
-            IntPtr processHandle, int pid, IntPtr jobHandle,
+            IntPtr processHandle, int pid, uint sessionId, IntPtr jobHandle,
             AnonymousPipeServerStream stdout, AnonymousPipeServerStream stderr, Action<string> onOutputLine)
         {
             _processHandle = processHandle;
             Id = pid;
+            InteractiveSessionId = sessionId;
             _jobHandle = jobHandle;
             _stdout = stdout;
             _stderr = stderr;
@@ -590,6 +614,7 @@ internal static class InteractiveSessionLauncher
         }
 
         public int Id { get; }
+        public uint? InteractiveSessionId { get; }
         public bool HasExited => _hasExited;
         public int ExitCode => _exitCode;
         public Task Exited => _exitTcs.Task;

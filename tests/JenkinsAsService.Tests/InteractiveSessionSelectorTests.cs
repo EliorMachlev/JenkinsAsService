@@ -277,6 +277,208 @@ public class InteractiveSessionSelectorTests
         sessionId.Should().Be(7);
     }
 
+    // ── Console-vs-remote ranking: the autologon desktop is the fallback, not the default ────────────────
+
+    private static SessionInfo Console(uint id, string? user, SessionConnectState state) =>
+        new(id, user, state, "Console");
+
+    private static SessionInfo Rdp(uint id, string? user, SessionConnectState state) =>
+        new(id, user, state, $"RDP-Tcp#{id}");
+
+    [Fact]
+    public void An_rdp_session_outranks_the_autologon_console_at_the_same_connect_state()
+    {
+        // The point of the console/remote key: with autologon the console session exists from boot and would
+        // otherwise win on the lowest-id tie-break forever, so a real RDP desktop could never take over.
+        var sessions = new[]
+        {
+            Console(1, "buildacct", SessionConnectState.Disconnected),
+            Rdp(3, "master", SessionConnectState.Disconnected),
+        };
+
+        InteractiveSessionSelector.TrySelect(sessions, targetUser: null, out var sessionId, out _)
+            .Should().BeTrue();
+
+        sessionId.Should().Be(3);
+    }
+
+    [Fact]
+    public void The_console_key_does_not_let_an_operators_active_session_steal_the_agent()
+    {
+        // Ordering matters: console-vs-remote sits BELOW the connect-state rank. With PreferDisconnectedSession
+        // the non-Active console must still win over an Active RDP session, or signing in to watch a run would
+        // yank the agent onto the operator's desktop — the exact thing that setting exists to prevent.
+        var sessions = new[]
+        {
+            Console(1, "buildacct", SessionConnectState.Disconnected),
+            Rdp(3, "operator", SessionConnectState.Active),
+        };
+
+        InteractiveSessionSelector.TrySelect(
+            sessions, targetUser: null, out var sessionId, out _, preferDisconnected: true).Should().BeTrue();
+
+        sessionId.Should().Be(1);
+    }
+
+    [Fact]
+    public void The_autologon_console_is_the_last_resort_when_every_rdp_session_has_gone()
+    {
+        var sessions = new[] { Services(), Console(1, "buildacct", SessionConnectState.Disconnected) };
+
+        InteractiveSessionSelector.TrySelect(sessions, targetUser: null, out var sessionId, out _)
+            .Should().BeTrue();
+
+        sessionId.Should().Be(1);
+    }
+
+    // ── Migration policy ─────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Migration_is_off_by_default_even_when_the_agents_session_has_vanished()
+    {
+        var sessions = new[] { Console(1, "buildacct", SessionConnectState.Disconnected) };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 3, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.Off, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Migrates_off_a_session_that_no_longer_exists()
+    {
+        // The RDP session the agent was launched into ended; its desktop is gone, so relaunching costs nothing
+        // that was not already lost. Both non-Off modes must act on this.
+        var sessions = new[] { Console(1, "buildacct", SessionConnectState.Disconnected) };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 3, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.OnSessionLost, out var reason).Should().BeTrue();
+
+        reason.Should().Contain("3");
+    }
+
+    [Fact]
+    public void Migrates_off_a_session_whose_user_signed_out_but_whose_id_lingers()
+    {
+        // Session still enumerated, but with no logged-on user — the token query would now fail with
+        // ERROR_NO_TOKEN, so this is as dead as a removed session.
+        var sessions = new[] { Rdp(3, null, SessionConnectState.Connected) };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 3, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.OnSessionLost, out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public void OnSessionLost_leaves_a_healthy_agent_alone_even_when_a_better_session_appears()
+    {
+        // The conservative mode: an upgrade is not worth killing a running build for.
+        var sessions = new[]
+        {
+            Console(1, "buildacct", SessionConnectState.Disconnected),
+            Rdp(3, "master", SessionConnectState.Disconnected),
+        };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 1, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.OnSessionLost, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Always_moves_the_agent_off_the_autologon_console_once_an_rdp_session_starts()
+    {
+        var sessions = new[]
+        {
+            Console(1, "buildacct", SessionConnectState.Disconnected),
+            Rdp(3, "master", SessionConnectState.Disconnected),
+        };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 1, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.Always, out var reason).Should().BeTrue();
+
+        reason.Should().Contain("3");
+    }
+
+    [Fact]
+    public void Always_leaves_the_agent_alone_when_it_is_already_on_the_best_session()
+    {
+        // The steady state — this check runs every stability window, so a false positive here would restart
+        // the agent in a loop forever.
+        var sessions = new[]
+        {
+            Console(1, "buildacct", SessionConnectState.Disconnected),
+            Rdp(3, "master", SessionConnectState.Disconnected),
+        };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 3, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.Always, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Always_upgrades_a_headless_agent_once_a_desktop_exists()
+    {
+        // The post-reboot recovery: nobody was signed in, the agent fell back to Session 0, and now somebody
+        // has logged on. currentSessionId is null for a headless launch.
+        var sessions = new[] { Rdp(3, "master", SessionConnectState.Active) };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: null, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.Always, out var reason).Should().BeTrue();
+
+        reason.Should().Contain("headless");
+    }
+
+    [Fact]
+    public void OnSessionLost_never_upgrades_a_headless_agent()
+    {
+        // A headless agent has no session to lose, so the conservative mode has nothing to react to.
+        var sessions = new[] { Rdp(3, "master", SessionConnectState.Active) };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: null, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.OnSessionLost, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_headless_agent_stays_headless_while_no_session_qualifies()
+    {
+        var sessions = new[] { Services(), EmptyConsole() };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: null, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.Always, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Migrates_when_the_pinned_target_user_moves_to_a_different_session()
+    {
+        // TargetUser signed out of session 3 and back in on session 4: session 3 still exists with another
+        // user, so only the pin makes it unusable.
+        var sessions = new[]
+        {
+            Rdp(3, "someoneelse", SessionConnectState.Disconnected),
+            Rdp(4, "master", SessionConnectState.Active),
+        };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 3, targetUser: "master", preferDisconnected: false,
+            SessionMigrationMode.OnSessionLost, out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Falling_back_to_session_zero_is_left_to_the_relaunch_when_no_session_survives()
+    {
+        // Everyone signed out. Migration still fires — the agent is sitting on a dead desktop — and the caller's
+        // bring-up path is what decides between a new session and the headless Session 0 fallback.
+        var sessions = new[] { Services(), EmptyConsole() };
+
+        InteractiveSessionSelector.ShouldMigrate(
+            sessions, currentSessionId: 3, targetUser: null, preferDisconnected: false,
+            SessionMigrationMode.OnSessionLost, out _).Should().BeTrue();
+    }
+
     [Fact]
     public void Describe_lists_interactive_sessions_and_hides_the_services_session()
     {

@@ -62,6 +62,7 @@ internal static class ConfigKeys
             internal const string TargetUser = "TargetUser";
             internal const string RequireInteractiveSession = "RequireInteractiveSession";
             internal const string PreferDisconnectedSession = "PreferDisconnectedSession";
+            internal const string SessionMigration = "SessionMigration";
         }
     }
 
