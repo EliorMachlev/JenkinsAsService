@@ -26,10 +26,14 @@ internal static class ConfigKeys
         internal const string Method = "Method";
         internal const string AgentName = "AgentName";
         internal const string ControllerCertThumbprint = "ControllerCertThumbprint";
+        internal const string Proxy = "Proxy";
+        internal const string ProxyBypass = "ProxyBypass";
 
         internal const string UrlPath = Name + ":" + Url;
         internal const string AgentNamePath = Name + ":" + AgentName;
         internal const string ControllerCertThumbprintPath = Name + ":" + ControllerCertThumbprint;
+        internal const string ProxyPath = Name + ":" + Proxy;
+        internal const string ProxyBypassPath = Name + ":" + ProxyBypass;
     }
 
     internal static class Secret

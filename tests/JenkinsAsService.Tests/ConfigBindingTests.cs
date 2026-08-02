@@ -29,7 +29,7 @@ public class ConfigBindingTests
         const string json = """
         {
           "Jenkins": {
-            "Connection": { "Url": "https://ci.example.com:8443", "Method": "Https", "AgentName": "node-1", "ControllerCertThumbprint": "AABB" },
+            "Connection": { "Url": "https://ci.example.com:8443", "Method": "Https", "AgentName": "node-1", "ControllerCertThumbprint": "AABB", "Proxy": "proxy.corp:3128", "ProxyBypass": "*.corp.local" },
             "Secret": { "Value": "cipher", "Mode": "Tpm", "DpapiScope": "User", "ViaFile": false },
             "Agent": { "JavaPath": "C:/jdk/bin", "CustomArguments": "-noCertificateCheck", "DataDirectory": "D:/data" },
             "Hardening": { "SanitizeEnvironment": false, "AllowedEnvironmentVariables": "MAVEN_OPTS" },
@@ -45,6 +45,9 @@ public class ConfigBindingTests
         s.Connection.Method.Should().Be(ConnectionMethod.Https);
         s.Connection.AgentName.Should().Be("node-1");
         s.Connection.ControllerCertThumbprint.Should().Be("AABB");
+        // Binding is by name and a typo is silent, so the proxy keys are asserted rather than assumed.
+        s.Connection.Proxy.Should().Be("proxy.corp:3128");
+        s.Connection.ProxyBypass.Should().Be("*.corp.local");
         s.Secret.Value.Should().Be("cipher");
         s.Secret.Mode.Should().Be(SecretMode.Tpm);
         s.Secret.DpapiScope.Should().Be(DpapiScope.User);
@@ -79,6 +82,8 @@ public class ConfigBindingTests
         s.Secret.Mode.Should().Be(SecretMode.Unprotected);
         s.Secret.DpapiScope.Should().Be(DpapiScope.Machine);
         s.Secret.ViaFile.Should().BeTrue();
+        s.Connection.Proxy.Should().BeEmpty("an absent proxy means 'inherit the system proxy'");
+        s.Connection.ProxyBypass.Should().BeEmpty();
         s.Logging.RetainedLogs.Should().Be(3);
         s.Recovery.MaxRetries.Should().Be(0);
     }

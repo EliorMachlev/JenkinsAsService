@@ -16,6 +16,8 @@ const string CompactLogKey = ConfigKeys.Logging.CompactLogPath;
 const string RetainedLogsKey = ConfigKeys.Logging.RetainedLogsPath;
 const string DataDirectoryKey = ConfigKeys.Agent.DataDirectoryPath;
 const string ControllerCertThumbprintKey = ConfigKeys.Connection.ControllerCertThumbprintPath;
+const string ProxyKey = ConfigKeys.Connection.ProxyPath;
+const string ProxyBypassKey = ConfigKeys.Connection.ProxyBypassPath;
 const int DefaultRetainedLogs = 3;
 const string ServiceName = "Jenkins";
 const string JarDownloaderClientName = HttpJarDownloader.ClientName;
@@ -63,7 +65,7 @@ ProcessMitigations.Apply(msg => Log.Warning("{Warning}", msg));
 
 try
 {
-    var host = BuildHost(args);
+    var host = BuildHost(args, basePath);
 
     if (!ValidateBoundSettings(host, basePath))
     {
@@ -83,8 +85,12 @@ finally
 
 static Serilog.Core.Logger BuildLogger(bool debugMode, bool compactLog, int retainedLogs, string logDirectory)
 {
+    // Level comes from a switch, not a fixed value, so LogLevelController can re-point it when
+    // Logging:DebugMode changes on disk — no service restart, no dropped agent, mid-investigation.
+    LogLevelController.Switch.MinimumLevel = LogLevelController.LevelFor(debugMode);
+
     var logConfig = new LoggerConfiguration()
-        .MinimumLevel.Is(debugMode ? LogEventLevel.Debug : LogEventLevel.Information)
+        .MinimumLevel.ControlledBy(LogLevelController.Switch)
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
         .MinimumLevel.Override("System.Net.Http", LogEventLevel.Warning)
         .MinimumLevel.Override("Polly", LogEventLevel.Warning)
@@ -133,36 +139,78 @@ static void ConfigureFileSink(LoggerConfiguration logConfig, bool compactLog, in
     }
 }
 
-static IHost BuildHost(string[] args)
+static IHost BuildHost(string[] args, string basePath)
 {
     var builder = Host.CreateApplicationBuilder(args);
+
+    // Pin configuration to the INSTALL folder, not the current directory. The host's default content root is
+    // the process working directory, which for a service started by SCM is %SystemRoot%\system32 — so without
+    // this the bound settings come back empty and the service dies claiming Connection:Url is missing while
+    // naming a config file that is fully populated. reloadOnChange also makes Logging:DebugMode live-toggleable
+    // (see LogLevelController); it is added last so it wins over the default source.
+    builder.Configuration.AddJsonFile(
+        Path.Combine(basePath, ConfigFileName), optional: true, reloadOnChange: true);
 
     builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
     builder.Services.Configure<ServiceSettings>(builder.Configuration.GetSection(ConfigSectionName));
 
-    var pinnedThumbprint = builder.Configuration.GetSection(ConfigSectionName)[ControllerCertThumbprintKey];
+    var jenkinsConfig = builder.Configuration.GetSection(ConfigSectionName);
+    var pinnedThumbprint = jenkinsConfig[ControllerCertThumbprintKey];
+    var proxy = jenkinsConfig[ProxyKey];
+    var proxyBypass = jenkinsConfig[ProxyBypassKey];
     var jarClient = builder.Services.AddHttpClient(JarDownloaderClientName);
     jarClient.AddStandardResilienceHandler();
 
-    if (!string.IsNullOrWhiteSpace(pinnedThumbprint))
+    // Pinning and the proxy both replace parts of the primary handler, so they are applied together —
+    // configuring it twice would leave whichever ran last silently discarding the other's settings.
+    var proxyMode = ProxyResolver.ClassifyMode(proxy);
+    var pinning = !string.IsNullOrWhiteSpace(pinnedThumbprint);
+    if (pinning || proxyMode != ProxyMode.System)
     {
-        Log.Information("Controller certificate pinning enabled for {Jar} download", "agent.jar");
-        jarClient.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        if (pinning)
         {
-            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            Log.Information("Controller certificate pinning enabled for {Jar} download", "agent.jar");
+        }
+
+        // Parsed eagerly so a malformed address fails at startup with a clear message, rather than on the
+        // first download attempt where it would look like an unreachable controller.
+        var webProxy = ProxyResolver.Create(proxy, proxyBypass);
+        LogProxyMode(proxyMode, webProxy);
+
+        jarClient.ConfigurePrimaryHttpMessageHandler(() =>
+        {
+            var handler = new SocketsHttpHandler();
+
+            if (proxyMode == ProxyMode.Direct)
             {
-                // Pin replaces chain trust: accept the connection only if the server certificate's
-                // SHA-256 thumbprint matches, rejecting any other certificate (incl. chain-trusted MITM).
-                RemoteCertificateValidationCallback = (_, cert, _, _) =>
-                    CertificateThumbprintValidator.Matches(
-                        cert as System.Security.Cryptography.X509Certificates.X509Certificate2, pinnedThumbprint)
+                handler.UseProxy = false;
             }
+            else if (webProxy is not null)
+            {
+                handler.Proxy = webProxy;
+                handler.UseProxy = true;
+            }
+
+            if (pinning)
+            {
+                handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+                {
+                    // Pin replaces chain trust: accept the connection only if the server certificate's
+                    // SHA-256 thumbprint matches, rejecting any other certificate (incl. chain-trusted MITM).
+                    RemoteCertificateValidationCallback = (_, cert, _, _) =>
+                        CertificateThumbprintValidator.Matches(
+                            cert as System.Security.Cryptography.X509Certificates.X509Certificate2, pinnedThumbprint)
+                };
+            }
+
+            return handler;
         });
     }
     builder.Services.AddSingleton<IJarDownloader, HttpJarDownloader>();
     builder.Services.AddSingleton<IConnectivityChecker, TcpConnectivityChecker>();
     builder.Services.AddSingleton<ISecretResolver, SecretResolver>();
     builder.Services.AddSingleton<IAgentProcessLauncher, AgentProcessLauncher>();
+    builder.Services.AddHostedService<LogLevelController>();
     builder.Services.AddHostedService<JenkinsAgentWorker>();
 
     builder.Logging.ClearProviders();
@@ -189,6 +237,23 @@ static IHost BuildHost(string[] args)
     }
 
     return builder.Build();
+}
+
+// Says which proxy the jar download will use. Worth a line at startup: a proxy that is configured but not
+// reaching the controller is otherwise indistinguishable from the controller being down.
+static void LogProxyMode(ProxyMode mode, System.Net.IWebProxy? webProxy)
+{
+    switch (mode)
+    {
+        case ProxyMode.Direct:
+            Log.Information("Proxy: bypassed for the {Jar} download (Connection:Proxy = direct)", "agent.jar");
+            break;
+        case ProxyMode.Explicit when webProxy is System.Net.WebProxy configured:
+            Log.Information("Proxy: {Address} for the {Jar} download", configured.Address, "agent.jar");
+            break;
+        default:
+            break;
+    }
 }
 
 static bool ValidateBoundSettings(IHost host, string basePath)

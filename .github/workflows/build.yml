@@ -86,3 +86,43 @@ jobs:
 
       - name: Build MSI x86
         run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=0.0.0 -o msi/x86/
+
+  # Installs the MSI for real. The reconcile logic is unit-tested, but custom-action SEQUENCING under
+  # WIX_UPGRADE_DETECTED only happens during an actual in-place upgrade — previously a manual-verify step,
+  # which is why the upgrade path stayed on the "not verified" list release after release.
+  msi-lifecycle:
+    name: MSI Install / Upgrade / Uninstall
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish x64
+        run: >-
+          dotnet publish src/JenkinsAsService
+          --nologo --configuration Release -p:RestoreLockedMode=true
+          --runtime win-x64 --self-contained true --output publish/x64/
+          -p:PublishSingleFile=true -p:PublishReadyToRun=true
+          /v:q /clp:ErrorsOnly
+
+      # Two versions from one publish: the upgrade needs a higher ProductVersion, nothing else differs.
+      - name: Build MSI 1.0.0 and 1.0.1
+        run: |
+          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.0 -o msi/v1/
+          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.1 -o msi/v2/
+
+      - name: Install, upgrade, uninstall
+        shell: pwsh
+        run: .github/scripts/Test-MsiLifecycle.ps1 -V1Msi (Get-Item msi/v1/*.msi).FullName -V2Msi (Get-Item msi/v2/*.msi).FullName
+
+      - name: Upload MSI logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: msi-logs
+          path: msi-logs/
+          if-no-files-found: warn

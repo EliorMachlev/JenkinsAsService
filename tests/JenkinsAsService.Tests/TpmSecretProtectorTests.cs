@@ -4,14 +4,47 @@ using FluentAssertions;
 
 namespace JenkinsAsService.Tests;
 
-// Round-trips use a USER-scoped TPM key so the tests need no elevation; production uses machine-scoped
-// keys. TPM-dependent tests early-return when no usable TPM / Platform Crypto Provider is present (e.g. CI
-// runners) — note they then report as *passed*, not skipped (xUnit 2.9 has no dynamic Assert.Skip; visible
-// skips would need Xunit.SkippableFact or an xUnit v3 upgrade). Treat green here as "did not regress", not
-// "TPM verified", unless the run is on TPM-capable hardware.
+// Round-trips use a USER-scoped TPM key so the tests need no elevation; production uses machine-scoped keys.
+//
+// TPM-dependent tests cannot run without a TPM / Platform Crypto Provider (e.g. CI runners), and xUnit 2.9 has
+// no dynamic Assert.Skip — so they bail out and report as *passed*. Green here therefore means "did not
+// regress", NOT "TPM verified".
+//
+// To stop that being indistinguishable from real coverage, set JAS_REQUIRE_TPM=1 on a TPM-capable machine:
+// the bail-out then FAILS instead of passing quietly, so a job that is supposed to exercise the TPM cannot
+// silently stop doing so (a provider that disappears after an OS change would otherwise go unnoticed).
 public class TpmSecretProtectorTests : IDisposable
 {
+    /// <summary>Set to <c>1</c>/<c>true</c> on hardware where TPM coverage is mandatory.</summary>
+    internal const string RequireTpmVariable = "JAS_REQUIRE_TPM";
+
     private readonly bool _tpm = TpmSecretProtector.IsAvailable();
+
+    /// <summary>
+    /// Whether the caller demanded real TPM coverage. Read per-call rather than cached so a test can be
+    /// reasoned about in isolation.
+    /// </summary>
+    internal static bool TpmCoverageRequired()
+    {
+        var value = Environment.GetEnvironmentVariable(RequireTpmVariable);
+        return value is "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the test body must be skipped. Fails the test instead when
+    /// <see cref="RequireTpmVariable"/> demands coverage, so "no TPM" can never masquerade as a pass.
+    /// </summary>
+    private static bool ShouldBailOut(bool available, string requirement)
+    {
+        if (available)
+        {
+            return false;
+        }
+
+        TpmCoverageRequired().Should().BeFalse(
+            $"{RequireTpmVariable} is set, so this run must exercise the TPM, but {requirement}");
+        return true;
+    }
 
     private static bool IsElevated()
     {
@@ -22,6 +55,31 @@ public class TpmSecretProtectorTests : IDisposable
 
         using var identity = WindowsIdentity.GetCurrent();
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("0", false)]
+    [InlineData("no", false)]
+    [InlineData("1", true)]
+    [InlineData("true", true)]
+    [InlineData("TRUE", true)]
+    public void The_require_tpm_switch_is_read_from_the_environment(string? value, bool expected)
+    {
+        // The whole point of the switch is that a TPM job cannot silently stop testing the TPM. If this
+        // parsing were wrong the switch would read as "not required" and restore exactly that blind spot,
+        // so it is verified directly rather than inferred from a run that happens to have hardware.
+        var original = Environment.GetEnvironmentVariable(RequireTpmVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(RequireTpmVariable, value);
+            TpmCoverageRequired().Should().Be(expected);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(RequireTpmVariable, original);
+        }
     }
 
     public void Dispose()
@@ -36,9 +94,9 @@ public class TpmSecretProtectorTests : IDisposable
     [Fact]
     public void Protect_then_resolve_round_trips_the_secret()
     {
-        if (!_tpm)
+        if (ShouldBailOut(_tpm, "no TPM / Platform Crypto Provider is available on this host"))
         {
-            return; // no TPM / Platform Crypto Provider on this host (reports as passed — see class note)
+            return;
         }
 
         const string secret = "jnlp-secret-1234567890abcdef";
@@ -52,7 +110,7 @@ public class TpmSecretProtectorTests : IDisposable
     [Fact]
     public void Protect_produces_base64_ciphertext_that_differs_from_plaintext()
     {
-        if (!_tpm)
+        if (ShouldBailOut(_tpm, "no TPM / Platform Crypto Provider is available on this host"))
         {
             return;
         }
@@ -69,7 +127,7 @@ public class TpmSecretProtectorTests : IDisposable
     [Fact]
     public void Resolve_with_no_key_present_throws_a_clear_error()
     {
-        if (!_tpm)
+        if (ShouldBailOut(_tpm, "no TPM / Platform Crypto Provider is available on this host"))
         {
             return;
         }
@@ -111,9 +169,10 @@ public class TpmSecretProtectorTests : IDisposable
     [Fact]
     public void Machine_key_round_trips_and_grants_service_account_access()
     {
-        if (!_tpm || !IsElevated())
+        // Machine-scoped TPM keys need a TPM *and* elevation; an unelevated TPM box legitimately skips this.
+        if (ShouldBailOut(_tpm, "no TPM / Platform Crypto Provider is available on this host") || !IsElevated())
         {
-            return; // machine-scoped TPM keys require a TPM and administrator privileges
+            return;
         }
 
         // Grant the current (elevated) identity use-rights, exercising the SID translation + DACL set,

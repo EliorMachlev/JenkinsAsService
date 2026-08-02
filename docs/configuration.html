@@ -91,6 +91,18 @@
             <td>SHA-256 thumbprint to pin the controller's TLS certificate for the <code>agent.jar</code> download. See <a href="#cert-pinning">Certificate Pinning</a>.</td>
           </tr>
           <tr>
+            <td><code>Connection:Proxy</code></td>
+            <td>No</td>
+            <td><em>(empty)</em></td>
+            <td>Proxy for the <code>agent.jar</code> download. Empty inherits the system/WinHTTP proxy; <code>direct</code> (or <code>none</code>) bypasses proxies entirely; anything else is an explicit address. See <a href="#proxy">Proxy</a>.</td>
+          </tr>
+          <tr>
+            <td><code>Connection:ProxyBypass</code></td>
+            <td>No</td>
+            <td><em>(empty)</em></td>
+            <td>Hosts that bypass an explicit <code>Connection:Proxy</code> &mdash; semicolon/comma-separated, <code>*</code> wildcards allowed. Ignored unless an explicit proxy is set.</td>
+          </tr>
+          <tr>
             <td><code>Secret:Value</code></td>
             <td><strong>Yes</strong></td>
             <td>&mdash;</td>
@@ -148,7 +160,7 @@
             <td><code>Logging:DebugMode</code></td>
             <td>No</td>
             <td><code>false</code></td>
-            <td><code>true</code> to enable debug-level logging, <code>false</code> to disable.</td>
+            <td><code>true</code> to enable debug-level logging, <code>false</code> to disable. <strong>Applied live</strong> &mdash; editing this in <code>appsettings.json</code> takes effect within seconds, with no service restart. See <a href="#live-debug">Turning debug logging on without a restart</a>.</td>
           </tr>
           <tr>
             <td><code>Logging:CompactLog</code></td>
@@ -179,7 +191,9 @@
       "Url": "https://jenkins.example.com:8443",
       "Method": "Auto",
       "AgentName": "",
-      "ControllerCertThumbprint": ""
+      "ControllerCertThumbprint": "",
+      "Proxy": "",
+      "ProxyBypass": ""
     },
     "Secret": {
       "Value": "your-agent-secret-here",
@@ -386,6 +400,43 @@
     <div class="callout callout-note">
       <div class="callout-title">Scope of the pin</div>
       <p>This pins the <strong>.NET <code>agent.jar</code> download only</strong>. The Java agent's own control-channel TLS is handled by the JVM, not .NET. To pin that connection as well, pass the controller certificate to the agent via <code>Agent:CustomArguments</code> (the Jenkins remoting agent accepts <code>-cert &lt;PEM&gt;</code>).</p>
+    </div>
+
+    <h3 id="proxy">Proxy</h3>
+    <p><code>Connection:Proxy</code> controls how the service reaches the controller to fetch <code>agent.jar</code>:</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Value</th><th>Behaviour</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><em>(empty &mdash; default)</em></td>
+            <td>Inherit the machine/WinHTTP proxy configuration, exactly as before this setting existed. Note a service runs as a different identity than you do, so a proxy configured under <em>your</em> user account is not necessarily visible to it &mdash; set it explicitly if the download fails but a browser on the same box works.</td>
+          </tr>
+          <tr>
+            <td><code>direct</code> or <code>none</code></td>
+            <td>Bypass proxies entirely and connect straight out. Use when a machine-wide proxy exists but the Jenkins controller is internal.</td>
+          </tr>
+          <tr>
+            <td><code>proxy.example.com:8080</code><br><code>http://proxy.example.com:8080</code></td>
+            <td>Use this proxy. A bare <code>host:port</code> is accepted and assumed <code>http</code>. A malformed value fails at <strong>startup</strong> with a clear message rather than looking like an unreachable controller later.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p><code>Connection:ProxyBypass</code> lists hosts that skip an explicit proxy &mdash; semicolon- or comma-separated, with <code>*</code> wildcards, e.g. <code>*.corp.local;jenkins.internal</code>. Local addresses always bypass. The chosen proxy is logged at startup, so a misrouted download is visible in the first few lines of <code>agent.log</code>.</p>
+    <div class="callout callout-warning">
+      <div class="callout-title">This covers the jar download only &mdash; not the agent's own connection</div>
+      <p>These settings apply to the .NET-side <code>agent.jar</code> download. The Java agent's long-lived connection to the controller is the <strong>JVM's</strong>, and ignores them entirely. To route that through a proxy as well, pass the JVM's own flags via <a href="#settings-reference"><code>Agent:CustomArguments</code></a>, for example <code>-Dhttps.proxyHost=proxy.example.com -Dhttps.proxyPort=8080 -Dhttp.nonProxyHosts="*.corp.local"</code>. A node whose jar downloads succeed but which never comes online is the classic symptom of configuring one and not the other.</p>
+    </div>
+
+    <h3 id="live-debug">Turning debug logging on without a restart</h3>
+    <p><code>Logging:DebugMode</code> is re-read while the service runs. Edit <code>appsettings.json</code>, save, and within a second or two the log level changes &mdash; the service logs <em>"Logging:DebugMode changed to true &mdash; log level is now Debug. No restart required."</em> and starts emitting the verbose Java agent output.</p>
+    <p>This matters because the alternative is restarting the service to diagnose it, which kills the agent, drops the Jenkins node, and destroys the very state you were trying to observe. Turn it back off the same way when you are done &mdash; debug output is verbose and will roll your log files faster.</p>
+    <div class="callout callout-note">
+      <div class="callout-title">Only the log level is live</div>
+      <p>Every other setting is still read once at startup. Changing the URL, the secret, the transport or the data directory needs a restart.</p>
     </div>
 
     <h3 id="secret-off-argv">Secret off the command line</h3>

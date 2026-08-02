@@ -3,10 +3,10 @@ name: HTML & CSS Lint
 on:
   push:
     branches: [ "main" ]
-    paths: [ "docs/**" ]
+    paths: [ "docs/**", ".github/workflows/html-lint.yml", ".github/scripts/check_doc_links.py" ]
   pull_request:
     branches: [ "main" ]
-    paths: [ "docs/**" ]
+    paths: [ "docs/**", ".github/workflows/html-lint.yml", ".github/scripts/check_doc_links.py" ]
 
 permissions:
   contents: read
@@ -27,3 +27,8 @@ jobs:
         run: |
           npm install --no-save stylelint stylelint-config-standard --silent
           npx stylelint "docs/*.css"
+
+      # Nu validates markup and Stylelint validates CSS; neither notices a link pointing at a section that
+      # no longer exists. Uses only the standard library, so there is nothing to install and no new action pin.
+      - name: Check internal links and search index
+        run: python .github/scripts/check_doc_links.py

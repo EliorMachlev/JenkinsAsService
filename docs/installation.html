@@ -208,7 +208,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       <li>Pre-creates the Windows Event Log source (the low-privilege account cannot create it at runtime)</li>
       <li>Configures Windows-level service recovery automatically (<code>util:ServiceConfig</code> &mdash; restart on all 3 failures after 10s, reset daily)</li>
       <li>Starts the service after install</li>
-      <li>Stops and removes the service on uninstall</li>
+      <li>Stops and removes the service on uninstall &mdash; see <a href="#uninstall">What uninstall removes</a></li>
       <li>Supports in-place upgrades (same <code>UpgradeCode</code> across versions), reconciling <code>appsettings.json</code> to the new schema without disturbing your settings or secret</li>
       <li>Default secret protection mode: <code>Dpapi</code> (machine-scoped encryption at rest)</li>
     </ul>
@@ -431,6 +431,38 @@ sc.exe start Jenkins</code></pre>
     <p>To uninstall:</p>
     <pre data-lang="powershell"><code>sc.exe stop Jenkins
 sc.exe delete Jenkins</code></pre>
+
+    <h2 id="uninstall">What uninstall removes &mdash; and what it keeps</h2>
+    <p>Uninstalling (Add/Remove Programs, or <code>msiexec /x</code>) stops and deregisters the service and deletes everything it installed. It <strong>deliberately leaves the data folder in place</strong>:</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Location</th><th>On uninstall</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>C:\Program Files\Jenkins</code> (install folder)</td>
+            <td><strong>Removed</strong>, including <code>appsettings.json</code></td>
+            <td>Everything here was installed by the MSI, and the config &mdash; which may hold an encrypted secret &mdash; goes with it</td>
+          </tr>
+          <tr>
+            <td>The <code>Jenkins</code> service</td>
+            <td><strong>Removed</strong> (stopped first)</td>
+            <td>Standard <code>ServiceControl</code> behaviour</td>
+          </tr>
+          <tr>
+            <td><code>C:\ProgramData\JenkinsAsService</code> (data folder)</td>
+            <td><strong>Kept</strong> &mdash; logs, cached <code>agent.jar</code>, and the <code>work\</code> directory</td>
+            <td>Logs are usually the reason you are uninstalling. Deleting a build workspace and its history as a side effect of removing a service would be a bad surprise</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-note">
+      <div class="callout-title">The secret is not left behind in the data folder</div>
+      <p>The runtime secret file (<code>.agent-secret</code>) is deleted when the service <em>stops</em>, so a normal uninstall removes it before the folder is orphaned. If a machine was powered off hard, check for it and delete it by hand. Remove the whole folder yourself once you have what you need:</p>
+      <pre data-lang="powershell"><code>Remove-Item 'C:\ProgramData\JenkinsAsService' -Recurse -Force</code></pre>
+    </div>
 
     <h2 id="automated-release">Automated Release</h2>
     <p>The GitHub Actions release workflow (<code>.github/workflows/release.yml</code>):</p>

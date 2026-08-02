@@ -38,6 +38,25 @@ public sealed class ConnectionSettings
     /// rejecting any other certificate even if chain-trusted. Empty = standard chain validation only.
     /// </summary>
     public string ControllerCertThumbprint { get; set; } = "";
+
+    /// <summary>
+    /// Proxy for the <c>agent.jar</c> download. Empty (default) inherits the machine/WinHTTP proxy
+    /// configuration; <c>direct</c> (or <c>none</c>) bypasses proxies entirely; anything else is an explicit
+    /// proxy address (<c>host:port</c>, or a full URL such as <c>http://proxy.example.com:8080</c>).
+    /// <para>
+    /// This covers the .NET-side download only. The Java agent's own connection to the controller is the
+    /// JVM's, and needs <c>-Dhttps.proxyHost=&#8230;</c> style flags passed through
+    /// <see cref="AgentSettings.CustomArguments"/>.
+    /// </para>
+    /// </summary>
+    public string Proxy { get; set; } = "";
+
+    /// <summary>
+    /// Hosts that bypass an explicit <see cref="Proxy"/> — semicolon- or comma-separated, with <c>*</c>
+    /// wildcards (e.g. <c>*.corp.local;jenkins.internal</c>). Ignored unless <see cref="Proxy"/> names an
+    /// explicit proxy. Local addresses always bypass.
+    /// </summary>
+    public string ProxyBypass { get; set; } = "";
 }
 
 /// <summary>Agent secret storage and protection (<c>Jenkins:Secret</c>).</summary>
