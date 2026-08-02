@@ -68,7 +68,6 @@ dotnet publish src/JenkinsAsService `
     --runtime win-x64 --self-contained true `
     --output publish/x64/ `
     -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:EnableCompressionInSingleFile=true `
     -p:PublishReadyToRun=true `
     -p:OptimizationPreference=Speed `
@@ -84,6 +83,8 @@ dotnet publish src/JenkinsAsService `
 # Build MSI installer (requires WiX v5 SDK — auto-restored via NuGet)
 dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publish/x64/ -p:Version=1.0.0</code></pre>
 
+    <p>These are the exact flags CI uses: both workflows call the local composite action <code>.github/actions/publish</code>, so the binary validated on a PR is built identically to the one attached to a release. <code>build.yml</code> exists to mirror the release steps, and a flag drifting between the two would defeat that.</p>
+
     <h3 id="publish-flags">Publish Flags</h3>
     <div class="table-wrap">
       <table>
@@ -97,10 +98,6 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
           <tr>
             <td><code>PublishSingleFile</code></td>
             <td>Single .exe output</td>
-          </tr>
-          <tr>
-            <td><code>IncludeNativeLibrariesForSelfExtract</code></td>
-            <td>Bundles native libs inside the single file</td>
           </tr>
           <tr>
             <td><code>EnableCompressionInSingleFile</code></td>

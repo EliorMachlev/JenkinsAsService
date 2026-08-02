@@ -18,6 +18,19 @@ internal static class SecretRedactor
     internal const string Replacement = "*****";
 
     /// <summary>
+    /// Characters a controller escapes when it echoes a value into an XML or HTML error body, and their
+    /// escaped forms. A table rather than a chain of <c>Replace</c> calls so the pairs stay visibly aligned
+    /// and adding one cannot accidentally reorder the others (<c>&amp;</c> must be escaped first, or it
+    /// would double-escape the ampersands the later replacements introduce).
+    /// </summary>
+    private static readonly (char Character, string Escaped)[] XmlEscapes =
+    [
+        ('&', "&amp;"),
+        ('<', "&lt;"),
+        ('>', "&gt;"),
+    ];
+
+    /// <summary>
     /// Encoded forms of <paramref name="secret"/> to scrub, longest first.
     /// <para>
     /// Order matters. When one form contains another (a secret with no special characters encodes to itself,
@@ -35,15 +48,24 @@ internal static class SecretRedactor
 
         var forms = new HashSet<string>(StringComparer.Ordinal)
         {
-            secret,
-            Uri.EscapeDataString(secret),                       // %-encoded in a URL or form body
-            secret.Replace("&", "&amp;", StringComparison.Ordinal)
-                  .Replace("<", "&lt;", StringComparison.Ordinal)
-                  .Replace(">", "&gt;", StringComparison.Ordinal), // XML/HTML-escaped in a controller error page
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(secret)),
+            secret,                                                 // as configured
+            Uri.EscapeDataString(secret),                           // %-encoded in a URL or form body
+            XmlEscape(secret),                                      // escaped in a controller error page
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(secret)), // an Authorization header, say
         };
 
         return [.. forms.OrderByDescending(f => f.Length)];
+    }
+
+    /// <summary>Applies <see cref="XmlEscapes"/> in order, mirroring how a controller would escape the value.</summary>
+    private static string XmlEscape(string value)
+    {
+        foreach (var (character, escaped) in XmlEscapes)
+        {
+            value = value.Replace(character.ToString(), escaped, StringComparison.Ordinal);
+        }
+
+        return value;
     }
 
     /// <summary>

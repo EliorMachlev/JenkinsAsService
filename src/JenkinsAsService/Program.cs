@@ -1,5 +1,8 @@
 // Copyright (c) 2024 All rights reserved
 
+using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using JenkinsAsService;
 using Microsoft.Extensions.Options;
 using OpenTelemetry.Metrics;
@@ -25,6 +28,7 @@ const string EventLogSource = EventLogSourceInstaller.DefaultSource;
 const string EventLogName = EventLogSourceInstaller.DefaultLogName;
 const string TextLogFileName = "agent.log";
 const string CompactLogFileName = "agent.clef";
+const string JarFileName = AgentJar.FileName;
 const long FileSizeLimitBytes = 10 * 1024 * 1024;
 const string TelemetrySectionName = ConfigKeys.TelemetrySection;
 const string LogOutputTemplate =
@@ -154,58 +158,78 @@ static IHost BuildHost(string[] args, string basePath)
     builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
     builder.Services.Configure<ServiceSettings>(builder.Configuration.GetSection(ConfigSectionName));
 
-    var jenkinsConfig = builder.Configuration.GetSection(ConfigSectionName);
-    var pinnedThumbprint = jenkinsConfig[ControllerCertThumbprintKey];
-    var proxy = jenkinsConfig[ProxyKey];
-    var proxyBypass = jenkinsConfig[ProxyBypassKey];
+    ConfigureJarDownloadClient(builder, builder.Configuration.GetSection(ConfigSectionName));
+    RegisterCoreServices(builder);
+    ConfigureTelemetry(builder);
+
+    return builder.Build();
+}
+
+// The agent.jar client is the only outbound HTTP in the service, and the only place transport policy
+// (resilience, proxy, certificate pinning) is decided.
+static void ConfigureJarDownloadClient(HostApplicationBuilder builder, IConfigurationSection jenkinsConfig)
+{
     var jarClient = builder.Services.AddHttpClient(JarDownloaderClientName);
     jarClient.AddStandardResilienceHandler();
 
-    // Pinning and the proxy both replace parts of the primary handler, so they are applied together —
-    // configuring it twice would leave whichever ran last silently discarding the other's settings.
-    var proxyMode = ProxyResolver.ClassifyMode(proxy);
-    var pinning = !string.IsNullOrWhiteSpace(pinnedThumbprint);
-    if (pinning || proxyMode != ProxyMode.System)
+    var thumbprint = jenkinsConfig[ControllerCertThumbprintKey];
+    var pinning = !string.IsNullOrWhiteSpace(thumbprint);
+    var proxyMode = ProxyResolver.ClassifyMode(jenkinsConfig[ProxyKey]);
+
+    if (!pinning && proxyMode == ProxyMode.System)
     {
-        if (pinning)
-        {
-            Log.Information("Controller certificate pinning enabled for {Jar} download", "agent.jar");
-        }
-
-        // Parsed eagerly so a malformed address fails at startup with a clear message, rather than on the
-        // first download attempt where it would look like an unreachable controller.
-        var webProxy = ProxyResolver.Create(proxy, proxyBypass);
-        LogProxyMode(proxyMode, webProxy);
-
-        jarClient.ConfigurePrimaryHttpMessageHandler(() =>
-        {
-            var handler = new SocketsHttpHandler();
-
-            if (proxyMode == ProxyMode.Direct)
-            {
-                handler.UseProxy = false;
-            }
-            else if (webProxy is not null)
-            {
-                handler.Proxy = webProxy;
-                handler.UseProxy = true;
-            }
-
-            if (pinning)
-            {
-                handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions
-                {
-                    // Pin replaces chain trust: accept the connection only if the server certificate's
-                    // SHA-256 thumbprint matches, rejecting any other certificate (incl. chain-trusted MITM).
-                    RemoteCertificateValidationCallback = (_, cert, _, _) =>
-                        CertificateThumbprintValidator.Matches(
-                            cert as System.Security.Cryptography.X509Certificates.X509Certificate2, pinnedThumbprint)
-                };
-            }
-
-            return handler;
-        });
+        return; // Default handler: system proxy, standard chain validation. Nothing to override.
     }
+
+    if (pinning)
+    {
+        Log.Information("Controller certificate pinning enabled for {Jar} download", JarFileName);
+    }
+
+    // Resolved eagerly so a malformed address fails at startup with a clear message, rather than on the
+    // first download attempt where it would look like an unreachable controller.
+    var proxy = ProxyResolver.Create(jenkinsConfig[ProxyKey], jenkinsConfig[ProxyBypassKey]);
+    LogProxySelection(proxyMode, (proxy as WebProxy)?.Address);
+
+    // Pinning and the proxy both replace parts of the primary handler, so they are applied in ONE callback —
+    // calling ConfigurePrimaryHttpMessageHandler twice would leave the later handler discarding the earlier.
+    jarClient.ConfigurePrimaryHttpMessageHandler(
+        () => BuildJarHandler(proxyMode, proxy, pinning ? thumbprint : null));
+}
+
+static SocketsHttpHandler BuildJarHandler(ProxyMode proxyMode, IWebProxy? proxy, string? pinnedThumbprint)
+{
+    var handler = new SocketsHttpHandler();
+
+    switch (proxyMode)
+    {
+        case ProxyMode.Direct:
+            handler.UseProxy = false;
+            break;
+        case ProxyMode.Explicit when proxy is not null:
+            handler.Proxy = proxy;
+            handler.UseProxy = true;
+            break;
+        default:
+            break; // ProxyMode.System — leave the handler's inherited default in place.
+    }
+
+    if (pinnedThumbprint is not null)
+    {
+        handler.SslOptions = new SslClientAuthenticationOptions
+        {
+            // Pin replaces chain trust: accept the connection only if the server certificate's SHA-256
+            // thumbprint matches, rejecting any other certificate (incl. a chain-trusted MITM).
+            RemoteCertificateValidationCallback = (_, cert, _, _) =>
+                CertificateThumbprintValidator.Matches(cert as X509Certificate2, pinnedThumbprint)
+        };
+    }
+
+    return handler;
+}
+
+static void RegisterCoreServices(HostApplicationBuilder builder)
+{
     builder.Services.AddSingleton<IJarDownloader, HttpJarDownloader>();
     builder.Services.AddSingleton<IConnectivityChecker, TcpConnectivityChecker>();
     builder.Services.AddSingleton<ISecretResolver, SecretResolver>();
@@ -215,44 +239,48 @@ static IHost BuildHost(string[] args, string basePath)
 
     builder.Logging.ClearProviders();
     builder.Services.AddSerilog();
-
-    var telemetry = builder.Configuration.GetSection(TelemetrySectionName).Get<TelemetrySettings>() ?? new TelemetrySettings();
-    if (telemetry.Enabled)
-    {
-        if (string.IsNullOrWhiteSpace(telemetry.OtlpEndpoint))
-        {
-            Log.Warning("Telemetry is enabled but OtlpEndpoint is not configured — metrics will not be exported.");
-        }
-        else
-        {
-            builder.Services.AddOpenTelemetry()
-                .ConfigureResource(r => r.AddService(telemetry.ServiceName))
-                .WithMetrics(metrics =>
-                {
-                    metrics.AddMeter(JenkinsAgentWorker.MeterName);
-                    metrics.AddRuntimeInstrumentation();
-                    metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetry.OtlpEndpoint));
-                });
-        }
-    }
-
-    return builder.Build();
 }
 
-// Says which proxy the jar download will use. Worth a line at startup: a proxy that is configured but not
-// reaching the controller is otherwise indistinguishable from the controller being down.
-static void LogProxyMode(ProxyMode mode, System.Net.IWebProxy? webProxy)
+static void ConfigureTelemetry(HostApplicationBuilder builder)
+{
+    var telemetry = builder.Configuration.GetSection(TelemetrySectionName).Get<TelemetrySettings>()
+                    ?? new TelemetrySettings();
+
+    if (!telemetry.Enabled)
+    {
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(telemetry.OtlpEndpoint))
+    {
+        Log.Warning("Telemetry is enabled but OtlpEndpoint is not configured — metrics will not be exported.");
+        return;
+    }
+
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(r => r.AddService(telemetry.ServiceName))
+        .WithMetrics(metrics =>
+        {
+            metrics.AddMeter(JenkinsAgentWorker.MeterName);
+            metrics.AddRuntimeInstrumentation();
+            metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetry.OtlpEndpoint));
+        });
+}
+
+// Worth a line at startup: a proxy that is configured but cannot reach the controller is otherwise
+// indistinguishable from the controller being down.
+static void LogProxySelection(ProxyMode mode, Uri? address)
 {
     switch (mode)
     {
         case ProxyMode.Direct:
-            Log.Information("Proxy: bypassed for the {Jar} download (Connection:Proxy = direct)", "agent.jar");
+            Log.Information("Proxy: bypassed for the {Jar} download (Connection:Proxy = direct)", JarFileName);
             break;
-        case ProxyMode.Explicit when webProxy is System.Net.WebProxy configured:
-            Log.Information("Proxy: {Address} for the {Jar} download", configured.Address, "agent.jar");
+        case ProxyMode.Explicit when address is not null:
+            Log.Information("Proxy: {Address} for the {Jar} download", address, JarFileName);
             break;
         default:
-            break;
+            break; // ProxyMode.System — the inherited proxy is not ours to describe.
     }
 }
 

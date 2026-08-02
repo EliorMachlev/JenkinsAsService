@@ -36,8 +36,19 @@ $installFolder = Join-Path $env:ProgramFiles 'Jenkins'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
 $serviceName = 'Jenkins'
+$productName = 'Jenkins Agent Service'
 $logDir = Join-Path (Get-Location) 'msi-logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+# The install and the upgrade must be given the SAME properties: the point of the upgrade assertions is that
+# the config survives, so any difference here would make a preserved value indistinguishable from a re-written
+# one. Declared once for exactly that reason.
+$commonProperties = @(
+    "DATAFOLDER=$dataFolder",
+    'JENKINS_URL=https://127.0.0.1:59999',
+    'JENKINS_SECRET=ci-smoke-secret',
+    'JENKINS_SECRET_MODE=Unprotected'
+)
 
 $script:Failures = @()
 
@@ -73,14 +84,7 @@ function Get-Config {
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 1. Fresh install (1.0.0) ==="
-Invoke-Msi -LogName 'install-v1' -Arguments @(
-    '/i', $V1Msi,
-    "DATAFOLDER=$dataFolder",
-    'JENKINS_URL=https://127.0.0.1:59999',
-    'JENKINS_SECRET=ci-smoke-secret',
-    'JENKINS_SECRET_MODE=Unprotected',
-    'JENKINS_AGENT_NAME=ci-node'
-)
+Invoke-Msi -LogName 'install-v1' -Arguments (@('/i', $V1Msi) + $commonProperties + 'JENKINS_AGENT_NAME=ci-node')
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service) "service '$serviceName' is registered"
@@ -112,13 +116,7 @@ $raw.Jenkins.Connection.PSObject.Properties.Remove('ControllerCertThumbprint')
 $raw.Jenkins.Logging | Add-Member -NotePropertyName 'NoSuchSetting' -NotePropertyValue 'remove-me'
 $raw | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding utf8
 
-Invoke-Msi -LogName 'upgrade-v2' -Arguments @(
-    '/i', $V2Msi,
-    "DATAFOLDER=$dataFolder",
-    'JENKINS_URL=https://127.0.0.1:59999',
-    'JENKINS_SECRET=ci-smoke-secret',
-    'JENKINS_SECRET_MODE=Unprotected'
-)
+Invoke-Msi -LogName 'upgrade-v2' -Arguments (@('/i', $V2Msi) + $commonProperties)
 
 $cfg = Get-Config
 Assert-That ($null -ne $cfg) "appsettings.json still exists after the upgrade"
@@ -133,7 +131,7 @@ Assert-That ($null -eq $cfg.Jenkins.Logging.PSObject.Properties['NoSuchSetting']
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service -and $service.Status -eq 'Running') "service is Running after the upgrade"
 
-$installed = (Get-CimInstance Win32_Product -Filter "Name='Jenkins Agent Service'" -ErrorAction SilentlyContinue)
+$installed = (Get-CimInstance Win32_Product -Filter "Name='$productName'" -ErrorAction SilentlyContinue)
 if ($installed) {
     Assert-That ($installed.Version -eq '1.0.1') "installed product version is 1.0.1 (in-place upgrade, not side-by-side)"
 }

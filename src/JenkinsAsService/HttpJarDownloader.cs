@@ -7,9 +7,9 @@ namespace JenkinsAsService;
 
 public sealed class HttpJarDownloader : IJarDownloader
 {
-    private const string JarFilename = "agent.jar"; // intentional: decoupled from JenkinsAgentWorker
-    private const string ETagFilename = "agent.jar.etag";
-    private const string HashFilename = "agent.jar.sha256";
+    private const string JarFilename = AgentJar.FileName;
+    private const string ETagFilename = AgentJar.ETagFileName;
+    private const string HashFilename = AgentJar.HashFileName;
     private const string TempSuffix = ".tmp";
     private const string JnlpJarsPath = "jnlpJars";
     private const int ShortHashLength = 12;

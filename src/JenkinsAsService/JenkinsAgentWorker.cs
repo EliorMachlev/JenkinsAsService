@@ -17,7 +17,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const int UnknownExitCode = -1;
 
     // ─── Files / process ──────────────────────────────────────────────────────
-    private const string JarFilename = "agent.jar";
+    private const string JarFilename = AgentJar.FileName;
 
     // ─── Java agent CLI argument names ─────────────────────────────────────────
     private const string ArgJar = "-jar";

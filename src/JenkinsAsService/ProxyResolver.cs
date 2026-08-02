@@ -1,6 +1,8 @@
 // Copyright (c) 2024 All rights reserved
 
+using System.Globalization;
 using System.Net;
+using System.Text.RegularExpressions;
 
 namespace JenkinsAsService;
 
@@ -33,6 +35,21 @@ internal static class ProxyResolver
 {
     private const string DirectKeyword = "direct";
     private const string NoneKeyword = "none";
+    private const string SchemeSeparator = "://";
+    private const string DefaultScheme = "http://";
+
+    /// <summary>Wildcard an operator may use in a bypass entry, e.g. <c>*.corp.local</c>.</summary>
+    private const string Wildcard = @"\*";
+
+    /// <summary>Regex equivalent of <see cref="Wildcard"/>: any run of characters within one URI segment.</summary>
+    private const string WildcardPattern = "[^/]*";
+
+    /// <summary>
+    /// Wraps a host pattern in the URI shape <see cref="WebProxy.BypassList"/> actually matches against,
+    /// with an optional port and path, anchored at both ends. <c>{0}</c> is the escaped host.
+    /// </summary>
+    private const string BypassUriPattern = "^[^:]+://{0}(:[0-9]+)?(/.*)?$";
+
     private static readonly char[] BypassSeparators = [';', ','];
 
     /// <summary>
@@ -64,7 +81,9 @@ internal static class ProxyResolver
     internal static Uri ParseAddress(string address)
     {
         var trimmed = address.Trim();
-        var candidate = trimmed.Contains("://", StringComparison.Ordinal) ? trimmed : "http://" + trimmed;
+        var candidate = trimmed.Contains(SchemeSeparator, StringComparison.Ordinal)
+            ? trimmed
+            : DefaultScheme + trimmed;
 
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
         {
@@ -90,24 +109,20 @@ internal static class ProxyResolver
     /// </summary>
     internal static IWebProxy? Create(string? proxy, string? bypass)
     {
-        switch (ClassifyMode(proxy))
+        if (ClassifyMode(proxy) != ProxyMode.Explicit)
         {
-            case ProxyMode.System:
-            case ProxyMode.Direct:
-                return null;
-            default:
-                var address = ParseAddress(proxy!);
-                var result = new WebProxy(address) { BypassProxyOnLocal = true };
-                var list = ParseBypassList(bypass);
-                if (list.Length > 0)
-                {
-                    // WebProxy treats these as regular expressions, not wildcards. Operators write
-                    // "*.corp.local" out of habit, so translate that shape rather than silently never matching.
-                    result.BypassList = [.. list.Select(ToBypassRegex)];
-                }
-
-                return result;
+            return null; // System: inherit the handler default. Direct: the caller clears UseProxy instead.
         }
+
+        var result = new WebProxy(ParseAddress(proxy!)) { BypassProxyOnLocal = true };
+
+        var entries = ParseBypassList(bypass);
+        if (entries.Length > 0)
+        {
+            result.BypassList = [.. entries.Select(ToBypassRegex)];
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -124,10 +139,8 @@ internal static class ProxyResolver
     {
         // Escape first, then reinstate the wildcard as "any run of non-separator characters", so a '*' is the
         // only metacharacter an operator can use and a literal '.' cannot match an arbitrary character.
-        var host = System.Text.RegularExpressions.Regex
-            .Escape(entry.Trim())
-            .Replace(@"\*", "[^/]*", StringComparison.Ordinal);
+        var host = Regex.Escape(entry.Trim()).Replace(Wildcard, WildcardPattern, StringComparison.Ordinal);
 
-        return $"^[^:]+://{host}(:[0-9]+)?(/.*)?$";
+        return string.Format(CultureInfo.InvariantCulture, BypassUriPattern, host);
     }
 }
