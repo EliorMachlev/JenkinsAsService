@@ -175,6 +175,43 @@ public class SecretWriterTests : IDisposable
     }
 
     [Fact]
+    public void WriteConfig_fresh_install_emits_every_schema_key()
+    {
+        // A fresh install has no existing file: the hand-built section must still be reconciled to the full
+        // POCO schema, so newer keys the writer doesn't set (Agent:LaunchInInteractiveSession) and the whole
+        // Telemetry section are present at their defaults — matching what an MSI upgrade would produce.
+        SecretWriter.WriteConfig(_tempDir, "fresh-secret", SecretMode.Unprotected,
+            "https://jenkins:8443", "agent-x", @"C:\jdk");
+
+        var root = ReadConfig().RootElement;
+        var jenkins = root.GetProperty("Jenkins");
+
+        var interactive = jenkins.GetProperty("Agent").GetProperty("LaunchInInteractiveSession");
+        interactive.GetProperty("Enabled").GetBoolean().Should().BeFalse("default is off");
+        interactive.GetProperty("LocalSystemOnly").GetBoolean().Should().BeTrue("default is LocalSystem-gated");
+
+        root.TryGetProperty("Telemetry", out _).Should().BeTrue("the Telemetry section is part of the schema");
+
+        // The reconcile must not disturb the values the writer set — especially the secret.
+        jenkins.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("fresh-secret");
+        jenkins.GetProperty("Connection").GetProperty("Url").GetString().Should().Be("https://jenkins:8443");
+        jenkins.GetProperty("Connection").GetProperty("AgentName").GetString().Should().Be("agent-x");
+    }
+
+    [Fact]
+    public void WriteConfig_fresh_install_output_binds_and_needs_no_further_reconcile()
+    {
+        // The fresh-install file should already be schema-complete: a follow-up NormalizeConfig must be a
+        // no-op (nothing added, nothing removed), proving the writer and the upgrade path now agree.
+        SecretWriter.WriteConfig(_tempDir, "secret", SecretMode.Unprotected, "https://jenkins:8443", null, null);
+
+        var (added, removed) = SecretWriter.NormalizeConfig(_tempDir);
+
+        added.Should().BeEmpty("fresh install already emitted every schema key");
+        removed.Should().BeEmpty("fresh install emitted no keys outside the schema");
+    }
+
+    [Fact]
     public void SetDataDirectory_sets_field_and_preserves_other_fields_and_sections()
     {
         const string existingJson =
