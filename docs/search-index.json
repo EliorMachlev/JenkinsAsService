@@ -80,36 +80,6 @@
     ]
   },
   {
-    "topic": "Interactive-Session Launch",
-    "items": [
-      {
-        "title": "Interactive-session launch (visible GUI tests)",
-        "url": "configuration.html#interactive-session",
-        "keywords": ["interactive session", "session 0", "visible desktop", "gui tests", "selenium", "browser", "createprocessasuser", "localsystem", "isolation downgrade"]
-      },
-      {
-        "title": "Which session is chosen",
-        "url": "configuration.html#interactive-session-selection",
-        "keywords": ["session selection", "targetuser", "preferdisconnectedsession", "disconnected", "rdp", "console session", "logged-on user", "ranking"]
-      },
-      {
-        "title": "Following the session while running",
-        "url": "configuration.html#interactive-session-migration",
-        "keywords": ["session migration", "sessionmigration", "onsessionlost", "always", "relaunch", "node drops", "build interrupted"]
-      },
-      {
-        "title": "Required privileges",
-        "url": "configuration.html#interactive-session-privileges",
-        "keywords": ["setcbprivilege", "seassignprimarytokenprivilege", "seincreasequotaprivilege", "user rights assignment", "privilege not held", "access denied", "wtsqueryusertoken"]
-      },
-      {
-        "title": "Autologon: a desktop from boot",
-        "url": "configuration.html#interactive-session-autologon",
-        "keywords": ["autologon", "sysinternals", "lsa secret", "unattended desktop", "build node", "winlogon"]
-      }
-    ]
-  },
-  {
     "topic": "Security",
     "items": [
       {
@@ -226,11 +196,6 @@
         "title": "Message reference by severity",
         "url": "troubleshooting.html#message-severity",
         "keywords": ["log messages", "errors", "warnings", "meaning", "watchdog messages", "mandatory field", "unreachable", "max retries"]
-      },
-      {
-        "title": "Interactive-session launch falls back to headless",
-        "url": "troubleshooting.html#interactive-session-problems",
-        "keywords": ["error_no_token", "error_access_denied", "error_privilege_not_held", "headless fallback", "invisible agent", "migration not retried", "session warning"]
       },
       {
         "title": "Service recovery",

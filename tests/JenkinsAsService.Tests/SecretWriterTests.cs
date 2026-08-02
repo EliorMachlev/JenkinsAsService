@@ -178,17 +178,17 @@ public class SecretWriterTests : IDisposable
     public void WriteConfig_fresh_install_emits_every_schema_key()
     {
         // A fresh install has no existing file: the hand-built section must still be reconciled to the full
-        // POCO schema, so newer keys the writer doesn't set (Agent:LaunchInInteractiveSession) and the whole
-        // Telemetry section are present at their defaults — matching what an MSI upgrade would produce.
+        // POCO schema, so keys the writer doesn't set and the whole Telemetry section are present at their
+        // defaults — matching what an MSI upgrade would produce.
         SecretWriter.WriteConfig(_tempDir, "fresh-secret", SecretMode.Unprotected,
             "https://jenkins:8443", "agent-x", @"C:\jdk");
 
         var root = ReadConfig().RootElement;
         var jenkins = root.GetProperty("Jenkins");
 
-        var interactive = jenkins.GetProperty("Agent").GetProperty("LaunchInInteractiveSession");
-        interactive.GetProperty("Enabled").GetBoolean().Should().BeFalse("default is off");
-        interactive.GetProperty("LocalSystemOnly").GetBoolean().Should().BeTrue("default is LocalSystem-gated");
+        var hardening = jenkins.GetProperty("Hardening");
+        hardening.GetProperty("SanitizeEnvironment").GetBoolean().Should().BeTrue("default is deny-by-default");
+        jenkins.GetProperty("Secret").GetProperty("ViaFile").GetBoolean().Should().BeTrue("default keeps the secret off argv");
 
         root.TryGetProperty("Telemetry", out _).Should().BeTrue("the Telemetry section is part of the schema");
 

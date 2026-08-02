@@ -29,7 +29,6 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **Secret redaction** — agent secrets are scrubbed from all log output
 - **Binary/data separation** — read-only binaries in `Program Files`, writable runtime data in `ProgramData`; the cached `agent.jar` is isolated from the build workspace so a build step can't swap the binary the watchdog launches
 - **Non-destructive upgrades** — an in-place MSI upgrade reconciles `appsettings.json` to the new schema, preserving your values and secret (detected without decrypting it)
-- **Visible GUI/browser tests** — opt-in, off by default: run the agent on a logged-on user's desktop instead of Session 0, with session selection and an automatic headless fallback. A [deliberate isolation downgrade](https://jenkinsasservice.machlev.org/configuration.html#interactive-session) — debug nodes only
 - **Unit-tested** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness driven by a fake process), CI on every push
 - **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy; all actions SHA-pinned
 - **Single-file deploy** — self-contained `.exe` with R2R, compression, and embedded PDB symbols
@@ -143,7 +142,6 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 | `Agent:JavaPath` | No | `JAVA_HOME` | Path to JDK `bin` folder |
 | `Agent:CustomArguments` | No | *(empty)* | Extra `java.exe` args (supports quoted values and escaped quotes) |
 | `Agent:DataDirectory` | No | `%ProgramData%\JenkinsAsService` | Writable root for runtime data, separate from the read-only install folder: logs + secret at the root, cached `agent.jar` under `agent\`, Jenkins `-workDir` under `work\` |
-| `Agent:LaunchInInteractiveSession:*` | No | *(off)* | Opt-in visible-desktop launch (`Enabled`, `LocalSystemOnly`, `TargetUser`, `RequireInteractiveSession`, `PreferDisconnectedSession`, `SessionMigration`). Requires `LocalSystem`, is a deliberate isolation downgrade, and is edited by hand — the installer never sets it. See the [docs](https://jenkinsasservice.machlev.org/configuration.html#interactive-session) |
 | `Hardening:SanitizeEnvironment` | No | `true` | Launch the agent with a deny-by-default environment (curated allow-list only) |
 | `Hardening:AllowedEnvironmentVariables` | No | *(empty)* | Extra env var names (`;`/`,`-separated) to pass through when sanitizing |
 | `Logging:DebugMode` | No | `false` | Verbose Java agent output in logs |
@@ -221,7 +219,7 @@ The MSI installer configures Windows-level service recovery automatically: first
 
 Logs are in the **data** folder (`%ProgramData%\JenkinsAsService\agent.log`), not next to the executable — the install folder is deliberately read-only to the service account.
 
-Log messages the service emits, by severity. **Errors** stop the service (or the current startup); **Warnings** are non-fatal — the watchdog keeps going. Fuller guidance, including the interactive-session failures, is in the [troubleshooting docs](https://jenkinsasservice.machlev.org/troubleshooting.html).
+Log messages the service emits, by severity. **Errors** stop the service (or the current startup); **Warnings** are non-fatal — the watchdog keeps going. Fuller guidance is in the [troubleshooting docs](https://jenkinsasservice.machlev.org/troubleshooting.html).
 
 | Log message / symptom | Type | Meaning & fix |
 |---|:---:|---|

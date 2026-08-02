@@ -167,21 +167,6 @@
             <td>Emitted by <code>update-secret --secret-file</code> when the file it consumed could not be removed (held open, or ACL denies delete). The secret was applied, but a plaintext copy remains on disk &mdash; delete the named file manually.</td>
           </tr>
           <tr>
-            <td><code>Agent:LaunchInInteractiveSession is enabled but &hellip; Falling back to a Session 0 (headless) launch.</code></td>
-            <td>Warning</td>
-            <td>A precondition for the visible-desktop launch is missing. The agent runs normally but invisibly &mdash; see <a href="#interactive-session-problems">Interactive-session launch falls back to headless</a>.</td>
-          </tr>
-          <tr>
-            <td><code>Watchdog: restarting the agent to move it to a different desktop &mdash; &lt;reason&gt;</code></td>
-            <td>Warning</td>
-            <td>A deliberate <a href="configuration.html#interactive-session-migration">session migration</a>. The node drops and any build in flight dies &mdash; expected with <code>SessionMigration: Always</code>. Set it to <code>OnSessionLost</code> or <code>Off</code> on a shared build node.</td>
-          </tr>
-          <tr>
-            <td><code>&hellip;SessionMigration is set to &lt;mode&gt; but Enabled is false, so it has no effect</code></td>
-            <td>Warning</td>
-            <td>Migration only runs behind the master switch &mdash; the one config mistake here that otherwise produces no runtime evidence at all. Set <code>Enabled: true</code>, or clear <code>SessionMigration</code>.</td>
-          </tr>
-          <tr>
             <td>Agent connects then disconnects randomly</td>
             <td>Warning</td>
             <td><code>Connection:AgentName</code> and <code>Secret:Value</code> must match the Jenkins node config exactly; check network stability.</td>
@@ -203,53 +188,6 @@
       <li><strong>Repeated full downloads instead of 304s</strong> &mdash; the cached jar failed its SHA-256 check (tampered, or truncated by something outside the service) and was deliberately re-fetched, or the controller sends no <code>ETag</code>. Check what else writes to the <code>agent\</code> cache directory; nothing else should.</li>
       <li><strong>TLS failure with a pin configured</strong> &mdash; <code>Connection:ControllerCertThumbprint</code> replaces chain trust for this download. After a controller certificate renewal the pin must be updated, or the download fails while everything else looks healthy.</li>
     </ul>
-
-    <h3 id="interactive-session-problems">Interactive-session launch falls back to headless</h3>
-
-    <p>Applies only when <a href="configuration.html#interactive-session"><code>Agent:LaunchInInteractiveSession:Enabled</code></a> is on. Every precondition miss is a <strong>warning</strong> that names the cause and then falls back to a normal Session 0 launch &mdash; the agent stays up, just invisible &mdash; so the symptom is "the node works but nothing appears on the desktop".</p>
-
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Warning</th>
-            <th>Meaning &amp; fix</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>&hellip;<code>the service is not running as LocalSystem</code></td>
-            <td>The default virtual account can't cross the session boundary. Run the service as LocalSystem (<code>sc.exe config Jenkins obj= LocalSystem</code>) and restart it.</td>
-          </tr>
-          <tr>
-            <td>&hellip;<code>the service account does not hold &lt;privilege&gt;</code></td>
-            <td>Only with <code>LocalSystemOnly: false</code>. Grant the named right in User Rights Assignment <strong>and restart the service</strong> &mdash; a token takes its privileges at logon, so <code>gpupdate</code> alone does not reach the running process. Note a domain GPO defining any of the three silently replaces a local grant.</td>
-          </tr>
-          <tr>
-            <td>&hellip;<code>no session has a logged-on user</code> (the warning lists every session it saw)</td>
-            <td>Nobody is signed in anywhere &mdash; a console parked at the logon screen has no token. Configure <a href="configuration.html#interactive-session-autologon">autologon</a>, or set <code>RequireInteractiveSession: true</code> so the node waits offline instead of running invisibly.</td>
-          </tr>
-          <tr>
-            <td>&hellip;<code>the configured TargetUser &lt;name&gt; is not logged on</code></td>
-            <td>Sessions exist, but none belongs to the pinned user. Sign in as that account, or clear <code>TargetUser</code> to accept any logged-on user. Distinguished from the row above on purpose &mdash; the two need different actions.</td>
-          </tr>
-          <tr>
-            <td>&hellip;<code>ERROR_NO_TOKEN (1008)</code></td>
-            <td>The chosen session lost its user between selection and the token query &mdash; a sign-out mid-launch. Self-corrects on the next bring-up.</td>
-          </tr>
-          <tr>
-            <td>&hellip;<code>ERROR_ACCESS_DENIED (5)</code></td>
-            <td>Terminal Services' own access check on the target session, which runs <em>after</em> the privilege check. A low-privilege named account fails it even with all three rights enabled. Run as LocalSystem &mdash; see <a href="configuration.html#interactive-session-named-account">the named-account caveat</a>.</td>
-          </tr>
-          <tr>
-            <td><code>Watchdog: not retrying the session migration &hellip;</code></td>
-            <td>With <code>SessionMigration: Always</code>, a relaunch put the agent back in the same session, so the interactive launch itself is failing rather than the session having moved. The watchdog stops migrating until the sessions change &mdash; fix the cause named in the warning above it. Without this guard the node would drop and kill the running build every 60&nbsp;s.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p>If the tests <em>fail</em> under the service but pass when you run the agent by hand, the session is unlikely to be the cause &mdash; this setting buys visibility, not capability. Look instead at the sanitized environment (<code>Hardening:SanitizeEnvironment</code>), the account's profile and mapped drives, and its permissions.</p>
 
     <h3 id="agent-connects-but-disconnects-randomly">Agent connects but disconnects randomly</h3>
 
