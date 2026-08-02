@@ -74,9 +74,13 @@ Use a descriptive prefix:
 
 - Target framework is `net10.0-windows` — do not add cross-platform targets
 - Follow the existing code style (no `.editorconfig` overrides)
-- No floating NuGet version ranges — pin all dependencies to exact versions
-- Update `packages.lock.json` when adding or changing dependencies (`dotnet restore --force-evaluate`)
+- **Central Package Management**: every NuGet version lives in `Directory.Packages.props`. `PackageReference` entries in `.csproj` files must **not** carry a `Version` attribute
+- No floating version ranges — pin all dependencies to exact versions
+- Update the `packages.lock.json` files when adding or changing dependencies (`dotnet restore --force-evaluate`); the app, tests and installer each have one, and CI restores with `RestoreLockedMode=true`
+- Prefer `internal static` testable units (validators, parsers, pure predicates) over widening a type to public; tests reach internals via `InternalsVisibleTo`
+- Use the `ConfigKeys` constants for configuration paths — binding is by name, so a typo is silent
 - Keep the single-file self-contained deployment model — avoid dependencies that break it
+- Don't regress the security posture: secrets stay off the process table and out of logs, the agent child keeps its deny-by-default environment, and the install folder stays non-writable by the agent identity. If a change touches any of these, call it out in the PR
 
 ### Tests
 
@@ -111,8 +115,13 @@ Every push and PR triggers:
 | **PSScriptAnalyzer** | PowerShell script linting |
 | **Dependency Review** | Blocks PRs that introduce known CVEs |
 | **Trivy** | Software composition analysis (NVD, GHSA, OSV) |
+| **HTML & CSS lint** | Runs when `docs/` changes: W3C Nu HTML validation + Stylelint |
 
 All checks must pass before merge.
+
+## Documentation Changes
+
+The published site lives in `docs/*.html` (plain HTML, no build step). `docs/configuration.html` is the authoritative settings reference — when code and docs disagree, the code wins and the doc gets fixed. If you add a page or a major section, add it to `docs/search-index.json` too, or it won't be findable from the in-page search. Docs edits must pass the HTML/CSS lint workflow.
 
 ## Installer Changes
 

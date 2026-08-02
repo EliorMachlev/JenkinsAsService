@@ -51,7 +51,7 @@
 
     <div class="callout callout-summary">
       <div class="callout-title">Summary</div>
-      <p>A .NET 10 Windows Service that runs a Jenkins Agent (JNLP/inbound) natively. Includes an event-driven watchdog with auto-recovery, secret protection (TPM/DPAPI/CredMgr/EnvVar), structured logging with Serilog, ETag-based jar caching, and optional OpenTelemetry metrics. Eliminates the need for manual agent startup, login sessions, or scheduled tasks.</p>
+      <p>A .NET 10 Windows Service that runs a Jenkins Agent (JNLP/inbound) natively. Includes an event-driven watchdog with auto-recovery, secret protection (TPM/DPAPI/CredMgr/EnvVar), structured logging with Serilog, an integrity-checked jar cache, and optional OpenTelemetry metrics. Eliminates the need for manual agent startup, login sessions, or scheduled tasks.</p>
     </div>
 
     <h2 id="documentation">Documentation</h2>
@@ -83,7 +83,7 @@
           </tr>
           <tr>
             <td>Key Features</td>
-            <td>Event-driven watchdog, ETag jar caching, secret protection (TPM/DPAPI/CredMgr/EnvVar), OpenTelemetry (opt-in), HTTP resilience (Polly), secret redaction, CLEF JSON logging</td>
+            <td>Event-driven watchdog, ETag + SHA-256 jar cache, secret protection (TPM/DPAPI/CredMgr/EnvVar), binary/data separation, OpenTelemetry (opt-in), HTTP resilience (Polly), secret redaction, CLEF JSON logging, schema-reconciling upgrades</td>
           </tr>
           <tr>
             <td>Build</td>
@@ -99,7 +99,7 @@
           </tr>
           <tr>
             <td>Testing</td>
-            <td>178 unit tests (xUnit + NSubstitute + FluentAssertions)</td>
+            <td>xUnit + NSubstitute + FluentAssertions, incl. an end-to-end watchdog harness</td>
           </tr>
           <tr>
             <td>CI/CD</td>

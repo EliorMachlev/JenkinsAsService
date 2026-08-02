@@ -121,6 +121,57 @@ public sealed class InteractiveSessionSettings
     /// switch does not reduce the blast radius — it only hides it behind a named account.
     /// </summary>
     public bool LocalSystemOnly { get; set; } = true;
+
+    /// <summary>
+    /// Optional user name to pin the launch to (e.g. <c>svc-build</c> or <c>DOMAIN\svc-build</c>; matched
+    /// case-insensitively and a domain prefix is ignored). When empty (default) any logged-on user's session
+    /// qualifies, ranked by <see cref="InteractiveSessionSelector.TrySelect"/>. Set this on a machine
+    /// where more than one person may be signed in, so the agent cannot land on an operator's ad-hoc RDP
+    /// desktop instead of the dedicated build desktop.
+    /// </summary>
+    public string TargetUser { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When <c>true</c>, an interactive launch that cannot find a usable session is a hard failure: the agent
+    /// is not started headless, and the supervision loop retries with its normal backoff until a desktop
+    /// exists. The Jenkins node stays <em>offline</em> instead of running the job where nobody can watch it.
+    /// <para>
+    /// Note this is about <em>visibility, not correctness</em>. Session 0 has its own window station and
+    /// desktop (<c>Service-0x0-3e7$\Default</c>), so a Selenium/NUnit browser still launches and the tests
+    /// still pass there — they simply render where no display can show them. Set this when the whole point of
+    /// the run is to observe it, so a silent fallback can't leave you watching an empty desktop while the job
+    /// executes out of sight. Defaults to <c>false</c> (fall back to a headless launch), which keeps the node
+    /// online and the tests running.
+    /// </para>
+    /// </summary>
+    public bool RequireInteractiveSession { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, prefer a session that is <em>not</em> <c>Active</c> — a disconnected RDP session or
+    /// an autologon console session with a client attached elsewhere. The unattended build desktop normally
+    /// sits non-Active, while an <c>Active</c> session usually belongs to somebody working at that moment, so
+    /// this keeps the agent off an operator's desktop when they sign in to watch a run. Defaults to
+    /// <c>false</c> (prefer <c>Active</c>). The tie-break flips with it: <c>true</c> takes the
+    /// <em>highest</em> session id — ids increase as sessions are created, so that is the newest session and
+    /// skips stale disconnected ones — while the default takes the lowest, keeping a console-session setup on
+    /// session 1. <see cref="TargetUser"/> still wins outright when set.
+    /// </summary>
+    public bool PreferDisconnectedSession { get; set; }
+
+    /// <summary>
+    /// Whether the watchdog re-targets the session while the agent is already running: <c>Off</c> (default —
+    /// chosen once at launch), <c>OnSessionLost</c> (relaunch when the agent's session ends), or <c>Always</c>
+    /// (also relaunch when a better-ranked session appears, e.g. an RDP session starting while the agent sits
+    /// on the autologon console, or a headless Session 0 fallback that can now be upgraded).
+    /// <para>
+    /// A process cannot be moved between sessions, so <strong>every migration kills and relaunches the Java
+    /// agent</strong> — the Jenkins node drops and any build in flight dies. <c>OnSessionLost</c> is safe by
+    /// construction (that desktop is already gone); <c>Always</c> trades build interruptions for staying on
+    /// the preferred desktop. The check runs once per stability window, so migrations cannot flap faster
+    /// than that.
+    /// </para>
+    /// </summary>
+    public SessionMigrationMode SessionMigration { get; set; } = SessionMigrationMode.Off;
 }
 
 /// <summary>Process-hardening toggles for the spawned agent (<c>Jenkins:Hardening</c>).</summary>

@@ -66,6 +66,46 @@
         "title": "Logging",
         "url": "configuration.html#settings-reference",
         "keywords": ["logging", "serilog", "compactlog", "clef", "retainedlogs", "agent.log", "rolling"]
+      },
+      {
+        "title": "CLI: update-secret",
+        "url": "configuration.html#cli-update-secret",
+        "keywords": ["update-secret", "cli", "command line", "silent", "merge", "set-data-dir", "impersonate", "flags", "options"]
+      },
+      {
+        "title": "Config migration on MSI upgrade",
+        "url": "configuration.html#config-migration-on-upgrade",
+        "keywords": ["upgrade", "migration", "schema", "reconcile", "normalize", "prune", "preserve secret", "in-place upgrade"]
+      }
+    ]
+  },
+  {
+    "topic": "Interactive-Session Launch",
+    "items": [
+      {
+        "title": "Interactive-session launch (visible GUI tests)",
+        "url": "configuration.html#interactive-session",
+        "keywords": ["interactive session", "session 0", "visible desktop", "gui tests", "selenium", "browser", "createprocessasuser", "localsystem", "isolation downgrade"]
+      },
+      {
+        "title": "Which session is chosen",
+        "url": "configuration.html#interactive-session-selection",
+        "keywords": ["session selection", "targetuser", "preferdisconnectedsession", "disconnected", "rdp", "console session", "logged-on user", "ranking"]
+      },
+      {
+        "title": "Following the session while running",
+        "url": "configuration.html#interactive-session-migration",
+        "keywords": ["session migration", "sessionmigration", "onsessionlost", "always", "relaunch", "node drops", "build interrupted"]
+      },
+      {
+        "title": "Required privileges",
+        "url": "configuration.html#interactive-session-privileges",
+        "keywords": ["setcbprivilege", "seassignprimarytokenprivilege", "seincreasequotaprivilege", "user rights assignment", "privilege not held", "access denied", "wtsqueryusertoken"]
+      },
+      {
+        "title": "Autologon: a desktop from boot",
+        "url": "configuration.html#interactive-session-autologon",
+        "keywords": ["autologon", "sysinternals", "lsa secret", "unattended desktop", "build node", "winlogon"]
       }
     ]
   },
@@ -183,9 +223,24 @@
         "keywords": ["troubleshooting", "debug", "errors", "logs", "faq", "common issues", "problems", "fix", "event log", "startup"]
       },
       {
+        "title": "Message reference by severity",
+        "url": "troubleshooting.html#message-severity",
+        "keywords": ["log messages", "errors", "warnings", "meaning", "watchdog messages", "mandatory field", "unreachable", "max retries"]
+      },
+      {
+        "title": "Interactive-session launch falls back to headless",
+        "url": "troubleshooting.html#interactive-session-problems",
+        "keywords": ["error_no_token", "error_access_denied", "error_privilege_not_held", "headless fallback", "invisible agent", "migration not retried", "session warning"]
+      },
+      {
         "title": "Service recovery",
-        "url": "installation.html#service-recovery",
-        "keywords": ["service recovery", "auto-recovery", "restart", "failure actions", "watchdog", "resilience"]
+        "url": "troubleshooting.html#service-recovery-windows-level",
+        "keywords": ["service recovery", "auto-recovery", "restart", "failure actions", "watchdog", "resilience", "sc failure"]
+      },
+      {
+        "title": "Watchdog & auto-recovery",
+        "url": "architecture.html#watchdog-auto-recovery",
+        "keywords": ["watchdog", "supervision loop", "backoff", "crash counter", "maxretries", "bring-up", "stability window", "give up"]
       }
     ]
   }

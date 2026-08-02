@@ -54,33 +54,38 @@
 
     <pre data-lang="text"><code>JenkinsAsService/
 &#x251C;&#x2500;&#x2500; src/
-&#x2502;   &#x2514;&#x2500;&#x2500; JenkinsAsService/
-&#x2502;       &#x251C;&#x2500;&#x2500; JenkinsAsService.csproj    # .NET 10 Worker Service
-&#x2502;       &#x251C;&#x2500;&#x2500; Program.cs                 # Host builder, Serilog config, DI, OTel
-&#x2502;       &#x251C;&#x2500;&#x2500; Properties/AssemblyInfo.cs # Explicit assembly attributes (for Codacy)
-&#x2502;       &#x251C;&#x2500;&#x2500; ServiceSettings.cs         # Jenkins config POCOs (Connection/Secret/Agent/Hardening/Logging/Recovery)
-&#x2502;       &#x251C;&#x2500;&#x2500; TelemetrySettings.cs       # OpenTelemetry config POCO
-&#x2502;       &#x251C;&#x2500;&#x2500; SecretMode.cs              # Enum: Unprotected, Dpapi, Tpm, EnvironmentVariable, CredentialManager
-&#x2502;       &#x251C;&#x2500;&#x2500; ISecretResolver.cs         # Secret resolution abstraction
-&#x2502;       &#x251C;&#x2500;&#x2500; SecretResolver.cs          # TPM / DPAPI / CredMgr / EnvVar / plaintext resolver
-&#x2502;       &#x251C;&#x2500;&#x2500; SecretWriter.cs            # Writes appsettings.json; stores secret per mode
-&#x2502;       &#x251C;&#x2500;&#x2500; UpdateSecretCommand.cs     # CLI subcommand: update-secret
-&#x2502;       &#x251C;&#x2500;&#x2500; JenkinsAgentWorker.cs      # BackgroundService — validation, process, watchdog, OTel
-&#x2502;       &#x251C;&#x2500;&#x2500; IJarDownloader.cs          # Jar download abstraction
-&#x2502;       &#x251C;&#x2500;&#x2500; HttpJarDownloader.cs       # HTTP jar downloader with ETag caching + SHA-256 integrity check
-&#x2502;       &#x251C;&#x2500;&#x2500; IConnectivityChecker.cs    # Connectivity check abstraction
-&#x2502;       &#x251C;&#x2500;&#x2500; TcpConnectivityChecker.cs  # TCP connectivity implementation
-&#x2502;       &#x251C;&#x2500;&#x2500; appsettings.json           # Configuration file
-&#x2502;       &#x2514;&#x2500;&#x2500; packages.lock.json         # Locked NuGet restore
-&#x251C;&#x2500;&#x2500; src/
-&#x2502;   &#x2514;&#x2500;&#x2500; JenkinsAsService.Installer/    # WiX v5 MSI installer project
+&#x2502;   &#x251C;&#x2500;&#x2500; JenkinsAsService/              # .NET 10 Worker Service (net10.0-windows)
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; Program.cs                 # CLI dispatch, Serilog, host/DI, OTel, pre-flight validation
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; JenkinsAgentWorker.cs      # BackgroundService — lifecycle, supervision loop, metrics
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ServiceSettings.cs         # Config POCOs (Connection/Secret/Agent/Hardening/Logging/Recovery)
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; TelemetrySettings.cs       # OpenTelemetry config POCO
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ConfigKeys.cs              # Central section/key name constants
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ServiceSettingsValidator.cs, JavaPathResolver.cs, AgentArgumentParser.cs,
+&#x2502;   &#x2502;   &#x2502;                              # AgentTransport.cs, DataPaths.cs — pure policy units
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ISecretResolver.cs / SecretResolver.cs, SecretWriter.cs,
+&#x2502;   &#x2502;   &#x2502;   ServiceSettingsNormalizer.cs, UpdateSecretCommand.cs, InteractiveConfigPrompts.cs,
+&#x2502;   &#x2502;   &#x2502;   ImpersonationRunner.cs, TpmSecretProtector.cs, AgentSecretFile.cs
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; IJarDownloader.cs / HttpJarDownloader.cs      # ETag + SHA-256 jar cache
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; IConnectivityChecker.cs / TcpConnectivityChecker.cs
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; CertificateThumbprintValidator.cs             # Controller cert pinning
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; AgentProcessLauncher.cs                       # IAgentProcessLauncher/IAgentProcess seam
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; InteractiveSessionLauncher.cs, InteractiveSessionSelector.cs,
+&#x2502;   &#x2502;   &#x2502;   SessionMigrationTracker.cs, InteractiveLaunchAcl.cs
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ProcessMitigations.cs, EnvironmentSanitizer.cs, ConfigAclHardener.cs,
+&#x2502;   &#x2502;   &#x2502;   EventLogSourceInstaller.cs                    # Hardening
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; Properties/AssemblyInfo.cs # Explicit assembly attributes (required for Codacy)
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; appsettings.json           # Shipped configuration template
+&#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; packages.lock.json         # Locked NuGet restore
+&#x2502;   &#x2514;&#x2500;&#x2500; JenkinsAsService.Installer/    # WiX v5 MSI (excluded from the solution build)
 &#x251C;&#x2500;&#x2500; tests/
 &#x2502;   &#x2514;&#x2500;&#x2500; JenkinsAsService.Tests/        # xUnit unit-test suite
-&#x251C;&#x2500;&#x2500; .github/
-&#x2502;   &#x2514;&#x2500;&#x2500; workflows/                     # CI/CD: build, test, 6 security scans, release
-&#x251C;&#x2500;&#x2500; README.md
-&#x251C;&#x2500;&#x2500; Security.md
+&#x251C;&#x2500;&#x2500; docs/                              # This documentation site (linted in CI)
+&#x251C;&#x2500;&#x2500; .github/workflows/                 # CI/CD: build, release, security scans, docs lint
+&#x251C;&#x2500;&#x2500; Directory.Packages.props           # Central Package Management — all NuGet versions
+&#x251C;&#x2500;&#x2500; README.md, Security.md, CONTRIBUTING.md, PRIVACY.md, CODE_OF_CONDUCT.md
 &#x2514;&#x2500;&#x2500; LICENSE                            # BSD 3-Clause</code></pre>
+
+    <p>A full per-type description lives in the <a href="api-reference.html">API Reference</a>.</p>
 
     <h2 id="runtime-file-layout">Runtime File Layout (Installed)</h2>
 
@@ -108,7 +113,7 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
 
     <ol>
       <li><strong>Log session banner</strong> &mdash; <code>=== SERVICE STARTING (PID: ...) ===</code></li>
-      <li><strong><code>ValidateSettings()</code></strong> &mdash; Checks mandatory fields; requires the URL to carry an explicit port</li>
+      <li><strong><code>ValidateSettings()</code></strong> &mdash; Re-runs <code>ServiceSettingsValidator</code> (mandatory fields, explicit port), warns on a non-HTTPS URL, resolves the agent name (hostname when empty), resolves the secret through <code>ISecretResolver</code>, resolves the data / <code>agent\</code> / <code>work\</code> directories, picks the initial transport, and warns when the interactive launch is enabled</li>
       <li><strong><code>ResolveJavaPath()</code></strong> &mdash; Checks <code>JavaPath</code> config &rarr; <code>JAVA_HOME</code> &rarr; <code>JAVA_HOME\bin</code></li>
       <li><strong><code>RunSupervisionLoop()</code></strong> &mdash; Brings the agent up (connectivity &rarr; jar download &rarr; start) <em>and</em> supervises it. Because bring-up lives inside the loop, a transient outage at boot (DNS/network not up, controller mid-restart) retries with backoff instead of faulting the service.</li>
     </ol>
@@ -158,7 +163,10 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
     Q -->|Yes| W[Await exit signal OR 60s stability timer]
     W -->|Shutting down _stopping| X[Return — StopAsync handles cleanup]
     W -->|60s elapsed, still alive| D[Reset crash counter on stability]
-    D --> S
+    D --> M{Session migration due?}
+    M -->|Yes| MK["Kill off the crash path — relaunch re-runs selection"]
+    MK --> S
+    M -->|No| S
     W -->|Process exited| E[Log SEVERE count, capture exit code, kill, Auto-transport fallback]
     E --> F{Consecutive crashes exceed MaxRetries?}
     F -->|Yes| G["StopApplication() — service stops so SCM can recover"]
@@ -171,8 +179,9 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
       <li><strong>Exit signal:</strong> the launcher captures its exit <code>TaskCompletionSource</code> in a local (not a shared field), so a late exit from a killed process can't complete a newer process's signal and trigger a spurious restart.</li>
       <li><strong>Shutdown gate:</strong> every pass through the loop top checks <code>_stopping</code>/cancellation and kills (idempotently) before returning. This reaps an agent that bring-up started <em>after</em> <code>StopAsync</code>'s own kill ran (which was a no-op while nothing was running yet), so a stop during bring-up can't orphan a freshly launched <code>java.exe</code>. The loop also snapshots the agent handle per iteration &mdash; <code>StopAsync</code> runs on another thread and nulls the shared field.</li>
       <li><strong>Backoff:</strong> 10s &rarr; 20s &rarr; 40s &rarr; 80s &rarr; ... capped at 300s.</li>
-      <li><strong>Auto-transport fallback:</strong> on a fast crash in <code>Auto</code> mode, the next bring-up toggles WebSocket &harr; direct-TCP.</li>
-      <li><strong>SEVERE counter:</strong> <code>_severeCount</code> is <code>Interlocked.Increment</code>-ed per SEVERE line; read and reset via <code>Interlocked.Exchange</code> on each exit.</li>
+      <li><strong>Auto-transport fallback:</strong> on a fast crash in <code>Auto</code> mode, the next bring-up toggles WebSocket &harr; direct-TCP. <code>Auto</code> also launches the agent with <code>-noReconnect</code> so a failed handshake exits the process instead of the agent retrying one transport internally forever &mdash; that exit is what lets the fallback fire.</li>
+      <li><strong>SEVERE counter:</strong> <code>_severeCount</code> is <code>Interlocked.Increment</code>-ed per SEVERE line; read and reset via <code>Interlocked.Exchange</code> on each exit, and cleared by <code>KillAgent</code> so a deliberate kill doesn't carry lines into the next run's report.</li>
+      <li><strong>Session migration:</strong> when <a href="configuration.html#interactive-session-migration"><code>SessionMigration</code></a> is on, the still-running branch re-runs session selection once per stability window. A process can't move between sessions, so a migration is a kill and relaunch &mdash; deliberately performed <em>before</em> the exit is observed, so it stays off the crash path and can never burn <code>MaxRetries</code>. A <code>SessionMigrationTracker</code> refuses an identical repeat, so a launch that can't succeed can't drop the node every window forever.</li>
     </ul>
 
     <h2 id="logging-serilog">Logging (Serilog)</h2>
@@ -195,7 +204,7 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
           <tr>
             <td>Windows Event Log (<code>Application/JenkinsAsService</code>)</td>
             <td>Warnings and Errors only</td>
-            <td>Source auto-created</td>
+            <td>Attached only when the source already exists. The MSI pre-creates it as SYSTEM &mdash; the low-privilege service account cannot write HKLM &mdash; and the sink never attempts creation, so startup can't fail on it</td>
           </tr>
         </tbody>
       </table>
@@ -276,8 +285,8 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
             <td>Bound from <code>appsettings.json</code> section <code>Jenkins</code></td>
           </tr>
           <tr>
-            <td><code>IOptions&lt;TelemetrySettings&gt;</code></td>
-            <td>Bound from <code>appsettings.json</code> section <code>Telemetry</code></td>
+            <td><code>TelemetrySettings</code></td>
+            <td>Read directly in <code>Program.cs</code> (<code>GetSection("Telemetry").Get&lt;TelemetrySettings&gt;()</code>) &mdash; it gates OTel registration at host-build time, so it is not an injected <code>IOptions&lt;&gt;</code></td>
           </tr>
           <tr>
             <td><code>IHttpClientFactory</code></td>
@@ -296,6 +305,14 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
             <td><code>SecretResolver</code> (TPM/DPAPI/CredMgr/EnvVar/plaintext)</td>
           </tr>
           <tr>
+            <td><code>IAgentProcessLauncher</code></td>
+            <td><code>AgentProcessLauncher</code> &mdash; the seam a fake process replaces in the watchdog tests</td>
+          </tr>
+          <tr>
+            <td><code>IHostApplicationLifetime</code></td>
+            <td>Host-provided; the worker calls <code>StopApplication()</code> to give up cleanly so SCM can recover</td>
+          </tr>
+          <tr>
             <td><code>ILogger&lt;T&gt;</code></td>
             <td>Serilog-backed structured logging</td>
           </tr>
@@ -309,7 +326,7 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
 
     <h2 id="testing">Testing</h2>
 
-    <p>178 unit tests across 20 test classes in <code>tests/JenkinsAsService.Tests/</code> (count grows with the suite &mdash; trust the test runner over this page). One class per unit under test:</p>
+    <p>The xUnit suite in <code>tests/JenkinsAsService.Tests/</code> has one class per unit under test. It grows with the code &mdash; <code>dotnet test -c Release</code> is the authority on the count, not this page. Tests reach <code>internal</code> members through <code>InternalsVisibleTo</code>, which is why most units are <code>internal static</code> rather than public.</p>
 
     <div class="table-wrap">
       <table>
@@ -330,7 +347,19 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
           </tr>
           <tr>
             <td><code>ConnectionMethodTests</code></td>
-            <td>Auto/WebSocket/Https initial transport, fallback toggling, ShouldFallback decision matrix</td>
+            <td>Auto/WebSocket/Https initial transport, fallback toggling, ShouldFallback decision matrix, which modes add <code>-noReconnect</code></td>
+          </tr>
+          <tr>
+            <td><code>InteractiveSessionSelectorTests</code></td>
+            <td>Session-selection policy: session 0 excluded, logged-on user required, disconnected/locked sessions qualify, the three ordering keys, <code>TargetUser</code> matching, and the <code>ShouldMigrate</code> matrix per <code>SessionMigration</code> mode</td>
+          </tr>
+          <tr>
+            <td><code>SessionMigrationTrackerTests</code></td>
+            <td>An ineffective migration is not repeated, reported once, and the guard self-clears when either half of the origin changes</td>
+          </tr>
+          <tr>
+            <td><code>InteractiveSessionLauncherTests</code> / <code>InteractiveSessionEnvironmentTests</code></td>
+            <td>Privilege metadata (a typo in a privilege constant fails silently at runtime) and the child environment block built from the target token, with the allow-list still applied</td>
           </tr>
           <tr>
             <td><code>ConfigBindingTests</code></td>
@@ -365,8 +394,12 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
             <td>200 download + ETag/SHA-256 save, 304 skip, If-None-Match, orphan-etag guard, 500 leaves old jar intact, mid-stream failure can't corrupt the jar (atomic temp-file move), 304 with a tampered cached jar forces an unconditional re-download</td>
           </tr>
           <tr>
-            <td><code>SecretResolverTests</code> / <code>SecretWriterTests</code></td>
-            <td>Per-mode round-trips (DPAPI machine/user, unprotected), missing env var/credential errors, nested-config preservation, wrong-typed existing fields fall back instead of crashing</td>
+            <td><code>SecretResolverTests</code> / <code>SecretWriterTests</code> / <code>SecretWriterMergeTests</code></td>
+            <td>Per-mode round-trips (DPAPI machine/user, unprotected), missing env var/credential errors, nested-config preservation, wrong-typed existing fields fall back instead of crashing, and <code>--merge</code> applying only the fields supplied</td>
+          </tr>
+          <tr>
+            <td><code>ServiceSettingsNormalizerTests</code> / <code>SecretWriterNormalizeTests</code></td>
+            <td>Schema reconcile on upgrade: missing keys added at defaults, existing values (incl. the secret) preserved, unknown keys and sections pruned, corrupt input left untouched</td>
           </tr>
           <tr>
             <td><code>TpmSecretProtectorTests</code></td>
@@ -386,43 +419,11 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
 
     <h3 id="test-stack">Test Stack</h3>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Package</th>
-            <th>Version</th>
-            <th>Purpose</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>xUnit</td>
-            <td>2.9.3</td>
-            <td>Test framework</td>
-          </tr>
-          <tr>
-            <td>NSubstitute</td>
-            <td>5.3.0</td>
-            <td>Mocking</td>
-          </tr>
-          <tr>
-            <td>FluentAssertions</td>
-            <td>8.10.0</td>
-            <td>Fluent assertions</td>
-          </tr>
-          <tr>
-            <td>Microsoft.NET.Test.Sdk</td>
-            <td>18.6.0</td>
-            <td>Test platform SDK</td>
-          </tr>
-          <tr>
-            <td>coverlet.collector</td>
-            <td>10.0.1</td>
-            <td>Code coverage</td>
-          </tr>
-        </tbody>
-      </table>
+    <p><strong>xUnit</strong> (test framework) + <strong>NSubstitute</strong> (mocking) + <strong>FluentAssertions</strong>, with <strong>Microsoft.NET.Test.Sdk</strong> and <strong>coverlet.collector</strong> for the platform and coverage. Exact versions are centrally managed in <code>Directory.Packages.props</code> and kept current by Dependabot &mdash; read them there rather than from a doc page. See <a href="installation.html#nuget-dependencies">Installation &rarr; NuGet dependencies</a> for the dependency policy.</p>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Two suites are green-but-unverified</div>
+      <p><code>TpmSecretProtectorTests</code> early-<code>return</code> when there is no TPM or no elevation (xUnit 2.9.3 has no <code>Assert.Skip</code>), and the <code>CreateProcessAsUser</code> interop has no interactive session in CI. Green there means "did not regress", not "verified on hardware".</p>
     </div>
   </main>
 

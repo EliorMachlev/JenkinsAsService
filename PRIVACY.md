@@ -24,7 +24,8 @@ The service reads and writes the following, all of which stay on the host machin
 transmitted to the project:
 
 - **Configuration** (`appsettings.json`, in the install folder) — your Jenkins controller URL, agent
-  name, and the protected secret value. See [Secrets](#secrets) below.
+  name, and the protected secret value. ACL-restricted to SYSTEM, Administrators and the service
+  account. See [Secrets](#secrets) below.
 - **The secret file** (`.agent-secret`, in the data folder) — an ACL-restricted file created only while
   the agent runs and deleted on service stop.
 - **Logs** (`agent.log` or `agent.clef`, in the data folder) — service and Java-agent output. These may
@@ -38,7 +39,7 @@ lives in `%ProgramData%\JenkinsAsService` — see the [Configuration reference](
 
 ### Network connections the service makes
 
-The service opens a network connection in exactly three cases, and no others — there is no update check,
+The service opens a network connection in exactly two cases, and no others — there is no update check,
 no crash reporting, and no usage analytics:
 
 1. **Your Jenkins controller** — before each launch it makes a TCP connectivity check to the configured

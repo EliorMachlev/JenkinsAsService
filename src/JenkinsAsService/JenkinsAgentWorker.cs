@@ -70,6 +70,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private IAgentProcess? _agent;
     private int _severeCount;
 
+    private readonly SessionMigrationTracker _migrations = new();
+
     // Timing is instance state (defaulted from the consts) so tests can shrink the stability window and
     // backoff to milliseconds and drive the full supervision loop deterministically.
     private int _stabilityMs = StabilityMs;
@@ -198,13 +200,25 @@ public sealed class JenkinsAgentWorker : BackgroundService
         _logger.LogInformation("Connection method: {Configured} (starting transport: {Effective})",
             _settings.Connection.Method, _effectiveMethod);
 
-        if (_settings.Agent.LaunchInInteractiveSession.Enabled)
+        var interactive = _settings.Agent.LaunchInInteractiveSession;
+        if (interactive.Enabled)
         {
             _logger.LogWarning(
-                "Agent:LaunchInInteractiveSession is ENABLED — the agent will be launched on the interactive " +
-                "desktop (Session 1) when a console session and the required privilege are present. This is an " +
-                "isolation downgrade (LocalSystem / SeTcbPrivilege required) and is unsupported; do not enable " +
-                "it on hardened production build nodes. See docs/configuration.html.");
+                "Agent:LaunchInInteractiveSession is ENABLED (SessionMigration={Mode}) — the agent will be " +
+                "launched on the desktop of a logged-on session (console or RDP, including disconnected) when " +
+                "one exists and the required privileges are present; the chosen session is logged at launch. " +
+                "This is an isolation downgrade (LocalSystem required) and is unsupported; do not enable it on " +
+                "hardened production build nodes. See docs/configuration.html.",
+                interactive.SessionMigration);
+        }
+        else if (interactive.SessionMigration != SessionMigrationMode.Off)
+        {
+            // Migration only ever runs behind the master switch, so this combination is a silent no-op that
+            // looks configured — the one config mistake here that produces no runtime evidence at all.
+            _logger.LogWarning(
+                "Agent:LaunchInInteractiveSession:SessionMigration is set to {Mode} but Enabled is false, so " +
+                "it has no effect — the agent always runs in Session 0. Set Enabled to true to use it.",
+                interactive.SessionMigration);
         }
     }
 
@@ -439,6 +453,16 @@ public sealed class JenkinsAgentWorker : BackgroundService
                     _logger.LogInformation("Watchdog: Agent stable for {Seconds}s. Crash counter reset.", _stabilityMs / 1000);
                 }
 
+                // Re-target the interactive session if it changed under us. Killing here — rather than after
+                // the exit is observed below — keeps this off the crash path entirely, so a migration never
+                // counts toward Recovery:MaxRetries. The loop top then sees a null agent and brings up a fresh
+                // one, which re-runs selection (and falls back to Session 0 if no desktop qualifies).
+                if (ShouldMigrateInteractiveSession(agent))
+                {
+                    KillAgent();
+                    bringUpAttempts = 0; // a deliberate move is not a failed connect attempt — no backoff
+                }
+
                 continue;
             }
 
@@ -465,6 +489,60 @@ public sealed class JenkinsAgentWorker : BackgroundService
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// Whether the running agent should be relaunched because the interactive session it lives in is no longer
+    /// the right one. Interop lives here; the policy is in <see cref="InteractiveSessionSelector.ShouldMigrate"/>.
+    /// </summary>
+    private bool ShouldMigrateInteractiveSession(IAgentProcess agent)
+    {
+        var interactive = _settings.Agent.LaunchInInteractiveSession;
+        if (!interactive.Enabled
+            || interactive.SessionMigration == SessionMigrationMode.Off
+            || !OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        if (!InteractiveSessionLauncher.TryEnumerateSessions(_logger, out var sessions))
+        {
+            return false; // transient enumeration failure must not disturb a healthy agent
+        }
+
+        if (!InteractiveSessionSelector.ShouldMigrate(
+                sessions, agent.InteractiveSessionId, interactive.TargetUser,
+                interactive.PreferDisconnectedSession, interactive.SessionMigration, out var reason))
+        {
+            return false;
+        }
+
+        // A relaunch that lands the agent back where it was means the interactive launch is what is failing,
+        // not the session that moved — repeating it would drop the node every stability window forever.
+        var snapshot = InteractiveSessionSelector.Describe(sessions);
+        var verdict = _migrations.Evaluate(agent.InteractiveSessionId, snapshot);
+        if (verdict != MigrationVerdict.Proceed)
+        {
+            if (verdict == MigrationVerdict.SuppressAndReport)
+            {
+                _logger.LogWarning(
+                    "Watchdog: not retrying the session migration — the last relaunch left the agent in the " +
+                    "same session ({Reason}), so the interactive launch is failing rather than the session " +
+                    "having moved. See the Agent:LaunchInInteractiveSession warning above for the cause. " +
+                    "Leaving the agent where it is; no further migration until the sessions change. " +
+                    "Sessions seen: {Sessions}.",
+                    reason, snapshot);
+            }
+
+            return false;
+        }
+
+        _logger.LogWarning(
+            "Watchdog: restarting the agent to move it to a different desktop — {Reason} " +
+            "(SessionMigration={Mode}). Any build in flight on this node will be interrupted. " +
+            "Sessions seen: {Sessions}.",
+            reason, interactive.SessionMigration, snapshot);
+        return true;
     }
 
     /// <summary>
@@ -533,15 +611,25 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     private void KillAgent()
     {
-        if (_agent is null)
+        // Take ownership atomically. StopAsync (host thread) and the supervision loop both call this, and the
+        // field must be read exactly once: a null-check followed by four more reads let one thread null the
+        // field between another's check and its first dereference (NRE out of StopAsync or ExecuteAsync), and
+        // let both threads get past the check and Kill/Dispose the same instance twice. This is the same
+        // snapshot rule the loop already follows for _agent — it just wasn't applied here.
+        var agent = Interlocked.Exchange(ref _agent, null);
+        if (agent is null)
         {
             return;
         }
 
-        _logger.LogDebug("Killing agent process tree (PID: {Pid})", _agent.Id);
-        _agent.Kill(); // never throws — handled inside the launcher
-        _agent.Dispose();
-        _agent = null;
+        _logger.LogDebug("Killing agent process tree (PID: {Pid})", agent.Id);
+        agent.Kill(); // never throws — handled inside the launcher
+        agent.Dispose();
+
+        // The SEVERE tally belongs to the run that produced it. The crash path reads and clears it just
+        // before calling this; clearing here stops a deliberate kill (shutdown, session migration) from
+        // carrying its lines over and inflating the *next* run's crash report.
+        Interlocked.Exchange(ref _severeCount, 0);
     }
 
     public override void Dispose()

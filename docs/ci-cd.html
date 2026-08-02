@@ -58,7 +58,7 @@
       <li><strong>Purpose:</strong> Full end-to-end build validation on every push/PR to <code>main</code></li>
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
       <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet test</code> &rarr; CycloneDX SBOM (uploaded as artifact) &rarr; optimized publish (win-x64 + win-x86) &rarr; WiX v5 MSI build (both architectures, <code>Version=0.0.0</code>)</li>
-      <li><strong>Tests:</strong> 178 unit tests (xUnit + NSubstitute + FluentAssertions)</li>
+      <li><strong>Tests:</strong> the full xUnit suite (xUnit + NSubstitute + FluentAssertions) &mdash; a failure blocks the publish and MSI steps</li>
       <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time.</li>
     </ul>
 
@@ -149,6 +149,7 @@
       <li><strong>Databases:</strong> NVD + GitHub Advisory + OSV</li>
       <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
       <li><strong>Pattern:</strong> Calls <code>trivy-reusable.yml</code> via <code>uses: ./.github/workflows/trivy-reusable.yml</code></li>
+      <li><strong>Filename:</strong> the workflow is still called <code>osv-scanner.yml</code> for history &mdash; it declares <code>name: Trivy</code> and runs Trivy, which covers the OSV database among others. Nothing invokes the standalone OSV-Scanner.</li>
     </ul>
 
     <h3 id="trivy-reusable-workflow">Trivy &mdash; Reusable Workflow (<code>.github/workflows/trivy-reusable.yml</code>)</h3>
@@ -289,62 +290,16 @@
 
     <h2 id="action-versioning-policy">Action Versioning Policy</h2>
 
-    <p>All actions are <strong>pinned to full commit SHAs</strong> to prevent supply-chain attacks via tag mutation (a tag like <code>@v7</code> is mutable and can be silently redirected to malicious code; a SHA is immutable). The human-readable version tag is preserved as an inline comment for readability. Dependabot keeps the pins current via automated PRs.</p>
+    <p>All actions are <strong>pinned to full commit SHAs</strong> to prevent supply-chain attacks via tag mutation (a tag like <code>@v7</code> is mutable and can be silently redirected to malicious code; a SHA is immutable). The human-readable version tag is preserved as an inline trailing comment. Dependabot keeps the pins current via automated PRs &mdash; so the pins move every few weeks and are <strong>not</strong> reproduced here; read them from the workflow files, which are the only accurate source:</p>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Action</th>
-            <th>Version</th>
-            <th>Pinned SHA</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>actions/checkout</code></td>
-            <td><code>v7</code></td>
-            <td><code>9c091bb</code></td>
-          </tr>
-          <tr>
-            <td><code>actions/setup-dotnet</code></td>
-            <td><code>v5</code></td>
-            <td><code>26b0ec1</code></td>
-          </tr>
-          <tr>
-            <td><code>actions/dependency-review-action</code></td>
-            <td><code>v5</code></td>
-            <td><code>a1d282b</code></td>
-          </tr>
-          <tr>
-            <td><code>github/codeql-action/*</code></td>
-            <td><code>v4</code></td>
-            <td><code>8aad20d</code> (init / analyze / upload-sarif &mdash; all consistent)</td>
-          </tr>
-          <tr>
-            <td><code>semgrep/semgrep-action</code></td>
-            <td><code>v1</code></td>
-            <td><code>713efdd</code></td>
-          </tr>
-          <tr>
-            <td><code>gitleaks/gitleaks-action</code></td>
-            <td><code>v3.0.0</code></td>
-            <td><code>e0c47f4</code></td>
-          </tr>
-          <tr>
-            <td><code>aquasecurity/trivy-action</code></td>
-            <td><code>v0.36.0</code></td>
-            <td><code>ed142fd</code></td>
-          </tr>
-          <tr>
-            <td><code>softprops/action-gh-release</code></td>
-            <td><code>v3</code></td>
-            <td><code>718ea10</code></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p><code>microsoft/psscriptanalyzer-action</code> has been fully removed &mdash; replaced by a direct <code>pwsh</code> run step (see <a href="#psscriptanalyzer">PSScriptAnalyzer</a> above).</p>
+    <pre data-lang="powershell"><code>Select-String -Path .github/workflows/*.yml -Pattern 'uses:' | ForEach-Object { $_.Line.Trim() } | Sort-Object -Unique</code></pre>
+
+    <p>The action set is small and deliberately so: <code>actions/checkout</code>, <code>actions/setup-dotnet</code>, <code>actions/upload-artifact</code>, <code>actions/dependency-review-action</code>, <code>github/codeql-action/*</code> (init / analyze / upload-sarif, always pinned to one consistent SHA), <code>semgrep/semgrep-action</code>, <code>gitleaks/gitleaks-action</code>, <code>aquasecurity/trivy-action</code> and <code>softprops/action-gh-release</code>. The rules for changing it:</p>
+    <ul>
+      <li>Never replace a SHA pin with a floating tag, even temporarily.</li>
+      <li>New tooling should run through <code>pip</code>/<code>npm</code>/<code>pwsh</code> in a <code>run:</code> step rather than adding an action, when that is practical &mdash; this is why HTML/CSS linting and PSScriptAnalyzer need no new pins.</li>
+      <li><code>microsoft/psscriptanalyzer-action</code> was removed entirely in favour of a direct <code>pwsh</code> step (see <a href="#psscriptanalyzer">PSScriptAnalyzer</a> above).</li>
+    </ul>
 
     <div class="callout callout-note">
       <div class="callout-title">Note: Removed scanners</div>

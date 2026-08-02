@@ -146,139 +146,56 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
 
     <h2 id="nuget-dependencies">NuGet Dependencies</h2>
 
-    <h3 id="main-project">Main Project</h3>
+    <p>Every package version lives in <a href="https://github.com/EliorMachlev/JenkinsAsService/blob/main/Directory.Packages.props"><code>Directory.Packages.props</code></a> &mdash; that file is the single source of truth, and Dependabot keeps it current, so exact numbers are deliberately not repeated here. What each dependency is <em>for</em>:</p>
+
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>Package</th>
-            <th>Version</th>
             <th>Purpose</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td><code>Microsoft.Extensions.Hosting.WindowsServices</code></td>
-            <td>10.0.9</td>
-            <td>Windows Service integration</td>
+            <td>Windows Service integration for the generic host</td>
           </tr>
           <tr>
-            <td><code>Microsoft.Extensions.Http</code></td>
-            <td>10.0.9</td>
-            <td><code>IHttpClientFactory</code> for jar download</td>
+            <td><code>Microsoft.Extensions.Http</code> / <code>.Http.Resilience</code></td>
+            <td><code>IHttpClientFactory</code> for the jar download, plus Polly retry, circuit breaker and timeout</td>
           </tr>
           <tr>
-            <td><code>Microsoft.Extensions.Http.Resilience</code></td>
-            <td>10.7.0</td>
-            <td>Polly retry, circuit breaker, timeout</td>
+            <td><code>Serilog.Extensions.Hosting</code>, <code>.Sinks.File</code>, <code>.Sinks.EventLog</code>, <code>.Formatting.Compact</code></td>
+            <td>Structured logging: rolling file sink, Event Log sink, CLEF JSON formatter</td>
           </tr>
           <tr>
-            <td><code>Serilog.Extensions.Hosting</code></td>
-            <td>9.0.0</td>
-            <td>Serilog integration with .NET hosting</td>
-          </tr>
-          <tr>
-            <td><code>Serilog.Sinks.File</code></td>
-            <td>7.0.0</td>
-            <td>Rolling file log sink</td>
-          </tr>
-          <tr>
-            <td><code>Serilog.Sinks.EventLog</code></td>
-            <td>4.0.0</td>
-            <td>Windows Event Log sink</td>
-          </tr>
-          <tr>
-            <td><code>Serilog.Enrichers.Environment</code></td>
-            <td>3.0.1</td>
-            <td><code>MachineName</code> and <code>EnvironmentName</code> enrichment</td>
-          </tr>
-          <tr>
-            <td><code>Serilog.Enrichers.Process</code></td>
-            <td>3.0.0</td>
-            <td><code>ProcessId</code> enrichment</td>
-          </tr>
-          <tr>
-            <td><code>Serilog.Formatting.Compact</code></td>
-            <td>3.0.0</td>
-            <td>CLEF JSON formatter</td>
-          </tr>
-          <tr>
-            <td><code>AdysTech.CredentialManager</code></td>
-            <td>3.1.0</td>
-            <td>Windows Credential Manager access</td>
+            <td><code>Serilog.Enrichers.Process</code> / <code>.Enrichers.Environment</code></td>
+            <td><code>ProcessId</code>, <code>MachineName</code> and <code>EnvironmentName</code> enrichment</td>
           </tr>
           <tr>
             <td><code>System.Security.Cryptography.ProtectedData</code></td>
-            <td>10.0.9</td>
-            <td>DPAPI encryption</td>
+            <td>DPAPI encryption (the TPM path uses in-box <code>RSACng</code>, no package)</td>
           </tr>
           <tr>
-            <td><code>OpenTelemetry.Extensions.Hosting</code></td>
-            <td>1.16.0</td>
-            <td>OTel hosting integration</td>
+            <td><code>AdysTech.CredentialManager</code></td>
+            <td>Windows Credential Manager access</td>
           </tr>
           <tr>
-            <td><code>OpenTelemetry.Exporter.OpenTelemetryProtocol</code></td>
-            <td>1.16.0</td>
-            <td>OTLP exporter</td>
+            <td><code>OpenTelemetry.Extensions.Hosting</code>, <code>.Exporter.OpenTelemetryProtocol</code>, <code>.Instrumentation.Runtime</code></td>
+            <td>Opt-in OTLP metrics export and .NET runtime metrics</td>
           </tr>
           <tr>
-            <td><code>OpenTelemetry.Instrumentation.Runtime</code></td>
-            <td>1.15.1</td>
-            <td>.NET runtime metrics</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h3 id="test-project">Test Project</h3>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Package</th>
-            <th>Version</th>
-            <th>Purpose</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>xunit</code></td>
-            <td>2.9.3</td>
-            <td>Test framework</td>
-          </tr>
-          <tr>
-            <td><code>xunit.runner.visualstudio</code></td>
-            <td>3.1.4</td>
-            <td>VS Test adapter</td>
-          </tr>
-          <tr>
-            <td><code>NSubstitute</code></td>
-            <td>5.3.0</td>
-            <td>Mocking library</td>
-          </tr>
-          <tr>
-            <td><code>FluentAssertions</code></td>
-            <td>8.10.0</td>
-            <td>Fluent assertion syntax</td>
-          </tr>
-          <tr>
-            <td><code>Microsoft.NET.Test.Sdk</code></td>
-            <td>18.6.0</td>
-            <td>Test platform SDK</td>
-          </tr>
-          <tr>
-            <td><code>coverlet.collector</code></td>
-            <td>10.0.1</td>
-            <td>Code coverage collection</td>
+            <td><em>Tests:</em> <code>xunit</code>, <code>xunit.runner.visualstudio</code>, <code>NSubstitute</code>, <code>FluentAssertions</code>, <code>Microsoft.NET.Test.Sdk</code>, <code>coverlet.collector</code></td>
+            <td>Test framework, VS test adapter, mocking, assertions, test platform, coverage</td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <div class="callout callout-note">
-      <div class="callout-title">Note</div>
-      <p>All versions are pinned (no floating ranges) and centrally managed in <code>Directory.Packages.props</code>. Both projects include <code>packages.lock.json</code> for deterministic, hash-verified restores via <code>RestoreLockedMode=true</code>.</p>
+      <div class="callout-title">Central Package Management + locked restore</div>
+      <p>Versions are pinned (no floating ranges) and declared centrally, so <code>.csproj</code> files reference packages <strong>without</strong> a <code>Version</code> attribute &mdash; adding one is an error. The app, test and installer projects each carry a <code>packages.lock.json</code> for deterministic, hash-verified restores under <code>RestoreLockedMode=true</code>; adding or bumping a package means regenerating the lock files (<code>dotnet restore --force-evaluate</code>).</p>
     </div>
 
     <h2 id="msi-installer">MSI Installer</h2>
@@ -307,7 +224,8 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     </div>
 
     <h3 id="msi-dialog-flow">MSI Dialog Flow</h3>
-    <p><code>LicenseAgreementDlg</code> &rarr; <code>InstallDirDlg</code> &rarr; <code>JenkinsConfigDlg</code> &rarr; <code>SecurityOptionsDlg</code> &rarr; <code>VerifyReadyDlg</code></p>
+    <p><code>LicenseAgreementDlg</code> &rarr; <code>InstallDirDlg</code> &rarr; <code>JenkinsConfigDlg</code> &rarr; <code>SecurityOptionsDlg</code> &rarr; <code>AdvancedOptionsDlg</code> &rarr; <code>VerifyReadyDlg</code></p>
+    <p><code>RequiredFieldDlg</code> interrupts the flow when a mandatory field (URL, secret) is left empty. The Advanced Options page covers transport, certificate pin, <code>Secret:ViaFile</code>, environment sanitization, logging and recovery &mdash; applied after the main config write by three deferred <code>update-secret --merge</code> custom actions (split only to stay under the MSI 255-character command-line limit), which run before the service starts.</p>
 
     <h3 id="msi-structure">MSI Structure</h3>
     <div class="table-wrap">
@@ -337,7 +255,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
           </tr>
           <tr>
             <td><code>ConfigDialog.wxs</code></td>
-            <td>Custom dialogs: <code>JenkinsConfigDlg</code> (URL/secret/name/Java) + <code>SecurityOptionsDlg</code> (secret mode radio group)</td>
+            <td>Custom dialogs: <code>JenkinsConfigDlg</code> (URL/secret/name/Java), <code>SecurityOptionsDlg</code> (secret mode radio group), <code>AdvancedOptionsDlg</code> (optional settings) and <code>RequiredFieldDlg</code> (empty-field guard), plus the deferred <code>update-secret</code> custom actions that apply them</td>
           </tr>
           <tr>
             <td><code>License.rtf</code></td>
@@ -460,6 +378,37 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       </table>
     </div>
 
+    <p>The Advanced Options page is equally scriptable &mdash; each field maps to a public property:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Default</th>
+            <th>Sets</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>JENKINS_METHOD</code></td><td><code>Auto</code></td><td><code>Connection:Method</code> &mdash; <code>Auto</code> / <code>WebSocket</code> / <code>Https</code></td></tr>
+          <tr><td><code>JENKINS_DPAPI_SCOPE</code></td><td><code>Machine</code></td><td><code>Secret:DpapiScope</code> &mdash; <code>Machine</code> / <code>User</code></td></tr>
+          <tr><td><code>JENKINS_VIA_FILE</code></td><td><code>1</code></td><td><code>Secret:ViaFile</code> &mdash; keep the secret off the process table</td></tr>
+          <tr><td><code>JENKINS_CUSTOM_ARGS</code></td><td>&mdash;</td><td><code>Agent:CustomArguments</code></td></tr>
+          <tr><td><code>JENKINS_SANITIZE_ENV</code></td><td><code>1</code></td><td><code>Hardening:SanitizeEnvironment</code></td></tr>
+          <tr><td><code>JENKINS_ALLOWED_ENV</code></td><td>&mdash;</td><td><code>Hardening:AllowedEnvironmentVariables</code></td></tr>
+          <tr><td><code>JENKINS_DEBUG</code></td><td>&mdash;</td><td><code>Logging:DebugMode</code></td></tr>
+          <tr><td><code>JENKINS_COMPACT_LOG</code></td><td>&mdash;</td><td><code>Logging:CompactLog</code> &mdash; CLEF JSON output</td></tr>
+          <tr><td><code>JENKINS_RETAINED_LOGS</code></td><td><code>3</code></td><td><code>Logging:RetainedLogs</code></td></tr>
+          <tr><td><code>JENKINS_MAX_RETRIES</code></td><td><code>0</code></td><td><code>Recovery:MaxRetries</code> (0 = infinite)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Keeping the secret out of the MSI log</div>
+      <p>The install-time secret travels on a deferred custom-action command line &mdash; an accepted MSI trade-off, mitigated by <code>Hidden="yes"</code> and running as SYSTEM without impersonation. A scripted install that must avoid even a verbose MSI log should install without <code>JENKINS_SECRET</code> and then call <code>update-secret --secret-file</code> or <code>--secret-env</code> directly.</p>
+    </div>
+
     <h3 id="portable-archive">Portable (Archive)</h3>
     <p>For environments where MSI installation isn't possible, download the <code>.7z</code> or <code>.rar</code> archive from <a href="https://github.com/EliorMachlev/JenkinsAsService/releases">Releases</a>:</p>
     <ol>
@@ -490,7 +439,8 @@ sc.exe delete Jenkins</code></pre>
       <li>Runs tests, publishes optimized self-contained executables for <strong>x64</strong> and <strong>x86</strong></li>
       <li>Builds MSI installers for both architectures via WiX v5</li>
       <li>Creates <code>.7z</code> (LZMA2, max compression) and <code>.rar</code> (RAR5 with 5% recovery record) archives</li>
-      <li>Generates <code>checksums.json</code> with SHA256 hashes for all artifacts</li>
+      <li>Generates a CycloneDX SBOM for the service project</li>
+      <li>Generates <code>checksums.json</code> with SHA256 hashes for all artifacts (SBOM included)</li>
       <li>Creates GitHub Release with auto-generated release notes</li>
     </ol>
 
@@ -530,8 +480,12 @@ sc.exe delete Jenkins</code></pre>
             <td>32-bit archive (RAR5 + recovery)</td>
           </tr>
           <tr>
+            <td><code>JenkinsAsService_1.0.4_sbom.json</code></td>
+            <td>CycloneDX SBOM of the service project</td>
+          </tr>
+          <tr>
             <td><code>JenkinsAsService_1.0.4_checksums.json</code></td>
-            <td>SHA256 hashes</td>
+            <td>SHA256 hashes of every artifact above (SBOM included)</td>
           </tr>
         </tbody>
       </table>

@@ -135,6 +135,31 @@ public sealed class SupervisionLoopTests : IDisposable
     }
 
     [Fact]
+    public async Task Concurrent_stops_reap_the_agent_exactly_once()
+    {
+        // KillAgent runs on both the host thread (StopAsync) and the worker thread (supervision loop). It has
+        // to take the agent atomically: reading the field more than once lets one caller null it between
+        // another's null-check and its first dereference (NRE out of StopAsync), and lets two callers get past
+        // the check and drive the same process through Kill/Dispose twice.
+        var agent = new FakeAgentProcess();
+        _launcher.Enqueue(agent);
+
+        var worker = CreateWorker(maxRetries: 0);
+        worker.UseFastTimingForTests(stabilityMs: 10_000, backoffBaseSec: 0, backoffMaxSec: 0);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitUntil(() => _launcher.StartCount == 1);
+
+        var stops = Enumerable.Range(0, 8)
+            .Select(_ => Task.Run(() => worker.StopAsync(CancellationToken.None)))
+            .ToArray();
+        await Task.WhenAll(stops); // an unsynchronised KillAgent surfaces here as an NRE
+
+        agent.KillCount.Should().Be(1, "the agent must be taken by exactly one caller");
+        agent.DisposeCount.Should().Be(1, "double-dispose would double-close the underlying handles");
+    }
+
+    [Fact]
     public async Task Auto_mode_launches_the_agent_with_noReconnect_so_the_watchdog_owns_reconnection()
     {
         var worker = CreateWorker(maxRetries: 0, method: ConnectionMethod.Auto);
