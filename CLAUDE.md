@@ -35,7 +35,7 @@ The `.slnx` builds the app + tests only; the installer has `Build=false` and mus
 
 ## Source Layout (`src/JenkinsAsService/`)
 
-`configuration.html` is current; `architecture.html`/`api-reference.html`/`overview.html` lag — verify against code. Grouped by concern:
+All of `docs/*.html` were reviewed against the code on 2026-08-02 and are current as of that pass; `configuration.html` remains the authoritative settings reference. Grouped by concern:
 
 - **Host / entry:** `Program.cs` (top-level statements: CLI dispatch → Serilog → host/DI → OTel → pre-flight validate → run), `JenkinsAgentWorker.cs` (`BackgroundService` — lifecycle, supervision loop, watchdog, metrics)
 - **Config POCOs:** `ServiceSettings.cs` (nested: `Connection`/`Secret`/`Agent`/`Hardening`/`Logging`/`Recovery`), `TelemetrySettings.cs`, `ConfigKeys.cs` (centralized section/key name constants — **use these, don't hardcode config strings**), `ConnectionMethod.cs`, `SecretMode.cs`, `DpapiScope.cs`, `ServiceSettingsNormalizer.cs` (reconciles `appsettings.json` to the current schema on MSI upgrade: adds missing keys at POCO defaults, prunes keys/sections the schema no longer defines, preserves in-schema values)
@@ -91,7 +91,7 @@ Settings live under the `Jenkins` section of `appsettings.json`, grouped into su
 
 ## Testing
 
-xUnit + NSubstitute + FluentAssertions; **178 tests** currently (trust the runner, not any hard-coded number in docs). Test classes mirror units. Notable:
+xUnit + NSubstitute + FluentAssertions; **256 tests** as of 2026-08-02 (trust the runner, not this number — docs deliberately no longer quote a count). Test classes mirror units. Notable:
 - `SupervisionLoopTests` drives the full watchdog end-to-end via `FakeAgentProcess`/`FakeAgentProcessLauncher` with millisecond timing (restart-on-crash, give-up-and-stop, unreachable-never-gives-up).
 - `WatchdogTimingTests` — pure backoff-curve + max-retry unit tests.
 - `ConfigBindingTests` — binds the nested schema (incl. all three enums) and the shipped `appsettings.json` through real `IConfiguration`.

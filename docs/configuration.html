@@ -52,7 +52,7 @@
 
     <h2 id="configuration-file">Configuration File</h2>
     <p>The service reads its settings from <code>appsettings.json</code>, located in the same directory as the executable. The <code>Jenkins</code> section is grouped into topic sub-sections &mdash; <code>Connection</code>, <code>Secret</code>, <code>Agent</code>, <code>Hardening</code>, <code>Logging</code>, and <code>Recovery</code>. Settings below are written as <code>Section:Key</code>.</p>
-    <p>The MSI installer wizard now collects every setting below across the <code>JenkinsConfigDlg</code>, <code>SecurityOptionsDlg</code>, and a new <strong>Advanced Options</strong> page (<code>AdvancedOptionsDlg</code>) &mdash; including <code>Connection:Method</code> and <code>Connection:ControllerCertThumbprint</code>, which previously required a manual edit of <code>appsettings.json</code> after install. Fields left untouched keep the same defaults as before.</p>
+    <p>The MSI wizard collects most of these across three pages &mdash; <code>JenkinsConfigDlg</code> (URL, secret, node name, Java), <code>SecurityOptionsDlg</code> (secret protection mode) and <strong>Advanced Options</strong> (<code>AdvancedOptionsDlg</code>: transport, certificate pin, <code>ViaFile</code>, environment sanitization, logging and recovery). Fields left untouched keep their defaults. The one group the installer never sets is <code>Agent:LaunchInInteractiveSession</code>: those keys are written at their (off) defaults and must be edited in <code>appsettings.json</code> by hand &mdash; see <a href="#interactive-session">Interactive-session launch</a>. Your edits survive upgrades; see <a href="#config-migration-on-upgrade">Config migration on MSI upgrade</a>.</p>
 
     <h2 id="settings-reference">Settings Reference</h2>
     <div class="table-wrap">
@@ -467,7 +467,7 @@
     <h3 id="interactive-session">Interactive-session launch (visible GUI / browser tests)</h3>
     <div class="callout callout-warning">
       <div class="callout-title">⚠️ Security warning — risky, unsupported, opt-in</div>
-      <p>This feature is a <strong>deliberate isolation downgrade and can lead to privilege escalation.</strong> A Windows service always runs in the non-interactive <strong>Session 0</strong>; to launch the agent on a user's visible desktop the service must cross into the interactive session, which requires <code>SeTcbPrivilege</code> plus two further <a href="#interactive-session-privileges">process-creation privileges</a> &mdash; i.e. running as <code>LocalSystem</code> (or granting a named account a privilege that is <em>LocalSystem-equivalent</em> and trivially escalatable to SYSTEM). It also requires a user logged into the console. Enabling it undoes the least-privilege posture that is the whole point of running the agent as a hardened service. <strong>Use it only on a throwaway/debug machine to watch a browser test &mdash; never on a hardened production build node.</strong> Security reports about this feature are <a href="https://github.com/EliorMachlev/JenkinsAsService/blob/main/Security.md">out of scope</a>.</p>
+      <p>This feature is a <strong>deliberate isolation downgrade and can lead to privilege escalation.</strong> A Windows service always runs in the non-interactive <strong>Session 0</strong>; to launch the agent on a user's visible desktop the service must cross into the interactive session, which requires <code>SeTcbPrivilege</code> plus two further <a href="#interactive-session-privileges">process-creation privileges</a> &mdash; i.e. running as <code>LocalSystem</code> (or granting a named account a privilege that is <em>LocalSystem-equivalent</em> and trivially escalatable to SYSTEM). It also requires a user logged on to some session. Enabling it undoes the least-privilege posture that is the whole point of running the agent as a hardened service. <strong>Use it only on a throwaway/debug machine to watch a browser test &mdash; never on a hardened production build node.</strong> Security reports about this feature are <a href="https://github.com/EliorMachlev/JenkinsAsService/blob/main/Security.md">out of scope</a>.</p>
     </div>
     <p>By default a Selenium/NUnit browser your pipeline launches is a grandchild of the Session 0 agent. It <strong>runs perfectly well there</strong> &mdash; Session 0 has its own window station and desktop (<code>Service-0x0-3e7$\Default</code>), so the browser starts, renders and the tests pass &mdash; but that desktop is attached to no display, so you cannot watch it or attach to it. Set <code>Agent:LaunchInInteractiveSession:Enabled: true</code> to start the <strong>whole agent</strong> on a logged-on user's desktop instead, so every child it spawns (job → browser) inherits the visible desktop and you can sign in at any time to see what the run is doing.</p>
     <p>This setting therefore buys <strong>observability, not capability</strong>. If your GUI tests are failing under the service and passing when you run the agent by hand from <code>cmd</code>, the session is unlikely to be the cause &mdash; look at the differences that come with running as a service: the sanitized environment (<code>Hardening:SanitizeEnvironment</code>), the service account's profile and mapped drives, and its permissions.</p>
@@ -522,7 +522,6 @@
     <p>Migrations are deliberate, not failures: the kill happens off the crash path, so it never counts toward <code>Recovery:MaxRetries</code> and no backoff is applied before the relaunch. The relaunch runs the full bring-up path, which means it re-selects from scratch and <strong>falls back to a headless Session 0 launch if no session qualifies at that moment</strong> &mdash; unless <code>RequireInteractiveSession: true</code>, which makes it wait for a desktop instead.</p>
     <p>A migration that changes nothing is not repeated. If the relaunch puts the agent back in the session it started in while the set of sessions is unchanged, then the interactive launch itself is failing (wrong service identity, missing privilege) rather than the session having moved &mdash; so the watchdog logs one warning and leaves the agent alone until the sessions change. Without that guard, <code>Always</code> on a node where the launch cannot succeed would drop the node and kill the running build every 60&nbsp;s indefinitely, and because migrations bypass the crash counter, <code>Recovery:MaxRetries</code> would never stop it.</p>
     <p>The typical dedicated-node setup is autologon plus <code>SessionMigration: Always</code>: the autologon console desktop is always there as the floor, the agent moves up to an RDP session when one appears, moves back down when it goes, and only ever lands headless if the autologon session itself has been signed out.</p>
-    <p>The launch preconditions are checked at runtime. If any is missing, the service logs a prominent warning and <strong>falls back to a normal Session 0 (headless) launch &mdash; the agent stays up, just invisible</strong>; it never fails because of this setting. Because the shipped default identity (<code>NT SERVICE\Jenkins</code>) lacks the required privilege, the feature is effectively <em>double opt-in</em>: flipping the flag alone does nothing until you also reconfigure the service identity.</p>
     <h4 id="interactive-session-identity">The agent runs as the session user, not as the service</h4>
     <p>An interactive launch uses <code>CreateProcessAsUser</code> with the session user's token, so the Java agent &mdash; and every build, browser and test it spawns &mdash; runs as <strong>that user</strong>, not as the service account. Unless the two are the same account, three things follow automatically:</p>
     <ul>
@@ -532,6 +531,7 @@
     </ul>
     <p>Each grant is best-effort and logged on failure; none of them blocks the launch. They are no-ops when the service and the session user are the same account.</p>
     <h4>Prerequisites</h4>
+    <p>All of these are checked at runtime. If any is missing the service logs a prominent warning and <strong>falls back to a normal Session 0 (headless) launch &mdash; the agent stays up, just invisible</strong>; it never fails because of this setting (unless you set <code>RequireInteractiveSession</code>). Because the shipped default identity (<code>NT SERVICE\Jenkins</code>) holds none of the required privileges, the feature is effectively <em>double opt-in</em>: flipping the flag alone does nothing until you also reconfigure the service identity.</p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -575,7 +575,7 @@
           <tr>
             <td><code>SeTcbPrivilege</code></td>
             <td>Act as part of the operating system</td>
-            <td><code>WTSQueryUserToken</code> &mdash; obtain the console session's user token</td>
+            <td><code>WTSQueryUserToken</code> &mdash; obtain the target session's user token</td>
           </tr>
           <tr>
             <td><code>SeAssignPrimaryTokenPrivilege</code></td>
@@ -621,25 +621,46 @@
       <div class="callout-title">Domain policy can silently revoke these</div>
       <p>User Rights Assignment is <strong>winner-takes-all, not merged</strong>: if any domain GPO defines one of these rights, it replaces the local list wholesale on every policy refresh (~90 minutes, and at every boot), discarding a local grant. A domain GPO also cannot name a <em>local</em> account, so switching to a dedicated local user does not avoid this. Check which GPO wins with <code>gpresult /scope computer /h report.html</code> (Security Settings &rarr; Local Policies/User Rights Assignment); a durable fix requires changing the domain policy or exempting the machine from it. On a domain-managed build node, running as <code>LocalSystem</code> is usually the only configuration that stays working.</p>
     </div>
-    <p>When the prerequisites are absent the fallback warning names the cause (e.g. <em>"not running as LocalSystem"</em>, <em>"the service account does not hold SeAssignPrimaryTokenPrivilege"</em>, <em>"no active console session"</em>, or the Win32 error from <code>WTSQueryUserToken</code>), so you can tell a misconfiguration from a bug. Process-environment sanitization (<a href="#env-sanitization"><code>Hardening:SanitizeEnvironment</code></a>) still applies to the interactive launch, and the agent tree is placed in a kill-on-close Job Object so a stop/restart still reaps the browser and build children.</p>
+    <p>When the prerequisites are absent the fallback warning names the cause &mdash; <em>"not running as LocalSystem"</em>, <em>"the service account does not hold SeAssignPrimaryTokenPrivilege"</em>, <em>"no session with a logged-on user"</em>, or an explained Win32 error from <code>WTSQueryUserToken</code> (<code>ERROR_NO_TOKEN</code>, <code>ERROR_ACCESS_DENIED</code>, <code>ERROR_PRIVILEGE_NOT_HELD</code>) followed by the full list of sessions it saw &mdash; so you can tell a misconfiguration from a bug without reproducing. Process-environment sanitization (<a href="#env-sanitization"><code>Hardening:SanitizeEnvironment</code></a>) still applies to the interactive launch, and the agent tree is placed in a kill-on-close Job Object so a stop/restart still reaps the browser and build children.</p>
 
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>
     <pre data-lang="text"><code>JenkinsAsService.exe update-secret [options]
+
+  Secret input (pick one)
   --secret &lt;value&gt;       Plaintext secret (command-line)
   --secret-file &lt;path&gt;   Read from file (deleted after reading)
   --secret-env &lt;var&gt;     Read from named environment variable
-  --url &lt;value&gt;          Jenkins controller URL
+
+  Core settings
+  --url &lt;value&gt;          Jenkins controller URL (explicit port required)
   --mode &lt;value&gt;         Dpapi | Tpm | EnvironmentVariable | CredentialManager | Unprotected
   --dpapi-scope &lt;value&gt;  Machine (default) | User  (User requires writing as the service account)
+  --method &lt;value&gt;       Connection:Method — Auto | WebSocket | Https
   --thumbprint &lt;value&gt;   SHA-256 thumbprint of the controller cert to pin (agent.jar download)
-  --service-account &lt;a&gt;  Service account granted read on the config; hardens appsettings.json ACL
   --agent-name &lt;value&gt;   Node name (default: hostname)
   --java-path &lt;value&gt;    Java bin folder (default: JAVA_HOME)
+  --service-account &lt;a&gt;  Service account granted read on the config; hardens the appsettings.json ACL
+
+  Optional settings (also collected by the installer's Advanced Options page)
+  --via-file &lt;bool&gt;      Secret:ViaFile — pass the secret as -secret @&lt;file&gt; (default: true)
+  --custom-args &lt;value&gt;  Agent:CustomArguments
+  --sanitize-env &lt;bool&gt;  Hardening:SanitizeEnvironment (default: true)
+  --allowed-env &lt;names&gt;  Hardening:AllowedEnvironmentVariables (; or , separated)
+  --debug &lt;bool&gt;         Logging:DebugMode
+  --compact-log &lt;bool&gt;   Logging:CompactLog — CLEF JSON output
+  --retained-logs &lt;n&gt;    Logging:RetainedLogs (default: 3)
+  --max-retries &lt;n&gt;      Recovery:MaxRetries (0 = infinite)
+
+  Modes
+  --silent               Non-interactive (all values from flags)
   --impersonate          Run the write as a different user (Credential Manager / User-scope DPAPI)
   --username &lt;value&gt;     Username for impersonation (DOMAIN\user)
-  --silent               Non-interactive (all values from flags)
-  --upgrade              Reconcile appsettings.json to the current schema on MSI upgrade; preserve the existing secret.</code></pre>
+  --merge                Apply only the optional settings supplied, leaving everything else untouched
+  --set-data-dir &lt;path&gt;  Write only Agent:DataDirectory
+  --upgrade              Reconcile appsettings.json to the current schema; preserve the existing secret
+  --help                 Show usage</code></pre>
+    <p><code>--merge</code>, <code>--set-data-dir</code> and <code>--upgrade</code> exist because an MSI custom-action command line is capped at 255 characters &mdash; the installer splits the work across several calls. They are equally usable in a hand-rolled deployment script.</p>
 
     <div class="callout callout-tip">
       <div class="callout-title">Tip</div>

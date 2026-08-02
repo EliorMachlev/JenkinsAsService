@@ -92,6 +92,18 @@ Secrets are never stored in plaintext by default (the MSI installer defaults to 
 | `EnvironmentVariable` | Machine-level environment variable | Readable by any process on the machine |
 | `Unprotected` | Plaintext in `appsettings.json` | Readable by anyone with file access |
 
+`Dpapi` additionally supports a `User` scope, which binds the ciphertext to the single identity that encrypted it — stronger than `Machine`, but it requires the secret to be written *by the service account*, so it is unavailable to virtual accounts and gMSA. `appsettings.json` itself is ACL-restricted to SYSTEM, Administrators and the service account.
+
+At runtime the resolved secret is written to a separate ACL-restricted file and passed to the Java agent as `-secret @<file>`, so it never appears in the process table (where any local administrator could read it for the agent's whole lifetime). The file is rewritten on each restart and deleted on service stop.
+
+### Process and Filesystem Hardening
+
+- The Java agent child is launched with a **deny-by-default environment** — only a curated allow-list plus explicitly configured additions — so the service's own environment block cannot leak into untrusted pipeline scripts
+- Win32 **process-mitigation policies** are applied to the service process: no remote, low-integrity or non-System32 DLL loads, and legacy extension-point injection disabled
+- **Binaries and runtime data are separated**: the install folder stays read-only to the agent identity, while logs, the secret file, the jar cache and the build work directory live under `%ProgramData%`. A malicious pipeline therefore cannot overwrite the service binary and wait for a restart
+- The cached `agent.jar` lives in its own subfolder, isolated from the build workspace, and its **SHA-256 is re-verified** before reuse — trust-on-first-use local integrity, complementing controller certificate pinning for upstream authenticity
+- The service runs under a least-privilege **virtual service account** (`NT SERVICE\Jenkins`) by default
+
 ### Secret Redaction
 
 Agent secrets are scrubbed from all log output (file and Event Log) before being written. The redaction logic replaces any occurrence of the resolved secret with `*****`.
@@ -111,11 +123,11 @@ Agent secrets are scrubbed from all log output (file and Event Log) before being
 
 ### Automated Security Scanning
 
-Six security scans run on every push and pull request:
+Six security scans run on every push and pull request (Dependency Review is a pull-request gate only), each also on a weekly schedule:
 
 | Scanner | What it checks |
 |---|---|
-| **CodeQL** | Static application security testing (SAST) for C# |
+| **CodeQL** | Static application security testing (SAST) for C# and GitHub Actions workflow YAML |
 | **Semgrep** | Pattern-based SAST and secret detection |
 | **Gitleaks** | Git history scanning for leaked secrets |
 | **PSScriptAnalyzer** | PowerShell script security rules |

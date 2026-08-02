@@ -48,13 +48,14 @@
 
   <main class="content">
     <h1>Class &amp; Method Reference</h1>
-    <p>The .NET 10 version consists of 29 source files split across interfaces, implementations, CLI, hardening, and a central <code>BackgroundService</code>. This page documents the core types; verify the current file list against <code>src/JenkinsAsService/</code>.</p>
+    <p>The types that make up <code>src/JenkinsAsService/</code>, grouped by concern. Most units are <code>internal static</code> and reachable from tests via <code>InternalsVisibleTo</code>; the DI-injected seams are <code>public</code> interfaces. Signatures here are the current ones &mdash; when this page and the code disagree, <strong>the code wins</strong>.</p>
 
     <hr>
 
-    <h2 id="servicesettings"><code>ServiceSettings</code></h2>
-    <p><strong>File:</strong> <code>ServiceSettings.cs</code></p>
-    <p>Simple POCO bound from <code>appsettings.json</code> via <code>IOptions&lt;ServiceSettings&gt;</code>. Properties:</p>
+    <h2 id="configuration-types">Configuration types</h2>
+
+    <h3 id="servicesettings"><code>ServiceSettings</code></h3>
+    <p><strong>File:</strong> <code>ServiceSettings.cs</code>. POCO bound from the <code>Jenkins</code> section of <code>appsettings.json</code> via <code>IOptions&lt;ServiceSettings&gt;</code>, grouped into six sub-objects. Descriptions and guidance live in <a href="configuration.html#settings-reference">Configuration &rarr; Settings reference</a>; this table is the type/default view.</p>
 
     <div class="table-wrap">
       <table>
@@ -63,150 +64,103 @@
             <th>Property</th>
             <th>Type</th>
             <th>Default</th>
-            <th>Description</th>
+            <th>Notes</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td><code>Connection.Url</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>Jenkins URL with explicit port</td>
-          </tr>
-          <tr>
-            <td><code>Connection.Method</code></td>
-            <td><code>ConnectionMethod</code></td>
-            <td><code>Auto</code></td>
-            <td>Agent transport: <code>Auto</code>, <code>WebSocket</code>, or <code>Https</code> (direct TCP inbound)</td>
-          </tr>
-          <tr>
-            <td><code>Connection.AgentName</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>Agent name (defaults to hostname at runtime)</td>
-          </tr>
-          <tr>
-            <td><code>Connection.ControllerCertThumbprint</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>SHA-256 thumbprint to pin the controller TLS cert (empty = chain validation)</td>
-          </tr>
-          <tr>
-            <td><code>Secret.Value</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>JNLP secret (or reference/ciphertext depending on <code>Secret.Mode</code>)</td>
-          </tr>
-          <tr>
-            <td><code>Secret.Mode</code></td>
-            <td><code>SecretMode</code></td>
-            <td><code>Unprotected</code></td>
-            <td>How <code>Secret.Value</code> is stored/resolved</td>
-          </tr>
-          <tr>
-            <td><code>Secret.DpapiScope</code></td>
-            <td><code>DpapiScope</code></td>
-            <td><code>Machine</code></td>
-            <td>DPAPI scope when <code>Secret.Mode</code> is <code>Dpapi</code></td>
-          </tr>
-          <tr>
-            <td><code>Secret.ViaFile</code></td>
-            <td><code>bool</code></td>
-            <td><code>true</code></td>
-            <td>Pass the secret via an ACL-restricted file (<code>-secret @&lt;file&gt;</code>)</td>
-          </tr>
-          <tr>
-            <td><code>Agent.JavaPath</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>Path to JDK bin folder</td>
-          </tr>
-          <tr>
-            <td><code>Agent.CustomArguments</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>Extra java.exe arguments (supports quoted values)</td>
-          </tr>
-          <tr>
-            <td><code>Agent.DataDirectory</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>Writable runtime data dir (empty = <code>%ProgramData%\JenkinsAsService</code>)</td>
-          </tr>
-          <tr>
-            <td><code>Hardening.SanitizeEnvironment</code></td>
-            <td><code>bool</code></td>
-            <td><code>true</code></td>
-            <td>Deny-by-default environment for the agent child</td>
-          </tr>
-          <tr>
-            <td><code>Hardening.AllowedEnvironmentVariables</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>Extra env var names passed through (<code>;</code>/<code>,</code>-separated)</td>
-          </tr>
-          <tr>
-            <td><code>Logging.DebugMode</code></td>
-            <td><code>bool</code></td>
-            <td><code>false</code></td>
-            <td>Verbose logging</td>
-          </tr>
-          <tr>
-            <td><code>Logging.CompactLog</code></td>
-            <td><code>bool</code></td>
-            <td><code>false</code></td>
-            <td>CLEF JSON log output (<code>agent.clef</code> instead of <code>agent.log</code>)</td>
-          </tr>
-          <tr>
-            <td><code>Logging.RetainedLogs</code></td>
-            <td><code>int</code></td>
-            <td><code>3</code></td>
-            <td>Number of rolled log files to keep (oldest permanently deleted)</td>
-          </tr>
-          <tr>
-            <td><code>Recovery.MaxRetries</code></td>
-            <td><code>int</code></td>
-            <td><code>0</code></td>
-            <td>Max recovery attempts (0 = infinite)</td>
-          </tr>
+          <tr><td><code>Connection.Url</code></td><td><code>string</code></td><td><code>""</code></td><td>Required; must carry an explicit port</td></tr>
+          <tr><td><code>Connection.Method</code></td><td><code>ConnectionMethod</code></td><td><code>Auto</code></td><td><code>Auto</code> / <code>WebSocket</code> / <code>Https</code> (direct TCP inbound)</td></tr>
+          <tr><td><code>Connection.AgentName</code></td><td><code>string</code></td><td><code>""</code></td><td>Empty resolves to <code>Environment.MachineName</code> at startup</td></tr>
+          <tr><td><code>Connection.ControllerCertThumbprint</code></td><td><code>string</code></td><td><code>""</code></td><td>SHA-256 pin for the <code>agent.jar</code> download</td></tr>
+          <tr><td><code>Secret.Value</code></td><td><code>string</code></td><td><code>""</code></td><td>Required; secret, ciphertext, env-var name or credential target per <code>Mode</code></td></tr>
+          <tr><td><code>Secret.Mode</code></td><td><code>SecretMode</code></td><td><code>Unprotected</code></td><td><code>Unprotected</code> / <code>Dpapi</code> / <code>Tpm</code> / <code>EnvironmentVariable</code> / <code>CredentialManager</code></td></tr>
+          <tr><td><code>Secret.DpapiScope</code></td><td><code>DpapiScope</code></td><td><code>Machine</code></td><td>Used only when <code>Mode</code> is <code>Dpapi</code></td></tr>
+          <tr><td><code>Secret.ViaFile</code></td><td><code>bool</code></td><td><code>true</code></td><td>Pass the secret as <code>-secret @&lt;file&gt;</code></td></tr>
+          <tr><td><code>Agent.JavaPath</code></td><td><code>string</code></td><td><code>""</code></td><td>JDK <code>bin</code> folder; empty falls back to <code>JAVA_HOME</code></td></tr>
+          <tr><td><code>Agent.CustomArguments</code></td><td><code>string</code></td><td><code>""</code></td><td>Split by <code>AgentArgumentParser</code></td></tr>
+          <tr><td><code>Agent.DataDirectory</code></td><td><code>string</code></td><td><code>""</code></td><td>Empty resolves to <code>%ProgramData%\JenkinsAsService</code></td></tr>
+          <tr><td><code>Agent.LaunchInInteractiveSession</code></td><td><code>InteractiveSessionSettings</code></td><td>see below</td><td>Opt-in interactive-desktop launch</td></tr>
+          <tr><td><code>Hardening.SanitizeEnvironment</code></td><td><code>bool</code></td><td><code>true</code></td><td>Deny-by-default environment for the agent child</td></tr>
+          <tr><td><code>Hardening.AllowedEnvironmentVariables</code></td><td><code>string</code></td><td><code>""</code></td><td><code>;</code>/<code>,</code>-separated extra names, case-insensitive</td></tr>
+          <tr><td><code>Logging.DebugMode</code></td><td><code>bool</code></td><td><code>false</code></td><td>Serilog minimum level <code>Debug</code>; set at startup only</td></tr>
+          <tr><td><code>Logging.CompactLog</code></td><td><code>bool</code></td><td><code>false</code></td><td>CLEF JSON (<code>agent.clef</code>) instead of <code>agent.log</code></td></tr>
+          <tr><td><code>Logging.RetainedLogs</code></td><td><code>int</code></td><td><code>3</code></td><td>Rolled files kept; oldest permanently deleted</td></tr>
+          <tr><td><code>Recovery.MaxRetries</code></td><td><code>int</code></td><td><code>0</code></td><td>Consecutive <em>crashes</em> before give-up; <code>0</code> = infinite</td></tr>
         </tbody>
       </table>
     </div>
 
+    <h4 id="interactivesessionsettings"><code>InteractiveSessionSettings</code></h4>
+    <p>Bound from <code>Jenkins:Agent:LaunchInInteractiveSession</code>. Off by default &mdash; see <a href="configuration.html#interactive-session">Configuration &rarr; Interactive-session launch</a> for the security posture.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Enabled</code></td><td><code>bool</code></td><td><code>false</code></td><td>Master switch; when false the interop path is unreachable</td></tr>
+          <tr><td><code>LocalSystemOnly</code></td><td><code>bool</code></td><td><code>true</code></td><td>Attempt the launch only when running as LocalSystem</td></tr>
+          <tr><td><code>TargetUser</code></td><td><code>string</code></td><td><code>""</code></td><td>Pin to one user; case-insensitive, domain prefix ignored</td></tr>
+          <tr><td><code>RequireInteractiveSession</code></td><td><code>bool</code></td><td><code>false</code></td><td>Throw instead of falling back to a Session 0 launch</td></tr>
+          <tr><td><code>PreferDisconnectedSession</code></td><td><code>bool</code></td><td><code>false</code></td><td>Rank non-<code>Active</code> sessions first and flip the id tie-break</td></tr>
+          <tr><td><code>SessionMigration</code></td><td><code>SessionMigrationMode</code></td><td><code>Off</code></td><td><code>Off</code> / <code>OnSessionLost</code> / <code>Always</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="telemetrysettings"><code>TelemetrySettings</code></h3>
+    <p><strong>File:</strong> <code>TelemetrySettings.cs</code>. Read from the <code>Telemetry</code> section in <code>Program.cs</code> via <code>GetSection(...).Get&lt;TelemetrySettings&gt;()</code> &mdash; it gates OTel registration at host-build time, so it is not registered as an <code>IOptions&lt;&gt;</code> service.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Enabled</code></td><td><code>bool</code></td><td><code>false</code></td><td>Opt in to OpenTelemetry metrics export</td></tr>
+          <tr><td><code>OtlpEndpoint</code></td><td><code>string</code></td><td><code>""</code></td><td>Empty logs a warning and skips export even when <code>Enabled</code></td></tr>
+          <tr><td><code>ServiceName</code></td><td><code>string</code></td><td><code>"JenkinsAsService"</code></td><td><code>service.name</code> resource attribute</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="configkeys"><code>ConfigKeys</code></h3>
+    <p><strong>File:</strong> <code>ConfigKeys.cs</code>. Central constants for every section and key name (<code>ConfigKeys.Agent.DataDirectoryPath</code>, <code>ConfigKeys.Logging.CompactLogPath</code>, &hellip;), mirroring the POCO tree. Configuration binding is by name and typos are silent, so <strong>use these constants rather than string literals</strong> anywhere config paths are needed.</p>
+
     <hr>
 
-    <h2 id="telemetrysettings"><code>TelemetrySettings</code></h2>
-    <p><strong>File:</strong> <code>TelemetrySettings.cs</code></p>
-    <p>POCO bound from <code>appsettings.json</code> section <code>Telemetry</code>. All optional — service functions normally with defaults.</p>
+    <h2 id="validation-resolution">Validation &amp; pure policy</h2>
+    <p>Small, side-effect-free units the worker composes. Each is <code>internal static</code> and directly unit-tested.</p>
 
     <div class="table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>Property</th>
-            <th>Type</th>
-            <th>Default</th>
-            <th>Description</th>
-          </tr>
+          <tr><th>Type</th><th>Entry point</th><th>Behaviour</th></tr>
         </thead>
         <tbody>
           <tr>
-            <td><code>Enabled</code></td>
-            <td><code>bool</code></td>
-            <td><code>false</code></td>
-            <td>Enable OpenTelemetry export</td>
+            <td><code>ServiceSettingsValidator</code></td>
+            <td><code>Validate(ServiceSettings)</code></td>
+            <td>Throws <code>InvalidOperationException</code> with an operator-facing message when <code>Connection:Url</code> or <code>Secret:Value</code> is empty, the URL is not absolute, or the URL carries no explicit port. The port check inspects the <em>authority of the original string</em> (skipping any IPv6 <code>[...]</code> literal), not <code>Uri.IsDefaultPort</code>, so an explicitly written <code>:443</code> is accepted while an omitted port is rejected. Called from the <code>Program.cs</code> pre-flight and again in the worker.</td>
           </tr>
           <tr>
-            <td><code>OtlpEndpoint</code></td>
-            <td><code>string</code></td>
-            <td><code>""</code></td>
-            <td>OTLP gRPC exporter endpoint (empty = export disabled even when <code>Enabled: true</code>)</td>
+            <td><code>JavaPathResolver</code></td>
+            <td><code>Resolve(configuredPath, javaHome)</code></td>
+            <td>Returns the full path to <code>java.exe</code>, trying <code>configuredPath</code> &rarr; <code>javaHome</code> &rarr; <code>javaHome\bin</code>. Throws when none contains <code>java.exe</code>.</td>
           </tr>
           <tr>
-            <td><code>ServiceName</code></td>
-            <td><code>string</code></td>
-            <td><code>"JenkinsAsService"</code></td>
-            <td><code>service.name</code> resource attribute</td>
+            <td><code>AgentArgumentParser</code></td>
+            <td><code>Parse(string?)</code> &rarr; <code>List&lt;string&gt;</code></td>
+            <td>Splits <code>Agent:CustomArguments</code> on whitespace while honouring double-quoted values (spaces preserved) and escaped quotes (<code>\"</code> &rarr; <code>"</code>). Null/empty yields an empty list.</td>
+          </tr>
+          <tr>
+            <td><code>AgentTransport</code></td>
+            <td><code>InitialMethod</code>, <code>Toggle</code>, <code>ShouldFallback</code>, <code>UsesWatchdogReconnect</code></td>
+            <td>Transport-selection policy for <code>Connection:Method</code>. <code>InitialMethod</code> maps <code>Auto</code> to its starting transport; <code>ShouldFallback</code> is true only for <code>Auto</code> when a <em>real</em> exit happened before the stability window; <code>Toggle</code> flips WebSocket &harr; Https. <code>UsesWatchdogReconnect</code> is true for <code>Auto</code> only &mdash; that is what adds <code>-noReconnect</code>, so a failed handshake exits the process instead of the agent retrying one transport forever.</td>
+          </tr>
+          <tr>
+            <td><code>DataPaths</code></td>
+            <td><code>ResolveDataDirectory</code>, <code>ResolveAgentDirectory</code>, <code>ResolveWorkDirectory</code></td>
+            <td>Expands environment variables in <code>Agent:DataDirectory</code>, defaulting to <code>%ProgramData%\JenkinsAsService</code>, and derives the <code>agent\</code> (jar cache) and <code>work\</code> (Jenkins <code>-workDir</code>) subdirectories.</td>
           </tr>
         </tbody>
       </table>
@@ -214,185 +168,244 @@
 
     <hr>
 
-    <h2 id="secretwriter-secretresolver-updatesecretcommand"><code>SecretWriter</code> / <code>SecretResolver</code> / <code>UpdateSecretCommand</code></h2>
-    <p><strong>Files:</strong> <code>SecretWriter.cs</code>, <code>SecretResolver.cs</code>, <code>UpdateSecretCommand.cs</code>, <code>InteractiveConfigPrompts.cs</code>, <code>ImpersonationRunner.cs</code>, <code>SecretMode.cs</code>, <code>ServiceSettingsNormalizer.cs</code></p>
+    <h2 id="secrets">Secrets &amp; configuration writing</h2>
 
-    <h3 id="secretwriter-writeconfig"><code>SecretWriter.WriteConfig(basePath, secret, mode, url, agentName, javaPath)</code></h3>
-    <p>Processes <code>secret</code> for the given <code>mode</code> (DPAPI encrypt / store env var / store CredMgr entry / leave plaintext), then writes the nested <code>appsettings.json</code> (sub-sections <code>Connection</code> / <code>Secret</code> / <code>Agent</code> / <code>Hardening</code> / <code>Logging</code> / <code>Recovery</code>). Preserves all existing top-level JSON sections (e.g. <code>Telemetry</code>) and existing sub-section fields not explicitly provided (<code>Agent.CustomArguments</code>, <code>Logging.DebugMode</code>, etc.).</p>
-
-    <h3 id="secretwriter-normalizeconfig"><code>SecretWriter.NormalizeConfig(basePath)</code></h3>
-    <p>Reconciles <code>appsettings.json</code> to the current schema on MSI upgrade, delegating the diff to <code>ServiceSettingsNormalizer.NormalizeJson</code>: adds keys the new schema defines (at their POCO defaults), preserves existing in-schema values, and prunes keys/sections the schema no longer defines. Rewrites the file only when something changed, atomically via a temp file + <code>File.Replace</code> so the hardened ACL is preserved. Never reads, resolves, or rewrites the secret value. Returns the added and removed dotted paths.</p>
-
-    <h3 id="servicesettingsnormalizer-normalizejson"><code>ServiceSettingsNormalizer.NormalizeJson(existingJson)</code></h3>
-    <p><strong>File:</strong> <code>ServiceSettingsNormalizer.cs</code>. Pure, deterministic, no I/O. Builds a schema tree from fresh <code>ServiceSettings</code> / <code>TelemetrySettings</code> POCOs (enums serialized as strings so defaults match the shipped <code>appsettings.json</code>) and returns <code>(mergedJson, addedPaths, removedPaths)</code>. Unparseable or non-object input is returned untouched (a no-op), so a corrupt config is never overwritten with defaults.</p>
-
-    <h3 id="secretresolver-resolve"><code>SecretResolver.Resolve(ServiceSettings)</code></h3>
-    <p>Resolves the raw secret at service startup:</p>
+    <h3 id="isecretresolver"><code>ISecretResolver</code> / <code>SecretResolver</code></h3>
+    <pre data-lang="csharp"><code>string Resolve(ServiceSettings settings);</code></pre>
+    <p>Resolves the raw secret once at startup, by <code>Secret.Mode</code>:</p>
     <ul>
-      <li><code>Unprotected</code> — returns <code>Secret.Value</code> as-is</li>
-      <li><code>Dpapi</code> — <code>ProtectedData.Unprotect</code> (machine- or user-scoped, same entropy as writer)</li>
-      <li><code>Tpm</code> — <code>RSACng</code> decrypt via the TPM Platform Crypto Provider (non-exportable key)</li>
-      <li><code>EnvironmentVariable</code> — reads machine-level env var named by <code>Secret.Value</code></li>
-      <li><code>CredentialManager</code> — reads Credential Manager entry named by <code>Secret.Value</code></li>
+      <li><code>Unprotected</code> &mdash; returns <code>Secret.Value</code> as-is</li>
+      <li><code>Dpapi</code> &mdash; <code>ProtectedData.Unprotect</code> (machine- or user-scope, same entropy as the writer)</li>
+      <li><code>Tpm</code> &mdash; <code>RSACng</code> decrypt via the TPM Platform Crypto Provider (non-exportable key)</li>
+      <li><code>EnvironmentVariable</code> &mdash; machine-level environment variable named by <code>Secret.Value</code></li>
+      <li><code>CredentialManager</code> &mdash; Credential Manager entry named by <code>Secret.Value</code></li>
     </ul>
 
-    <h3 id="updatesecretcommand-run"><code>UpdateSecretCommand.Run(args, basePath?)</code></h3>
-    <p>CLI subcommand (<code>JenkinsAsService.exe update-secret</code>). Parses args manually (no System.CommandLine dependency). Returns <code>0</code> on success, <code>1</code> on error. Supports interactive and <code>--silent</code> modes. The interactive console prompts (server / secret / mode, masked input) live in <code>InteractiveConfigPrompts</code>; <code>--impersonate</code> wraps the write in <code>WindowsIdentity.RunImpersonated</code> via P/Invoke <code>LogonUser</code>, isolated in <code>ImpersonationRunner</code>.</p>
+    <h3 id="secretwriter"><code>SecretWriter</code></h3>
+    <p><strong>File:</strong> <code>SecretWriter.cs</code>. Every write goes through a temp file + <code>File.Replace</code>, so a hardened ACL on <code>appsettings.json</code> survives.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Method</th><th>Behaviour</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>WriteConfig(basePath, secret, mode, server, agentName?, javaPath?, dpapiScope, controllerCertThumbprint?, serviceAccount?)</code></td>
+            <td>Processes the secret for <code>mode</code> (DPAPI/TPM encrypt, store env var, store credential, or leave plaintext) and writes the nested <code>Jenkins</code> section. Preserves other top-level sections (e.g. <code>Telemetry</code>) and in-section fields not passed in. With <code>serviceAccount</code>, hardens the file ACL to SYSTEM + Administrators + that account.</td>
+          </tr>
+          <tr>
+            <td><code>MergeConfig(basePath, ConfigMergeFields)</code></td>
+            <td>Applies only the non-<code>null</code> members of <code>ConfigMergeFields</code> (<code>Method</code>, <code>DpapiScope</code>, <code>ViaFile</code>, <code>CustomArguments</code>, <code>SanitizeEnvironment</code>, <code>AllowedEnvironmentVariables</code>, <code>DebugMode</code>, <code>CompactLog</code>, <code>RetainedLogs</code>, <code>MaxRetries</code>), leaving everything else untouched. Backs the installer's <code>WriteAdvanced1/2/3</code> custom actions.</td>
+          </tr>
+          <tr>
+            <td><code>SetDataDirectory(basePath, dataDirectory)</code></td>
+            <td>Writes just <code>Agent:DataDirectory</code>. A separate call because folding it into the main custom-action command line would exceed the MSI 255-character limit.</td>
+          </tr>
+          <tr>
+            <td><code>NormalizeConfig(basePath)</code> &rarr; <code>(added, removed)</code></td>
+            <td>Reconciles the file to the current schema via <code>ServiceSettingsNormalizer.NormalizeJson</code>, rewriting only when something changed. Never reads, resolves or rewrites the secret value. Returns the added and removed dotted paths.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-note">
+      <div class="callout-title">Interactive-session settings are not merge-able</div>
+      <p><code>ConfigMergeFields</code> deliberately has no <code>LaunchInInteractiveSession</code> members &mdash; the installer never turns the feature on. Configure it by editing <code>appsettings.json</code> after install (the keys are written at their defaults by <code>WriteConfig</code>, and preserved across upgrades by <code>NormalizeConfig</code>).</p>
+    </div>
 
-    <p><strong>Non-interactive modes</strong> (used by the installer's custom actions): <code>--merge</code> applies only the optional fields to an existing config; <code>--set-data-dir</code> writes just <code>Agent:DataDirectory</code>; <code>--upgrade</code> reconciles the config to the current schema (via <code>NormalizeConfig</code>), then preserves an existing secret or repair-writes from the supplied args when none is present. The secret check reads only the raw <code>Secret:Value</code> string &mdash; no decryption &mdash; so it works as SYSTEM regardless of the service identity a User-scope DPAPI / TPM / Credential Manager secret is bound to.</p>
+    <h3 id="servicesettingsnormalizer"><code>ServiceSettingsNormalizer.NormalizeJson(existingJson)</code></h3>
+    <p><strong>File:</strong> <code>ServiceSettingsNormalizer.cs</code>. Pure, deterministic, no I/O. Builds a schema tree by serializing fresh <code>ServiceSettings</code> / <code>TelemetrySettings</code> POCOs (enums as strings, so defaults match the shipped <code>appsettings.json</code>) and returns <code>(mergedJson, addedPaths, removedPaths)</code>: schema keys absent from the file are added at their defaults, present values are preserved verbatim, and any key <em>or top-level section</em> the schema does not define is dropped. Unparseable or non-object input is returned untouched, so a corrupt config is never overwritten with defaults.</p>
 
-    <p><strong>Argument parsing internals:</strong></p>
+    <h3 id="updatesecretcommand"><code>UpdateSecretCommand.Run(args[, basePath])</code></h3>
+    <p><strong>File:</strong> <code>UpdateSecretCommand.cs</code>. The <code>JenkinsAsService.exe update-secret</code> CLI, dispatched from <code>Program.cs</code> before Serilog is initialised. Arguments are parsed by hand (no <code>System.CommandLine</code> dependency); returns <code>0</code> on success, <code>1</code> on error. Flag reference: <a href="configuration.html#cli-update-secret">Configuration &rarr; CLI: update-secret</a>.</p>
     <ul>
-      <li><code>ParseState</code> — private mutable accumulator class; avoids a 10-parameter method signature</li>
-      <li><code>TryApplyValueArg(args, ref i, state)</code> — switch over value-args (<code>--secret</code>, <code>--url</code>, <code>--mode</code>, ...); CC &le; 9</li>
-      <li><code>TryApplyFlagArg(arg, state)</code> — switch over boolean flags (<code>--silent</code>, <code>--impersonate</code>); CC = 3</li>
-      <li><code>ParseArgs</code> itself has CC = 4 (loop + two-condition if)</li>
+      <li><strong>Interactive</strong> &mdash; console prompts (server / secret / mode, with masked input) live in <code>InteractiveConfigPrompts</code>.</li>
+      <li><strong><code>--silent</code></strong> &mdash; every value from flags; the secret may come from <code>--secret</code>, <code>--secret-file</code> (deleted after reading) or <code>--secret-env</code>.</li>
+      <li><strong><code>--impersonate</code></strong> &mdash; wraps the write in <code>WindowsIdentity.RunImpersonated</code> for Credential-Manager and User-scope DPAPI writes. The <code>LogonUser</code> P/Invoke is isolated in <code>ImpersonationRunner</code>.</li>
+      <li><strong><code>--merge</code> / <code>--set-data-dir</code> / <code>--upgrade</code></strong> &mdash; the non-interactive installer paths, mapping to <code>MergeConfig</code>, <code>SetDataDirectory</code> and <code>NormalizeConfig</code>. <code>--upgrade</code> then preserves an existing secret or repair-writes from the supplied args; its presence check is a raw-string read of <code>Secret:Value</code> &mdash; no decryption &mdash; so it works as SYSTEM regardless of which identity the secret is bound to.</li>
+      <li><strong>Value parsers</strong> &mdash; <code>ParseMode</code>, <code>ParseDpapiScope</code>, <code>ParseMethod</code>, <code>ParseBool</code>, <code>ParseInt</code>, <code>SanitizePathArgument</code> are <code>internal static</code> and tested directly.</li>
     </ul>
+
+    <h3 id="agentsecretfile"><code>AgentSecretFile</code></h3>
+    <p><strong>File:</strong> <code>AgentSecretFile.cs</code>. Backs <code>Secret:ViaFile</code>.</p>
+    <ul>
+      <li><code>Write(directory, secret, warn?)</code> &rarr; path of the ACL-restricted file handed to the agent as <code>-secret @&lt;file&gt;</code>. Inheritance is broken and access reduced to SYSTEM, Administrators and the writing identity &mdash; which keeps <em>write and delete</em> rights so the low-privilege service account can overwrite and remove its own file.</li>
+      <li><code>GrantRead(path, user, warn?)</code> &mdash; adds a read ACE, used by the interactive launch so the session user can read the file it is told to open.</li>
+      <li><code>Delete(path?)</code> &mdash; called from <code>StopAsync</code>; null-safe and never throws.</li>
+    </ul>
+
+    <h3 id="tpmsecretprotector"><code>TpmSecretProtector</code></h3>
+    <p><strong>File:</strong> <code>TpmSecretProtector.cs</code>. <code>Protect</code> / <code>Resolve</code> against a persistent machine-scoped RSA key in the TPM Platform Crypto Provider (<code>JenkinsAsService-AgentSecret</code>, RSA-OAEP-SHA256), plus <code>IsAvailable()</code>, <code>DeleteKey()</code> and <code>ResolveAccountSid(account)</code> &mdash; the last computes the virtual service-account SID so key <em>use</em>-rights can be granted to the identity that will run the service. Not exercised by CI: the tests early-<code>return</code> when no TPM or no elevation is present.</p>
 
     <hr>
 
-    <h2 id="ijardownloader-httpjardownloader"><code>IJarDownloader</code> / <code>HttpJarDownloader</code></h2>
-    <p><strong>Files:</strong> <code>IJarDownloader.cs</code>, <code>HttpJarDownloader.cs</code></p>
+    <h2 id="networking">Networking</h2>
 
-    <h3 id="ijardownloader-interface"><code>IJarDownloader</code> (Interface)</h3>
-    <pre data-lang="csharp"><code>Task DownloadAsync(string jenkinsUrl, string destinationPath, CancellationToken ct);</code></pre>
+    <h3 id="ijardownloader"><code>IJarDownloader</code> / <code>HttpJarDownloader</code></h3>
+    <pre data-lang="csharp"><code>Task Download(Uri jenkinsUri, string destinationPath, CancellationToken ct);</code></pre>
+    <p>Downloads <code>agent.jar</code> from <code>&lt;jenkinsUri&gt;/jnlpJars/agent.jar</code> into <code>destinationPath</code> (the <code>agent\</code> cache directory) using the named <code>HttpClient</code> <code>"JarDownloader"</code> with <code>AddStandardResilienceHandler()</code> &mdash; retry, circuit breaker and timeout.</p>
+    <ul>
+      <li><strong>ETag caching.</strong> The server's <code>ETag</code> is stored in <code>agent.jar.etag</code> and replayed as <code>If-None-Match</code>; a <code>304</code> skips the transfer. A missing jar makes the ETag file be ignored, so a 304 can never leave the caller without a jar. A <code>200</code> with no <code>ETag</code> header deletes the sidecar so the next call is unconditional.</li>
+      <li><strong>Atomic replace.</strong> The body is written to a temp file and moved into place, so a mid-stream failure cannot leave a truncated jar sitting behind a valid ETag.</li>
+      <li><strong>SHA-256 integrity.</strong> Every <code>200</code> records the jar's hash in <code>agent.jar.sha256</code>; every <code>304</code> re-hashes the cached jar and compares. A mismatch discards the ETag and forces an unconditional re-download instead of launching the altered jar. This is trust-on-first-use <em>local</em> integrity &mdash; for upstream authenticity, pin <code>Connection:ControllerCertThumbprint</code>.</li>
+    </ul>
 
-    <h3 id="httpjardownloader-implementation"><code>HttpJarDownloader</code> (Implementation)</h3>
-    <p>Downloads <code>agent.jar</code> from <code>$jenkinsUrl/jnlpJars/agent.jar</code> using a named <code>HttpClient</code> (<code>"JarDownloader"</code>) with Polly resilience (automatic retry, circuit breaker, timeout).</p>
-    <p><strong>ETag caching:</strong> Stores the server's <code>ETag</code> response header in <code>agent.jar.etag</code>. On subsequent calls, sends <code>If-None-Match</code> — a <code>304 Not Modified</code> skips the download entirely. If the jar file is missing, the etag file is ignored (preventing a 304 that would leave the caller without a jar). On <code>200</code> with no <code>ETag</code> header, the etag file is deleted so the next call is unconditional.</p>
-    <p><strong>SHA-256 integrity:</strong> On every <code>200</code> download the jar's SHA-256 is recorded in <code>agent.jar.sha256</code>. On a <code>304</code>, the cached jar is re-hashed and compared against the stored value; a mismatch (tampered or corrupt cache) discards the ETag and forces an unconditional re-download rather than launching the bad jar. This is a TOFU/local-integrity guard — for upstream authenticity, pin the controller cert via <code>Connection:ControllerCertThumbprint</code>.</p>
+    <h3 id="iconnectivitychecker"><code>IConnectivityChecker</code> / <code>TcpConnectivityChecker</code></h3>
+    <pre data-lang="csharp"><code>Task Check(string host, int port, int timeoutMs, CancellationToken ct);</code></pre>
+    <p>Connects a <code>TcpClient</code> under a linked <code>CancellationTokenSource</code> (2&nbsp;s in the worker), throwing <code>InvalidOperationException</code> with a distinct message for a timeout (<code>OperationCanceledException</code>) versus a refused connection or DNS failure (<code>SocketException</code>). The supervision loop treats that exception as "unreachable" &mdash; retry forever, never count toward <code>MaxRetries</code>.</p>
+
+    <h3 id="certificatethumbprintvalidator"><code>CertificateThumbprintValidator</code></h3>
+    <p><code>Normalize(thumbprint)</code> strips colons/spaces and upper-cases; <code>Matches(certificate, expectedThumbprint)</code> compares the certificate's SHA-256 thumbprint against it. Wired in <code>Program.cs</code> as the <code>RemoteCertificateValidationCallback</code> of the jar client's <code>SocketsHttpHandler</code> when a thumbprint is configured &mdash; the pin <em>replaces</em> chain trust for that connection.</p>
 
     <hr>
 
-    <h2 id="iconnectivitychecker-tcpconnectivitychecker"><code>IConnectivityChecker</code> / <code>TcpConnectivityChecker</code></h2>
-    <p><strong>Files:</strong> <code>IConnectivityChecker.cs</code>, <code>TcpConnectivityChecker.cs</code></p>
+    <h2 id="agent-process">Agent process</h2>
 
-    <h3 id="iconnectivitychecker-interface"><code>IConnectivityChecker</code> (Interface)</h3>
-    <pre data-lang="csharp"><code>Task TestAsync(string host, int port, int timeoutMs, CancellationToken ct);</code></pre>
+    <h3 id="iagentprocesslauncher"><code>IAgentProcessLauncher</code> / <code>IAgentProcess</code></h3>
+    <pre data-lang="csharp"><code>IAgentProcess Start(ProcessStartInfo startInfo, Action&lt;string&gt; onOutputLine);
 
-    <h3 id="tcpconnectivitychecker-implementation"><code>TcpConnectivityChecker</code> (Implementation)</h3>
-    <p>Creates <code>TcpClient</code>, connects async with configurable timeout via <code>CancellationTokenSource.CreateLinkedTokenSource</code>. Distinguishes timeout (<code>OperationCanceledException</code>) from connection refused (<code>SocketException</code>).</p>
+int Id { get; }
+bool HasExited { get; }
+int ExitCode { get; }
+uint? InteractiveSessionId { get; }   // null for a Session 0 (headless) launch
+Task Exited { get; }
+void Kill();                          // whole process tree; never throws</code></pre>
+    <p>The seam that lets <code>SupervisionLoopTests</code> drive crash/stabilise/restart cycles with a fake process instead of a real <code>java.exe</code>. The production <code>AgentProcessLauncher</code> wraps <code>System.Diagnostics.Process</code> and, when <code>Agent:LaunchInInteractiveSession:Enabled</code> is set on Windows, first tries <code>InteractiveSessionLauncher.TryStart</code> and falls through to the normal launch on any precondition miss.</p>
+    <div class="callout callout-note">
+      <div class="callout-title">Exit signal ownership</div>
+      <p>The exit <code>TaskCompletionSource</code> is captured in a <em>local</em> inside the launcher, not a shared field, so a late exit from a killed process cannot complete a newer process's signal &mdash; that bug caused spurious restarts.</p>
+    </div>
+
+    <h3 id="interactivesessionlauncher"><code>InteractiveSessionLauncher</code></h3>
+    <p><strong>File:</strong> <code>InteractiveSessionLauncher.cs</code>. All of the <code>CreateProcessAsUser</code> interop. <strong>Compile-verified only</strong> &mdash; CI has no interactive session or privilege, the same class as the TPM path.</p>
+    <ul>
+      <li><code>TryStart(startInfo, onOutputLine, settings, logger, onTargetUserResolved, out process)</code> &mdash; returns <code>false</code> after a specific warning when the caller should fall back to Session 0. Sequence: identity gate &rarr; enumerate sessions &rarr; <code>InteractiveSessionSelector.TrySelect</code> &rarr; enable privileges &rarr; <code>WTSQueryUserToken</code> &rarr; <code>DuplicateTokenEx</code> &rarr; <code>CreateEnvironmentBlock</code> (+ <code>EnvironmentSanitizer</code>) &rarr; <code>CreateProcessAsUser</code> onto <code>winsta0\default</code>, with the tree in a kill-on-close Job Object. <code>onTargetUserResolved</code> fires with the session user's SID before the process starts, so <code>InteractiveLaunchAcl</code> can grant access.</li>
+      <li><code>RequiredPrivileges</code> / <code>FriendlyName(privilege)</code> &mdash; <code>SeTcbPrivilege</code>, <code>SeAssignPrimaryTokenPrivilege</code>, <code>SeIncreaseQuotaPrivilege</code> and their User Rights Assignment labels, kept in one list so a warning cites both.</li>
+      <li><code>TryEnumerateSessions(logger, out sessions)</code> &mdash; the non-throwing wrapper the migration check uses; a transient enumeration failure logs at Debug and leaves a healthy agent alone.</li>
+      <li><code>DescribeTokenError(error)</code> &mdash; turns the Win32 code into an operator-facing explanation (<code>ERROR_NO_TOKEN</code>, <code>ERROR_ACCESS_DENIED</code>, <code>ERROR_PRIVILEGE_NOT_HELD</code>).</li>
+    </ul>
+    <div class="callout callout-warning">
+      <div class="callout-title">Privileges must be enabled, not just held</div>
+      <p>A right granted through User Rights Assignment lands in the token <strong>present but disabled</strong>, and an access check only passes when it is enabled &mdash; so <code>TryEnablePrivilege</code> calls <code>AdjustTokenPrivileges</code> for each of the three before use, treating <code>ERROR_NOT_ALL_ASSIGNED</code> as "never granted". LocalSystem's token already has them enabled.</p>
+    </div>
+
+    <h3 id="interactivesessionselector"><code>InteractiveSessionSelector</code></h3>
+    <p><strong>File:</strong> <code>InteractiveSessionSelector.cs</code>. The selection <em>policy</em>, pure and unit-tested, with no interop: it takes a list of <code>SessionInfo</code> records (<code>SessionId</code>, <code>UserName</code>, <code>State</code>, WinStation name) and decides.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Member</th><th>Behaviour</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>TrySelect(sessions, targetUser, out sessionId, out failure, preferDisconnected)</code></td>
+            <td>Filters to usable targets &mdash; never session 0, must have a logged-on user (connect state is <em>not</em> the signal; disconnected and locked sessions qualify) &mdash; then ranks on three ordered keys: connect state (flipped by <code>preferDisconnected</code>) &rarr; <strong>console last</strong> &rarr; session id (lowest, or highest under <code>preferDisconnected</code>). <code>targetUser</code> is applied after ranking so <code>NoInteractiveSession</code> and <code>TargetUserNotLoggedOn</code> stay distinguishable in the failure reason.</td>
+          </tr>
+          <tr>
+            <td><code>ShouldMigrate(sessions, currentSessionId, targetUser, preferDisconnected, mode, out reason)</code></td>
+            <td>Whether a <em>running</em> agent should be relaunched elsewhere. Returns no replacement id on purpose &mdash; the relaunch re-runs full bring-up, including the headless fallback. <code>currentSessionId</code> is <code>null</code> for a Session 0 agent, which is what makes "upgrade a headless agent" expressible under <code>Always</code>.</td>
+          </tr>
+          <tr>
+            <td><code>Describe(sessions)</code></td>
+            <td>Renders the session table for log lines (id, user, state), used both in failure warnings and as the migration guard's fingerprint.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The console key sits deliberately <em>below</em> the connect-state key: it exists so an autologon console desktop is the fallback rather than the permanent winner of the id tie-break. Promoting it would let a freshly signed-in <code>Active</code> RDP session steal the agent, which is exactly what <code>PreferDisconnectedSession</code> exists to prevent. Console-ness comes from the WinStation name (<code>Console</code> vs <code>RDP-Tcp#N</code>), never from "session 1".</p>
+
+    <h3 id="sessionmigrationtracker"><code>SessionMigrationTracker</code></h3>
+    <p><strong>File:</strong> <code>SessionMigrationTracker.cs</code>. Worker state, unit-tested. <code>Evaluate(currentSession, sessionSnapshot)</code> returns a <code>MigrationVerdict</code>: it remembers the <code>(agent session, rendered session table)</code> a migration was ordered from and refuses an identical repeat, reporting once. Because a failed interactive launch falls back to headless, <code>Always</code> on a box where that launch <em>cannot</em> succeed would otherwise see "a desktop exists, upgrade the headless agent" forever &mdash; dropping the node and killing the running build every stability window, with <code>MaxRetries</code> unable to stop it (migrations are off the crash path). The guard self-clears: any change to either half of the origin is a new state.</p>
+
+    <h3 id="interactivelaunchacl"><code>InteractiveLaunchAcl</code></h3>
+    <p><strong>File:</strong> <code>InteractiveLaunchAcl.cs</code>. <code>GrantTo(sessionUser, settings, logger)</code> gives the session user what the agent needs when it runs as somebody other than the service: read on the secret file, <code>Modify</code> on <code>work\</code>, and <strong>read-only</strong> on <code>agent\</code>. Never write on <code>agent\</code> or the data root &mdash; a build step must not be able to clobber <code>agent.jar</code>, the logs or the secret. All grants are best-effort, logged on failure, and no-ops when the service and session user are the same account.</p>
+
+    <hr>
+
+    <h2 id="hardening">Hardening</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Entry point</th><th>Behaviour</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ProcessMitigations</code></td>
+            <td><code>Apply(warn?)</code></td>
+            <td>Sets Win32 mitigation policies on the <em>service</em> process: no remote, low-integrity or non-System32 DLL loads, and legacy extension-point injection disabled. Affects future <code>LoadLibrary</code> calls in this process only, not the Java child. Best-effort &mdash; never blocks startup.</td>
+          </tr>
+          <tr>
+            <td><code>EnvironmentSanitizer</code></td>
+            <td><code>Apply(environment, extraAllowed)</code></td>
+            <td>Removes every variable outside a curated allow-list (<code>SystemRoot</code>, <code>PATH</code>, <code>TEMP</code>, <code>JAVA_HOME</code>, <code>ProgramFiles</code>, profile paths, &hellip;) plus the caller's <code>;</code>/<code>,</code>-separated additions, case-insensitively. Applied to the child's environment block &mdash; the service's own block, and anything in it, is not inherited by pipeline scripts.</td>
+          </tr>
+          <tr>
+            <td><code>ConfigAclHardener</code></td>
+            <td><code>Harden(filePath, serviceAccount)</code></td>
+            <td>Breaks inheritance on <code>appsettings.json</code> and reduces access to SYSTEM, Administrators and the service account, removing <code>Users</code>. Called from the <code>update-secret</code> write path.</td>
+          </tr>
+          <tr>
+            <td><code>EventLogSourceInstaller</code></td>
+            <td><code>Ensure(source, logName)</code></td>
+            <td>Returns whether the event source is usable. The low-privilege service account cannot create one (HKLM write), so the installer pre-creates it as SYSTEM and <code>Program.cs</code> attaches the sink only if this returns true &mdash; with <code>manageEventSource: false</code>, so startup can never fail on a registry write.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <hr>
 
     <h2 id="program-cs"><code>Program.cs</code></h2>
-    <p><strong>Top-level statements.</strong> Responsibilities:</p>
+    <p>Top-level statements. In order:</p>
     <ol>
-      <li>Reads config early to determine <code>DebugMode</code>, <code>CompactLog</code>, and <code>RetainedLogs</code> for Serilog configuration</li>
-      <li>Configures Serilog:
-        <ul>
-          <li>Rolling file sink (10MB, configurable retention via <code>RetainedLogs</code>, default 3) — human-readable (<code>agent.log</code>) or CLEF JSON (<code>agent.clef</code>) based on <code>CompactLog</code></li>
-          <li>EventLog sink (Warning+)</li>
-          <li>Enrichers: <code>Pid</code>, <code>MachineName</code>, <code>EnvironmentName</code></li>
-        </ul>
-      </li>
-      <li>Builds the host with:
-        <ul>
-          <li><code>AddWindowsService</code></li>
-          <li><code>IOptions&lt;ServiceSettings&gt;</code></li>
-          <li>Named <code>HttpClient</code> (<code>"JarDownloader"</code>) with <code>AddStandardResilienceHandler()</code></li>
-          <li><code>IJarDownloader</code> &rarr; <code>HttpJarDownloader</code></li>
-          <li><code>IConnectivityChecker</code> &rarr; <code>TcpConnectivityChecker</code></li>
-          <li><code>JenkinsAgentWorker</code> (hosted service)</li>
-        </ul>
-      </li>
-      <li>Validates mandatory fields before <code>host.RunAsync()</code></li>
-      <li>Global try/catch logs fatal errors via Serilog</li>
+      <li><strong>CLI dispatch</strong> &mdash; <code>args[0] == "update-secret"</code> runs <code>UpdateSecretCommand.Run</code> and exits. Deliberately <em>before</em> Serilog init, since <code>Environment.Exit</code> skips the flush block.</li>
+      <li><strong>Boot config</strong> &mdash; a throwaway <code>ConfigurationBuilder</code> reads <code>Logging:DebugMode</code>, <code>Logging:CompactLog</code>, <code>Logging:RetainedLogs</code> and <code>Agent:DataDirectory</code> before the host exists.</li>
+      <li><strong>Serilog</strong> &mdash; rolling file sink in the <em>data</em> directory (10&nbsp;MB, <code>RetainedLogs</code> kept; <code>agent.log</code> or <code>agent.clef</code>), Event Log sink at Warning+ when the source is usable, enrichers <code>ProcessId</code> / <code>MachineName</code> / <code>EnvironmentName</code>, and level overrides muting <code>Microsoft</code>, <code>System.Net.Http</code> and <code>Polly</code> below Warning.</li>
+      <li><strong><code>ProcessMitigations.Apply</code></strong> &mdash; hardens the service process itself.</li>
+      <li><strong>Host</strong> &mdash; <code>AddWindowsService(ServiceName = "Jenkins")</code>, <code>Configure&lt;ServiceSettings&gt;</code>, the <code>"JarDownloader"</code> <code>HttpClient</code> (+ cert pinning when configured), singletons for <code>IJarDownloader</code> / <code>IConnectivityChecker</code> / <code>ISecretResolver</code> / <code>IAgentProcessLauncher</code>, the <code>JenkinsAgentWorker</code> hosted service, and OpenTelemetry metrics when <code>Telemetry:Enabled</code> and an endpoint are both set.</li>
+      <li><strong>Pre-flight validation</strong> &mdash; <code>ServiceSettingsValidator.Validate</code> on the bound settings; a failure logs the reason plus the config path and returns without starting the host.</li>
+      <li><strong><code>host.RunAsync()</code></strong>, with a global catch logging <code>Log.Fatal</code> and a <code>finally</code> that flushes Serilog.</li>
     </ol>
 
     <hr>
 
     <h2 id="jenkinsagentworker"><code>JenkinsAgentWorker : BackgroundService</code></h2>
-    <p><strong>File:</strong> <code>JenkinsAgentWorker.cs</code> — The main service class.</p>
+    <p><strong>File:</strong> <code>JenkinsAgentWorker.cs</code>. Lifecycle, process construction, the supervision loop and metrics. The loop's invariants are described in <a href="architecture.html#watchdog-auto-recovery">Architecture &rarr; Watchdog &amp; auto-recovery</a>; this section is the method map.</p>
 
-    <h3 id="constructor">Constructor</h3>
-    <p>Injected dependencies: <code>ILogger&lt;JenkinsAgentWorker&gt;</code>, <code>IOptions&lt;ServiceSettings&gt;</code>, <code>IJarDownloader</code>, <code>IConnectivityChecker</code>, <code>ISecretResolver</code>.</p>
-    <p>Sets <code>_basePath</code> to <code>AppContext.BaseDirectory</code>. Creates <code>Meter("JenkinsAsService", "1.0.0")</code> and two counters (<code>jenkins_agent_restarts_total</code>, <code>jenkins_agent_severe_events_total</code>) — zero-overhead when no OTel listener is registered.</p>
+    <h3 id="worker-constructor">Constructor</h3>
+    <p>Injected: <code>ILogger&lt;JenkinsAgentWorker&gt;</code>, <code>IOptions&lt;ServiceSettings&gt;</code>, <code>IJarDownloader</code>, <code>IConnectivityChecker</code>, <code>ISecretResolver</code>, <code>IAgentProcessLauncher</code>, <code>IHostApplicationLifetime</code>. Creates <code>Meter("JenkinsAsService", "1.0.0")</code> (name exposed as <code>MeterName</code> for <code>Program.cs</code>) and two counters, <code>jenkins_agent_restarts_total</code> and <code>jenkins_agent_severe_events_total</code> &mdash; zero-overhead with no OTel listener registered.</p>
 
     <h3 id="executeasync"><code>ExecuteAsync(CancellationToken)</code></h3>
-    <p>Service entry point. Calls in sequence:</p>
     <ol>
-      <li><code>ValidateSettings()</code> &rarr; <code>ResolveJavaPath()</code></li>
-      <li><code>TestConnectivityAsync()</code> &rarr; <code>IJarDownloader.DownloadAsync()</code></li>
-      <li><code>StartAgentProcess()</code> &rarr; <code>RunWatchdogAsync()</code></li>
+      <li><code>LogStartupBanner()</code></li>
+      <li><code>ValidateSettings()</code> &mdash; re-runs the validator, warns on a non-HTTPS URL, resolves the agent name (hostname when empty), resolves the secret via <code>ISecretResolver</code>, resolves the data/agent/work directories, picks the initial transport, and warns when the interactive launch is enabled (or when <code>SessionMigration</code> is set while <code>Enabled</code> is false, which is otherwise a silent no-op)</li>
+      <li><code>ResolveJavaPath()</code></li>
+      <li><code>RunSupervisionLoop(ct)</code> &mdash; connectivity, download and start all live inside it</li>
     </ol>
-    <p>Catches <code>OperationCanceledException</code> for clean shutdown. Any other exception is logged and re-thrown (stops the host).</p>
+    <p>A cancelled token is a clean shutdown. Any other exception is non-transient (bad config, unresolvable secret, missing Java), so it is logged and <code>IHostApplicationLifetime.StopApplication()</code> is called rather than faulting the host.</p>
 
     <h3 id="stopasync"><code>StopAsync(CancellationToken)</code></h3>
-    <p>Logs stop request, calls <code>KillAgent()</code>, logs confirmation, calls <code>base.StopAsync()</code>.</p>
+    <p>Sets <code>_stopping</code> <strong>before</strong> killing, so the kill-induced exit is not counted as a crash, then <code>KillAgent()</code>, <code>AgentSecretFile.Delete(...)</code>, and <code>base.StopAsync</code>.</p>
 
-    <hr>
-
-    <h3 id="validation-methods">Validation Methods</h3>
-
-    <h4 id="validatesettings-static"><code>ValidateSettings(ServiceSettings)</code> (internal static)</h4>
-    <p>Testable static method. Checks <code>Connection.Url</code> and <code>Secret.Value</code> are non-empty. Parses URL via <code>System.Uri</code> and rejects <code>Uri.IsDefaultPort</code> (requires explicit port).</p>
-
-    <h4 id="validatesettings-instance"><code>ValidateSettings()</code> (private instance)</h4>
-    <p>Calls the static overload, then resolves <code>Connection.AgentName</code> to <code>Environment.MachineName</code> if empty — stored in a private <code>_agentName</code> field without mutating the <code>ServiceSettings</code> object.</p>
-
-    <h4 id="resolvejavapath"><code>ResolveJavaPath(string? configuredPath, string? javaHome)</code> (internal static)</h4>
-    <p>Testable static method. Builds candidate list: <code>configuredPath</code> &rarr; <code>javaHome</code> &rarr; <code>javaHome\bin</code>. Returns the first path containing <code>java.exe</code>. Throws if none found.</p>
-
-    <hr>
-
-    <h3 id="agent-lifecycle-methods">Agent Lifecycle Methods</h3>
-
-    <h4 id="startagentprocess"><code>StartAgentProcess()</code> &rarr; <code>Process</code></h4>
-    <p>Creates <code>ProcessStartInfo</code> with <code>ArgumentList</code> (no shell interpretation):</p>
+    <h3 id="worker-process">Process construction</h3>
     <ul>
-      <li><code>-jar agent.jar -url ... -secret ... -name ... -workDir ...</code></li>
-      <li>Parses <code>Agent.CustomArguments</code> via <code>ParseArguments()</code> (supports quoted values with spaces)</li>
-    </ul>
-    <p>Hooks <code>OutputDataReceived</code> and <code>ErrorDataReceived</code> to <code>ParseAgentOutput()</code>. Returns the started <code>Process</code>.</p>
-
-    <h4 id="parsearguments"><code>ParseArguments(string?)</code> (internal static)</h4>
-    <p>Parses a string of arguments respecting double-quoted values:</p>
-    <ul>
-      <li><code>"-Dpath=C:\Program Files\Java"</code> &rarr; single argument with spaces preserved</li>
-      <li>Escaped quotes inside quoted arguments: <code>\"</code> &rarr; literal <code>"</code></li>
-      <li>Unquoted tokens split on whitespace</li>
+      <li><code>BuildProcessStartInfo()</code> &mdash; <code>ProcessStartInfo</code> with redirected stdout/stderr, no shell, <code>WorkingDirectory = work\</code>; then <code>AddAgentArguments</code> and, when enabled, <code>EnvironmentSanitizer.Apply</code>.</li>
+      <li><code>AddAgentArguments(...)</code> &mdash; builds <code>ArgumentList</code> (never a command string): <code>-jar &lt;agent\agent.jar&gt; -url &lt;url with trailing slash&gt; -secret &lt;@file|value&gt; -name &lt;agentName&gt; -workDir &lt;work\&gt;</code>, plus <code>-webSocket</code> on the WebSocket transport, <code>-noReconnect</code> when <code>AgentTransport.UsesWatchdogReconnect</code>, then the parsed <code>CustomArguments</code>.</li>
+      <li><code>ResolveSecretArgument()</code> &mdash; <code>@&lt;file&gt;</code> via <code>AgentSecretFile.Write</code>, or the raw secret when <code>Secret:ViaFile</code> is off.</li>
+      <li><code>LogLaunchCommand(psi)</code> &mdash; Debug-level only, with the resolved secret replaced by <code>*****</code>.</li>
+      <li><code>ParseAgentOutput(line)</code> &mdash; redacts the secret, then routes by prefix: <code>INFO:</code> &rarr; Information, <code>WARNING:</code> &rarr; Warning, <code>SEVERE:</code> &rarr; Error plus <code>Interlocked.Increment</code> on the SEVERE tally and the OTel counter; anything else &rarr; Information (Debug when <code>DebugMode</code>). All calls share the <code>"{Output}"</code> template constant.</li>
     </ul>
 
-    <h4 id="parseagentoutput"><code>ParseAgentOutput(string line)</code> (internal)</h4>
-    <p>Routes Java output by prefix. Redacts <code>_resolvedSecret</code> from the line before logging (protects against Jenkins echoing the secret on auth failure). All log calls use the shared <code>OutputMessageTemplate</code> constant (<code>"{Output}"</code>) to avoid repeating the structured-logging key.</p>
+    <h3 id="worker-supervision">Supervision</h3>
     <ul>
-      <li><code>INFO: </code> &rarr; <code>LogInformation</code></li>
-      <li><code>WARNING: </code> &rarr; <code>LogWarning</code></li>
-      <li><code>SEVERE: </code> &rarr; <code>LogError</code> + <code>Interlocked.Increment(ref _severeCount)</code> + <code>_severeEventCounter.Add(1)</code></li>
-      <li>Other &rarr; <code>LogInformation</code> (or <code>LogDebug</code> when <code>DebugMode</code> is on)</li>
+      <li><code>RunSupervisionLoop(ct)</code> &mdash; <code>while (true)</code> with a single shutdown gate at the top (kill, then return) so an agent started by bring-up <em>after</em> <code>StopAsync</code> ran is still reaped. Snapshots <code>_agent</code> into a local each iteration, because <code>StopAsync</code> nulls the field from another thread.</li>
+      <li><code>TryBringUpAgent(ct)</code> &mdash; one attempt: connectivity &rarr; <code>IJarDownloader.Download</code> &rarr; <code>StartAgentProcess</code>. Returns <code>false</code> for both "unreachable" and "download/start failed", which drives backoff but never the give-up counter.</li>
+      <li><code>ShouldMigrateInteractiveSession(agent)</code> &mdash; runs from the <em>still-running</em> branch once per stability window; combines <code>InteractiveSessionSelector.ShouldMigrate</code> with <code>SessionMigrationTracker</code>. The kill happens before the exit is observed, so a migration never reaches the crash path, and <code>bringUpAttempts</code> is reset so no backoff is applied.</li>
+      <li><code>ApplyAutoTransportFallback(agentActuallyExited)</code> &mdash; delegates to <code>AgentTransport.ShouldFallback</code> and toggles <code>_effectiveMethod</code>.</li>
+      <li><code>KillAgent()</code> &mdash; takes ownership with <code>Interlocked.Exchange(ref _agent, null)</code> so two threads cannot kill or dispose the same instance, then clears the SEVERE tally so a deliberate kill does not inflate the next run's report.</li>
+      <li><code>HasExceededMaxRetries(crashCount, maxRetries)</code> and <code>ComputeBackoffDelaySeconds(attempt, baseSec, maxSec, multiplier)</code> &mdash; <code>internal static</code> pure functions (10&nbsp;s base, &times;2, 300&nbsp;s cap).</li>
+      <li><code>UseFastTimingForTests(stabilityMs, backoffBaseSec, backoffMaxSec)</code> &mdash; test seam that shrinks the windows to milliseconds so the whole loop runs deterministically.</li>
     </ul>
-
-    <hr>
-
-    <h3 id="watchdog-methods">Watchdog Methods</h3>
-
-    <h4 id="runwatchdogasync"><code>RunWatchdogAsync(CancellationToken)</code></h4>
-    <p>Event-driven loop using <code>Task.WhenAny(exitTask, Task.Delay(StabilityMs))</code>. <code>exitTask</code> is a <code>TaskCompletionSource.Task</code> completed by <code>process.Exited</code>. No polling.</p>
-    <p>On exit detected:</p>
-    <ol>
-      <li>Logs SEVERE count (via <code>Interlocked.Exchange(ref _severeCount, 0)</code>)</li>
-      <li>Captures exit code, calls <code>KillAgent()</code> to dispose</li>
-      <li>Increments retry counter, checks <code>Recovery.MaxRetries</code></li>
-      <li>Calls <code>RecoverAgentAsync(retryCount, ct)</code></li>
-    </ol>
-    <p>On stability window elapsed (agent still running):</p>
-    <ul>
-      <li>If <code>retryCount &gt; 0</code>: resets to 0 and logs stability message</li>
-    </ul>
-
-    <h4 id="recoveragentasync"><code>RecoverAgentAsync(int retryCount, CancellationToken)</code></h4>
-    <ol>
-      <li>Waits exponential backoff (10s base, 300s cap)</li>
-      <li>Tests TCP connectivity — if unreachable, logs warning, resets <code>_agentExitTcs</code>, returns <code>false</code></li>
-      <li>Downloads <code>agent.jar</code> via <code>IJarDownloader</code> (ETag cached)</li>
-      <li>Starts new process via <code>StartAgentProcess()</code></li>
-      <li>Returns <code>true</code> on success; caller increments <code>_restartCounter</code> only on <code>true</code></li>
-    </ol>
-    <p>On failure: a fresh uncompleted <code>TaskCompletionSource</code> is assigned so the watchdog loop waits properly instead of immediately re-entering recovery.</p>
-
-    <h4 id="killagent"><code>KillAgent()</code></h4>
-    <p>Kills the Java process tree (<code>Kill(entireProcessTree: true)</code>), disposes the <code>Process</code> object, sets reference to <code>null</code>. Catches <code>InvalidOperationException</code> (process already exited).</p>
   </main>
 
   <aside class="toc">

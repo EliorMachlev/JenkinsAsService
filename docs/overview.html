@@ -61,13 +61,12 @@
     <h2 id="solution">Solution</h2>
     <p><strong>JenkinsAsService</strong> wraps the Jenkins inbound agent connection inside a native Windows Service built with .NET 10. The service:</p>
     <ol>
-      <li>Reads configuration from <code>appsettings.json</code></li>
-      <li>Validates all settings (Jenkins URL with explicit port, agent secret, Java path)</li>
-      <li>Tests TCP connectivity to the Jenkins controller</li>
-      <li>Downloads <code>agent.jar</code> using ETag-based conditional GET (skips on 304 Not Modified)</li>
-      <li>Launches the Java agent process with async output parsing and secret redaction</li>
-      <li>Monitors the agent via an event-driven watchdog with exponential backoff auto-recovery</li>
+      <li>Reads configuration from <code>appsettings.json</code> and validates it up front (Jenkins URL with an explicit port, agent secret, Java path)</li>
+      <li>Resolves the secret from its protected store and the runtime data directories</li>
+      <li>Then, inside the supervision loop: tests TCP connectivity to the controller, refreshes <code>agent.jar</code> via ETag conditional GET, and launches the Java agent with async output parsing and secret redaction</li>
+      <li>Supervises the agent with an event-driven watchdog &mdash; auto-recovering with exponential backoff, and stopping the service only after <code>MaxRetries</code> consecutive <em>crashes</em> so SCM can act</li>
     </ol>
+    <p>Connect, download and start all live <em>inside</em> the loop rather than ahead of it, so a transient outage at boot (DNS not up yet, controller mid-restart) retries instead of faulting the service.</p>
 
     <h2 id="key-benefits">Key Benefits</h2>
     <ul>
@@ -82,27 +81,30 @@
       <li><strong>OpenTelemetry metrics</strong> &mdash; <code>jenkins_agent_restarts_total</code>, <code>jenkins_agent_severe_events_total</code>, .NET runtime metrics. Opt-in via <code>Telemetry:Enabled: true</code></li>
       <li><strong>Dual logging</strong> &mdash; Serilog rolling file (<code>agent.log</code> or <code>agent.clef</code>) plus Windows Event Log</li>
       <li><strong>Secret redaction</strong> &mdash; agent secrets scrubbed from all log output</li>
+      <li><strong>Schema-reconciling upgrades</strong> &mdash; an in-place MSI upgrade adds settings the new version introduces at their defaults, prunes ones it no longer defines, and preserves your values and secret (detected without decrypting, so a secret bound to the service account survives)</li>
+      <li><strong>Visible GUI/browser tests</strong> &mdash; opt-in, off by default: launch the agent on a logged-on user's desktop instead of Session 0, with session selection, optional migration while running, and an automatic headless fallback. A <a href="configuration.html#interactive-session">deliberate isolation downgrade</a> &mdash; debug nodes only</li>
       <li><strong>Single-file deploy</strong> &mdash; self-contained .exe with R2R, compression, and embedded PDB</li>
-      <li><strong>178 unit tests</strong> &mdash; xUnit + NSubstitute + FluentAssertions, CI on every push</li>
+      <li><strong>Unit-tested</strong> &mdash; xUnit + NSubstitute + FluentAssertions, including an end-to-end watchdog harness driven by a fake process; CI on every push</li>
     </ul>
 
     <h2 id="how-it-works">How It Works</h2>
     <pre class="mermaid">
 flowchart TD
-    A[Windows Service Manager] -->|Calls ExecuteAsync| B[Validate Settings]
-    B --> C{Settings OK?}
-    C -->|No| D[Log Error &amp; Stop]
-    C -->|Yes| E[Resolve Java Path]
-    E --> F[Test TCP Connectivity]
-    F -->|Fail| D
-    F -->|Pass| G["Download agent.jar (ETag cached)"]
-    G --> H[Start Java Process]
-    H --> I[Watchdog Loop]
-    I -->|process.Exited or 60s timer| J{Process exited?}
-    J -->|No — stable 60s| K[Reset retry counter]
-    K --> I
-    J -->|Yes| L["Log SEVERE count, Backoff, Re-download, Restart"]
-    L --> I
+    A[Windows Service Manager] -->|Calls ExecuteAsync| B[Validate settings, resolve secret and Java]
+    B -->|Invalid config| D[Log error and StopApplication]
+    B -->|OK| E[Supervision loop]
+    E --> F{Agent running?}
+    F -->|No — bring-up| G["Backoff, then connect &rarr; download agent.jar (ETag) &rarr; start"]
+    G -->|Unreachable or start failed| H[Retry forever — does not count toward MaxRetries]
+    H --> E
+    G -->|Started| E
+    F -->|Yes| I[Await exit signal or 60s stability timer]
+    I -->|Stable 60s| J[Reset crash counter]
+    J --> E
+    I -->|Crash| K[Log SEVERE count, kill, auto-transport fallback]
+    K --> L{Crashes exceed MaxRetries?}
+    L -->|Yes| M[StopApplication so SCM can recover]
+    L -->|No| E
     </pre>
   </main>
 
