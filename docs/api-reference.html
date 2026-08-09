@@ -81,7 +81,7 @@
           <tr><td><code>Agent.DataDirectory</code></td><td><code>string</code></td><td><code>""</code></td><td>Empty resolves to <code>%ProgramData%\JenkinsAsService</code></td></tr>
           <tr><td><code>Hardening.SanitizeEnvironment</code></td><td><code>bool</code></td><td><code>true</code></td><td>Deny-by-default environment for the agent child</td></tr>
           <tr><td><code>Hardening.AllowedEnvironmentVariables</code></td><td><code>string</code></td><td><code>""</code></td><td><code>;</code>/<code>,</code>-separated extra names, case-insensitive</td></tr>
-          <tr><td><code>Logging.DebugMode</code></td><td><code>bool</code></td><td><code>false</code></td><td>Serilog minimum level <code>Debug</code>; set at startup only</td></tr>
+          <tr><td><code>Logging.DebugMode</code></td><td><code>bool</code></td><td><code>false</code></td><td>Serilog minimum level <code>Debug</code>; re-read while running via <a href="#loglevelcontroller"><code>LogLevelController</code></a></td></tr>
           <tr><td><code>Logging.CompactLog</code></td><td><code>bool</code></td><td><code>false</code></td><td>CLEF JSON (<code>agent.clef</code>) instead of <code>agent.log</code></td></tr>
           <tr><td><code>Logging.RetainedLogs</code></td><td><code>int</code></td><td><code>3</code></td><td>Rolled files kept; oldest permanently deleted</td></tr>
           <tr><td><code>Recovery.MaxRetries</code></td><td><code>int</code></td><td><code>0</code></td><td>Consecutive <em>crashes</em> before give-up; <code>0</code> = infinite</td></tr>
@@ -312,7 +312,12 @@ void Kill();                          // whole process tree; never throws</code>
           <tr>
             <td><code>UninstallCleanup</code></td>
             <td><code>IsSafeToDelete(path)</code><br><code>Purge(basePath, dataDirectory, report)</code></td>
-            <td>Backs <code>update-secret --purge</code>, the uninstall custom action. Deletes the runtime data tree and the CA-generated <code>appsettings.json</code> &mdash; neither is a tracked MSI file, so Windows Installer removes neither. <code>Purge</code> never throws: a locked log file must not fail an uninstall. <code>IsSafeToDelete</code> guards a recursive delete that runs as SYSTEM against an operator-supplied path, rejecting anything not fully qualified (a relative path would resolve against the CA's unpredictable working directory), drive roots, paths less than two levels deep, and well-known system folders.</td>
+            <td>Backs the <code>purge</code> command, invoked by the uninstall custom action. Deletes the runtime data tree and the CA-generated <code>appsettings.json</code> &mdash; neither is a tracked MSI file, so Windows Installer removes neither. <code>Purge</code> never throws: a locked log file must not fail an uninstall. <code>IsSafeToDelete</code> guards a recursive delete that runs as SYSTEM against an operator-supplied path, rejecting anything not fully qualified (a relative path would resolve against the CA's unpredictable working directory), drive roots, paths less than two levels deep, and well-known system folders.</td>
+          </tr>
+          <tr>
+            <td><code>SecretPurger</code></td>
+            <td><code>Purge(mode, configuredValue, report)</code></td>
+            <td>Removes the secret from wherever <code>Secret:Mode</code> put it: the machine-scoped TPM key, the Credential Manager entry, or the machine environment variable. <code>Unprotected</code> and <code>Dpapi</code> keep the material in <code>appsettings.json</code>, which the caller deletes; the other modes store only a <em>pointer</em> there, so deleting the config alone would leave a usable agent credential on the host. <code>configuredValue</code> is <code>Secret:Value</code> &mdash; for the pointer modes that <em>is</em> the target name, read before the config is deleted. Best-effort and never throws; every outcome is reported, including the per-user Credential Manager case SYSTEM cannot reach.</td>
           </tr>
           <tr>
             <td><code>EventLogSourceInstaller</code></td>

@@ -1,4 +1,5 @@
 // Copyright (c) 2024 All rights reserved
+using System.Text.Json;
 using FluentAssertions;
 
 namespace JenkinsAsService.Tests;
@@ -125,6 +126,51 @@ public class UninstallCleanupTests : IDisposable
         }
 
         messages.Should().Contain(m => m.Contains("Could not remove", StringComparison.Ordinal));
+    }
+
+    // ---- PurgeCommand: the CLI surface the installer invokes ------------------------------------------
+
+    [Fact]
+    public void The_purge_command_removes_the_configured_data_directory()
+    {
+        // Not the default location: an operator who relocated Agent:DataDirectory must have THEIR tree
+        // removed, and reading it back out of the config is the only way the command can know that.
+        var install = CreateDirectory("install");
+        var data = CreateDirectory("relocated", "JenkinsData");
+        // Serialized rather than hand-escaped: a Windows path in hand-written JSON needs doubled backslashes,
+        // and getting that wrong makes the test fail for a reason unrelated to what it is checking.
+        File.WriteAllText(
+            Path.Combine(install, "appsettings.json"),
+            JsonSerializer.Serialize(new { Jenkins = new { Agent = new { DataDirectory = data } } }));
+        File.WriteAllText(Path.Combine(data, "agent.log"), "log");
+
+        var exitCode = PurgeCommand.Run([PurgeCommand.Name], install);
+
+        exitCode.Should().Be(0);
+        Directory.Exists(data).Should().BeFalse();
+        File.Exists(Path.Combine(install, "appsettings.json")).Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_purge_command_is_named_as_a_verb_the_installer_invokes_directly()
+    {
+        // Guards the contract with Package.wxs: the uninstall custom action runs `purge`, so a rename here
+        // silently breaks uninstall on a real machine - the CA would fail and Return="ignore" would hide it.
+        PurgeCommand.Name.Should().Be("purge");
+    }
+
+    [Fact]
+    public void The_purge_command_help_does_not_delete_anything()
+    {
+        var install = CreateDirectory("install");
+        var data = CreateDirectory("data", "JenkinsAsServiceData");
+        File.WriteAllText(Path.Combine(install, "appsettings.json"), "{}");
+
+        var exitCode = PurgeCommand.Run([PurgeCommand.Name, "--help"], install);
+
+        exitCode.Should().Be(0);
+        Directory.Exists(data).Should().BeTrue("--help must never be destructive");
+        File.Exists(Path.Combine(install, "appsettings.json")).Should().BeTrue();
     }
 
     private string CreateDirectory(params string[] segments)

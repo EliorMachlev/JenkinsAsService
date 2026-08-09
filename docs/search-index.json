@@ -223,6 +223,21 @@
         "keywords": ["service recovery", "auto-recovery", "restart", "failure actions", "watchdog", "resilience", "sc failure"]
       },
       {
+        "title": "Jar download problems (incl. proxy)",
+        "url": "troubleshooting.html#download-failures",
+        "keywords": ["proxy", "proxybypass", "jar download", "304", "etag", "sha-256", "cert pinning", "node never comes online"]
+      },
+      {
+        "title": "Uninstall took my logs",
+        "url": "troubleshooting.html#uninstall-took-my-logs",
+        "keywords": ["uninstall", "logs deleted", "data folder", "programdata", "purge", "recover", "work directory"]
+      },
+      {
+        "title": "Debug mode (live, no restart)",
+        "url": "troubleshooting.html#debug-mode",
+        "keywords": ["debug", "verbose", "log level", "debugmode", "no restart", "live"]
+      },
+      {
         "title": "Watchdog & auto-recovery",
         "url": "architecture.html#watchdog-auto-recovery",
         "keywords": ["watchdog", "supervision loop", "backoff", "crash counter", "maxretries", "bring-up", "stability window", "give up"]

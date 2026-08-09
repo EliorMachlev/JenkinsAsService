@@ -11,7 +11,7 @@ namespace JenkinsAsService;
 /// all of it on disk, including a file holding the agent secret. This is the other half of the uninstall.
 /// </para>
 /// <para>
-/// Invoked as <c>update-secret --purge</c> from a deferred custom action sequenced before <c>RemoveFiles</c>
+/// Invoked as the <c>purge</c> command from a deferred custom action sequenced before <c>RemoveFiles</c>
 /// and conditioned on a genuine uninstall. It must <em>not</em> run during a major upgrade: WiX removes the
 /// old product first (<c>Schedule="afterInstallInitialize"</c>), so a purge there would delete the config the
 /// upgrade is supposed to reconcile and preserve.

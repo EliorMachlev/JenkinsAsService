@@ -128,7 +128,7 @@
          holding the agent secret. Return="ignore" because a locked log file must not fail an uninstall. -->
     <CustomAction Id="PurgeInstallation"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --purge'
+                  ExeCommand='purge'
                   Execute="deferred" Impersonate="no" Return="ignore" />
 
     <!-- All CAs must run AFTER InstallFiles (the exe must be on disk to invoke) and BEFORE StartServices:

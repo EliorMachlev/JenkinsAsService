@@ -12,6 +12,7 @@ using Serilog.Events;
 using Serilog.Formatting.Compact;
 
 const string UpdateSecretCommandName = "update-secret";
+const string PurgeCommandName = PurgeCommand.Name;
 const string ConfigFileName = ConfigKeys.FileName;
 const string ConfigSectionName = ConfigKeys.Section;
 const string DebugModeKey = ConfigKeys.Logging.DebugModePath;
@@ -34,12 +35,18 @@ const string TelemetrySectionName = ConfigKeys.TelemetrySection;
 const string LogOutputTemplate =
     "{ProcessId} | {Timestamp:yyyy-MM-dd HH:mm:ss} | {Level} | {Message:lj}{NewLine}{Exception}";
 
-// CLI mode — if args contain a known command, handle it and exit.
+// CLI mode — if args[0] is a known command, handle it and exit; otherwise fall through to service mode.
 // IMPORTANT: this dispatch must stay before Serilog init — Environment.Exit skips the
 // finally { Log.CloseAndFlushAsync() } block below, which is correct (no logger to flush).
-if (args.Length > 0 && args[0] == UpdateSecretCommandName)
+var commands = new Dictionary<string, Func<string[], int>>(StringComparer.Ordinal)
 {
-    Environment.Exit(UpdateSecretCommand.Run(args));
+    [UpdateSecretCommandName] = UpdateSecretCommand.Run,
+    [PurgeCommandName] = args => PurgeCommand.Run(args),
+};
+
+if (args.Length > 0 && commands.TryGetValue(args[0], out var command))
+{
+    Environment.Exit(command(args));
 }
 
 // Service mode

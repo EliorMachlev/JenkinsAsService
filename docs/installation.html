@@ -448,6 +448,11 @@ sc.exe delete Jenkins</code></pre>
             <td>Standard <code>ServiceControl</code> behaviour</td>
           </tr>
           <tr>
+            <td>The <strong>secret</strong>, in whichever store <code>Secret:Mode</code> used</td>
+            <td><strong>Removed</strong> &mdash; TPM key, Credential Manager entry, or machine environment variable</td>
+            <td><code>Unprotected</code> and <code>Dpapi</code> keep the material in the config, which goes with the install folder. The other modes store only a <em>pointer</em> there, so deleting the file alone would leave a working agent credential on the machine</td>
+          </tr>
+          <tr>
             <td><code>C:\ProgramData\JenkinsAsService</code> (data folder)</td>
             <td><strong>Removed</strong> &mdash; logs, cached <code>agent.jar</code>, the <code>work\</code> directory and the runtime secret file</td>
             <td>Uninstalling means removing the product, not leaving a build workspace and a secret-bearing folder orphaned on disk</td>
@@ -461,9 +466,15 @@ sc.exe delete Jenkins</code></pre>
     </div>
     <div class="callout callout-note">
       <div class="callout-title">How this works, and why an upgrade is safe</div>
-      <p>Neither the config nor the data folder is a tracked MSI file &mdash; <code>appsettings.json</code> is written by a custom action and the data tree is created at runtime &mdash; so Windows Installer alone removes neither. A deferred custom action sequenced just before <code>RemoveFiles</code> runs <code>update-secret --purge</code> to delete both.</p>
+      <p>Neither the config nor the data folder is a tracked MSI file &mdash; <code>appsettings.json</code> is written by a custom action and the data tree is created at runtime &mdash; so Windows Installer alone removes neither. A deferred custom action sequenced just before <code>RemoveFiles</code> runs the <code>purge</code> command to delete both.</p>
       <p>It is conditioned on <code>REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</code>. That second clause is what keeps an <strong>upgrade</strong> safe: a major upgrade removes the old product <em>first</em>, and without the gate that removal would delete the config the upgrade is meant to reconcile, along with your logs and cached <code>agent.jar</code>. An in-place upgrade therefore preserves the data folder in full; only a genuine uninstall clears it. Both behaviours are asserted on every CI run &mdash; see <a href="ci-cd.html#msi-lifecycle">CI/CD &rarr; MSI install / upgrade / uninstall</a>.</p>
       <p>A relocated <code>Agent:DataDirectory</code> is honoured: the purge reads the configured path and removes <em>that</em> tree. It refuses to delete a drive root or a well-known system directory, so a mistyped path leaves data behind rather than taking the machine with it.</p>
+      <p>The same read happens for the secret: <code>Secret:Mode</code> and <code>Secret:Value</code> are read <em>before</em> the config is deleted, because for the pointer modes that value names the environment variable or credential target to remove.</p>
+    </div>
+    <div class="callout callout-warning">
+      <div class="callout-title">One case the uninstall cannot finish for you</div>
+      <p>Credential Manager entries are <strong>per-user</strong>, and the uninstall runs as SYSTEM. A credential written under another account (<code>update-secret --impersonate</code>) is not in SYSTEM's vault and cannot be removed from there. The purge reports this rather than passing silently, and prints the command to run while logged on as that account:</p>
+      <pre data-lang="powershell"><code>cmdkey /delete:JenkinsAsService/AgentSecret</code></pre>
     </div>
 
     <h2 id="automated-release">Automated Release</h2>

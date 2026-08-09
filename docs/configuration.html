@@ -507,9 +507,20 @@
   --merge                Apply only the optional settings supplied, leaving everything else untouched
   --set-data-dir &lt;path&gt;  Write only Agent:DataDirectory
   --upgrade              Reconcile appsettings.json to the current schema; preserve the existing secret
-  --purge                Uninstall cleanup: delete the data directory and appsettings.json, then exit
   --help                 Show usage</code></pre>
-    <p><code>--merge</code>, <code>--set-data-dir</code> and <code>--upgrade</code> exist because an MSI custom-action command line is capped at 255 characters &mdash; the installer splits the work across several calls. They are equally usable in a hand-rolled deployment script. <code>--purge</code> is the uninstall counterpart: it removes the runtime data directory (the configured one, if <code>Agent:DataDirectory</code> was relocated) and <code>appsettings.json</code>, which the MSI cannot remove because it never installed them. See <a href="installation.html#uninstall">Installation &rarr; What uninstall removes</a>.</p>
+    <p><code>--merge</code>, <code>--set-data-dir</code> and <code>--upgrade</code> exist because an MSI custom-action command line is capped at 255 characters &mdash; the installer splits the work across several calls. They are equally usable in a hand-rolled deployment script.</p>
+
+    <h3 id="cli-purge">CLI: <code>purge</code></h3>
+    <pre data-lang="text"><code>JenkinsAsService.exe purge
+
+  Deletes this installation's runtime data directory and appsettings.json.
+  --help                 Show usage</code></pre>
+    <p>A <strong>separate top-level command</strong>, not a flag on <code>update-secret</code> &mdash; it updates no secret, and a destructive operation should not be spelled as a modifier of a non-destructive one.</p>
+    <p>Windows Installer removes only files it installed. <code>appsettings.json</code> is written by a custom action and the data directory is created at runtime, so neither is a tracked MSI file and an uninstall cannot remove them on its own. The MSI runs this command for you; run it by hand after a manual (non-MSI) removal.</p>
+    <div class="callout callout-warning">
+      <div class="callout-title">Destructive and unprompted</div>
+      <p>It deletes the logs, the cached <code>agent.jar</code>, the <code>work\</code> tree (build workspaces and remoting state), <code>appsettings.json</code>, and <strong>the secret from its store</strong> &mdash; the TPM key, Credential Manager entry or machine environment variable named by <code>Secret:Mode</code>/<code>Secret:Value</code>. Copy out anything you need first. The data directory is read from the config, so a relocated <code>Agent:DataDirectory</code> is honoured; paths that are not fully qualified, drive roots and well-known system directories are refused. See <a href="installation.html#uninstall">Installation &rarr; What uninstall removes</a>.</p>
+    </div>
 
     <div class="callout callout-tip">
       <div class="callout-title">Tip</div>

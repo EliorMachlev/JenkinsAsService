@@ -119,7 +119,8 @@ internal static class TpmSecretProtector
         }
     }
 
-    // Test-only: removes the persisted key so round-trip tests don't leave artifacts in the TPM store.
+    // Removes the persisted key. Used by uninstall (SecretPurger) to leave no TPM object behind, and by the
+    // round-trip tests so they don't litter the TPM store.
     internal static void DeleteKey(bool machineKey)
     {
         var openOptions = machineKey ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None;

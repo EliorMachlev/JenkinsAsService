@@ -125,9 +125,15 @@ To uninstall:
 ```powershell
 sc.exe stop Jenkins
 sc.exe delete Jenkins
+.\JenkinsAsService.exe purge   # removes %ProgramData%\JenkinsAsService and appsettings.json
 ```
 
-> Uninstalling (MSI or `sc.exe delete`) does **not** remove `%ProgramData%\JenkinsAsService` — your logs, the cached `agent.jar` and the build work directory are deliberately kept. Delete it yourself when you no longer need them. The runtime secret file is removed when the service stops.
+> [!WARNING]
+> **Uninstalling is destructive.** The MSI removes the install folder *and* `%ProgramData%\JenkinsAsService` — logs, the cached `agent.jar`, and the `work\` directory (build workspaces, `remoting/` state) all go with it, without prompting. Copy anything you need out first. An **upgrade** preserves the data folder in full; only a genuine uninstall clears it.
+>
+> It also removes the **secret from its store** — the TPM key, Credential Manager entry, or machine environment variable, per `Secret:Mode` — so nothing usable is left behind. A Credential Manager entry written with `--impersonate` belongs to that user's vault and must be removed while logged on as them (`cmdkey /delete:JenkinsAsService/AgentSecret`); the purge tells you if it hit this.
+>
+> For a manual install there is no MSI to run the cleanup, hence the `purge` call above. It honours a relocated `Agent:DataDirectory` and refuses to delete a drive root or a system folder.
 
 ## Configuration
 

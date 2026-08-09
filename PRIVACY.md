@@ -37,6 +37,19 @@ transmitted to the project:
 The install folder lives in `Program Files` (read-only to the service account) and the writable data
 lives in `%ProgramData%\JenkinsAsService` — see the [Configuration reference](https://jenkinsasservice.machlev.org/configuration.html).
 
+### How long it is kept
+
+Logs roll and the oldest are deleted once `Logging:RetainedLogs` (default 3) is exceeded. The secret
+file is deleted when the service stops.
+
+**Uninstalling deletes everything above** — the install folder including `appsettings.json`, the whole
+data folder with the logs, the cached `agent.jar` and the work directory, **and the secret itself from
+wherever it was stored**: the TPM key, the Credential Manager entry, or the machine environment
+variable, depending on `Secret:Mode`. Nothing is retained on the machine afterwards, and nothing was
+ever sent off it. If you want to keep logs or a build
+workspace, copy them out before uninstalling; there is no prompt. An in-place *upgrade* preserves the
+data folder in full.
+
 ### Network connections the service makes
 
 The service opens a network connection in exactly two cases, and no others — there is no update check,
