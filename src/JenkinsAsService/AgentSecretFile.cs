@@ -36,42 +36,6 @@ internal static class AgentSecretFile
         return path;
     }
 
-    /// <summary>
-    /// Adds a read ACE for <paramref name="user"/> to an already-written secret file, without disturbing the
-    /// rest of the DACL. Needed only by the interactive launch: the Java agent reads <c>-secret @&lt;file&gt;</c>
-    /// itself, and it runs as the <em>session</em> user, who is not the identity that wrote the file. Without
-    /// this the handshake fails with an unreadable secret whenever the two identities differ — which is every
-    /// LocalSystem-service configuration.
-    /// <para>
-    /// Read, not Modify: only the service rewrites and deletes this file. Best-effort — a failure is logged and
-    /// the launch continues, exactly like <see cref="TryRestrict"/>.
-    /// </para>
-    /// </summary>
-    [SupportedOSPlatform("windows")]
-    internal static void GrantRead(string path, SecurityIdentifier user, Action<string>? warn = null)
-    {
-        try
-        {
-            var file = new FileInfo(path);
-            var security = file.GetAccessControl();
-            security.AddAccessRule(new FileSystemAccessRule(
-                user, FileSystemRights.Read, AccessControlType.Allow));
-            file.SetAccessControl(security);
-        }
-        catch (Exception ex) when (
-            ex is UnauthorizedAccessException
-                or IdentityNotMappedException
-                or System.Security.SecurityException
-                or InvalidOperationException
-                or IOException)
-        {
-            warn?.Invoke(
-                $"Could not grant read access on the agent secret file '{path}' to the interactive session " +
-                $"user: {ex.Message}. The agent will fail to read its secret unless that account is a local " +
-                "administrator.");
-        }
-    }
-
     /// <summary>Best-effort deletion of the secret file. Never throws.</summary>
     internal static void Delete(string? path)
     {

@@ -79,31 +79,12 @@
           <tr><td><code>Agent.JavaPath</code></td><td><code>string</code></td><td><code>""</code></td><td>JDK <code>bin</code> folder; empty falls back to <code>JAVA_HOME</code></td></tr>
           <tr><td><code>Agent.CustomArguments</code></td><td><code>string</code></td><td><code>""</code></td><td>Split by <code>AgentArgumentParser</code></td></tr>
           <tr><td><code>Agent.DataDirectory</code></td><td><code>string</code></td><td><code>""</code></td><td>Empty resolves to <code>%ProgramData%\JenkinsAsService</code></td></tr>
-          <tr><td><code>Agent.LaunchInInteractiveSession</code></td><td><code>InteractiveSessionSettings</code></td><td>see below</td><td>Opt-in interactive-desktop launch</td></tr>
           <tr><td><code>Hardening.SanitizeEnvironment</code></td><td><code>bool</code></td><td><code>true</code></td><td>Deny-by-default environment for the agent child</td></tr>
           <tr><td><code>Hardening.AllowedEnvironmentVariables</code></td><td><code>string</code></td><td><code>""</code></td><td><code>;</code>/<code>,</code>-separated extra names, case-insensitive</td></tr>
           <tr><td><code>Logging.DebugMode</code></td><td><code>bool</code></td><td><code>false</code></td><td>Serilog minimum level <code>Debug</code>; set at startup only</td></tr>
           <tr><td><code>Logging.CompactLog</code></td><td><code>bool</code></td><td><code>false</code></td><td>CLEF JSON (<code>agent.clef</code>) instead of <code>agent.log</code></td></tr>
           <tr><td><code>Logging.RetainedLogs</code></td><td><code>int</code></td><td><code>3</code></td><td>Rolled files kept; oldest permanently deleted</td></tr>
           <tr><td><code>Recovery.MaxRetries</code></td><td><code>int</code></td><td><code>0</code></td><td>Consecutive <em>crashes</em> before give-up; <code>0</code> = infinite</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h4 id="interactivesessionsettings"><code>InteractiveSessionSettings</code></h4>
-    <p>Bound from <code>Jenkins:Agent:LaunchInInteractiveSession</code>. Off by default &mdash; see <a href="configuration.html#interactive-session">Configuration &rarr; Interactive-session launch</a> for the security posture.</p>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Property</th><th>Type</th><th>Default</th><th>Notes</th></tr>
-        </thead>
-        <tbody>
-          <tr><td><code>Enabled</code></td><td><code>bool</code></td><td><code>false</code></td><td>Master switch; when false the interop path is unreachable</td></tr>
-          <tr><td><code>LocalSystemOnly</code></td><td><code>bool</code></td><td><code>true</code></td><td>Attempt the launch only when running as LocalSystem</td></tr>
-          <tr><td><code>TargetUser</code></td><td><code>string</code></td><td><code>""</code></td><td>Pin to one user; case-insensitive, domain prefix ignored</td></tr>
-          <tr><td><code>RequireInteractiveSession</code></td><td><code>bool</code></td><td><code>false</code></td><td>Throw instead of falling back to a Session 0 launch</td></tr>
-          <tr><td><code>PreferDisconnectedSession</code></td><td><code>bool</code></td><td><code>false</code></td><td>Rank non-<code>Active</code> sessions first and flip the id tie-break</td></tr>
-          <tr><td><code>SessionMigration</code></td><td><code>SessionMigrationMode</code></td><td><code>Off</code></td><td><code>Off</code> / <code>OnSessionLost</code> / <code>Always</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -208,10 +189,6 @@
         </tbody>
       </table>
     </div>
-    <div class="callout callout-note">
-      <div class="callout-title">Interactive-session settings are not merge-able</div>
-      <p><code>ConfigMergeFields</code> deliberately has no <code>LaunchInInteractiveSession</code> members &mdash; the installer never turns the feature on. Configure it by editing <code>appsettings.json</code> after install (the keys are written at their defaults by <code>WriteConfig</code>, and preserved across upgrades by <code>NormalizeConfig</code>).</p>
-    </div>
 
     <h3 id="servicesettingsnormalizer"><code>ServiceSettingsNormalizer.NormalizeJson(existingJson)</code></h3>
     <p><strong>File:</strong> <code>ServiceSettingsNormalizer.cs</code>. Pure, deterministic, no I/O. Builds a schema tree by serializing fresh <code>ServiceSettings</code> / <code>TelemetrySettings</code> POCOs (enums as strings, so defaults match the shipped <code>appsettings.json</code>) and returns <code>(mergedJson, addedPaths, removedPaths)</code>: schema keys absent from the file are added at their defaults, present values are preserved verbatim, and any key <em>or top-level section</em> the schema does not define is dropped. Unparseable or non-object input is returned untouched, so a corrupt config is never overwritten with defaults.</p>
@@ -267,58 +244,13 @@
 int Id { get; }
 bool HasExited { get; }
 int ExitCode { get; }
-uint? InteractiveSessionId { get; }   // null for a Session 0 (headless) launch
 Task Exited { get; }
 void Kill();                          // whole process tree; never throws</code></pre>
-    <p>The seam that lets <code>SupervisionLoopTests</code> drive crash/stabilise/restart cycles with a fake process instead of a real <code>java.exe</code>. The production <code>AgentProcessLauncher</code> wraps <code>System.Diagnostics.Process</code> and, when <code>Agent:LaunchInInteractiveSession:Enabled</code> is set on Windows, first tries <code>InteractiveSessionLauncher.TryStart</code> and falls through to the normal launch on any precondition miss.</p>
+    <p>The seam that lets <code>SupervisionLoopTests</code> drive crash/stabilise/restart cycles with a fake process instead of a real <code>java.exe</code>. The production <code>AgentProcessLauncher</code> wraps <code>System.Diagnostics.Process</code>; the agent always runs in the service's Session 0.</p>
     <div class="callout callout-note">
       <div class="callout-title">Exit signal ownership</div>
       <p>The exit <code>TaskCompletionSource</code> is captured in a <em>local</em> inside the launcher, not a shared field, so a late exit from a killed process cannot complete a newer process's signal &mdash; that bug caused spurious restarts.</p>
     </div>
-
-    <h3 id="interactivesessionlauncher"><code>InteractiveSessionLauncher</code></h3>
-    <p><strong>File:</strong> <code>InteractiveSessionLauncher.cs</code>. All of the <code>CreateProcessAsUser</code> interop. <strong>Compile-verified only</strong> &mdash; CI has no interactive session or privilege, the same class as the TPM path.</p>
-    <ul>
-      <li><code>TryStart(startInfo, onOutputLine, settings, logger, onTargetUserResolved, out process)</code> &mdash; returns <code>false</code> after a specific warning when the caller should fall back to Session 0. Sequence: identity gate &rarr; enumerate sessions &rarr; <code>InteractiveSessionSelector.TrySelect</code> &rarr; enable privileges &rarr; <code>WTSQueryUserToken</code> &rarr; <code>DuplicateTokenEx</code> &rarr; <code>CreateEnvironmentBlock</code> (+ <code>EnvironmentSanitizer</code>) &rarr; <code>CreateProcessAsUser</code> onto <code>winsta0\default</code>, with the tree in a kill-on-close Job Object. <code>onTargetUserResolved</code> fires with the session user's SID before the process starts, so <code>InteractiveLaunchAcl</code> can grant access.</li>
-      <li><code>RequiredPrivileges</code> / <code>FriendlyName(privilege)</code> &mdash; <code>SeTcbPrivilege</code>, <code>SeAssignPrimaryTokenPrivilege</code>, <code>SeIncreaseQuotaPrivilege</code> and their User Rights Assignment labels, kept in one list so a warning cites both.</li>
-      <li><code>TryEnumerateSessions(logger, out sessions)</code> &mdash; the non-throwing wrapper the migration check uses; a transient enumeration failure logs at Debug and leaves a healthy agent alone.</li>
-      <li><code>DescribeTokenError(error)</code> &mdash; turns the Win32 code into an operator-facing explanation (<code>ERROR_NO_TOKEN</code>, <code>ERROR_ACCESS_DENIED</code>, <code>ERROR_PRIVILEGE_NOT_HELD</code>).</li>
-    </ul>
-    <div class="callout callout-warning">
-      <div class="callout-title">Privileges must be enabled, not just held</div>
-      <p>A right granted through User Rights Assignment lands in the token <strong>present but disabled</strong>, and an access check only passes when it is enabled &mdash; so <code>TryEnablePrivilege</code> calls <code>AdjustTokenPrivileges</code> for each of the three before use, treating <code>ERROR_NOT_ALL_ASSIGNED</code> as "never granted". LocalSystem's token already has them enabled.</p>
-    </div>
-
-    <h3 id="interactivesessionselector"><code>InteractiveSessionSelector</code></h3>
-    <p><strong>File:</strong> <code>InteractiveSessionSelector.cs</code>. The selection <em>policy</em>, pure and unit-tested, with no interop: it takes a list of <code>SessionInfo</code> records (<code>SessionId</code>, <code>UserName</code>, <code>State</code>, WinStation name) and decides.</p>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Member</th><th>Behaviour</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>TrySelect(sessions, targetUser, out sessionId, out failure, preferDisconnected)</code></td>
-            <td>Filters to usable targets &mdash; never session 0, must have a logged-on user (connect state is <em>not</em> the signal; disconnected and locked sessions qualify) &mdash; then ranks on three ordered keys: connect state (flipped by <code>preferDisconnected</code>) &rarr; <strong>console last</strong> &rarr; session id (lowest, or highest under <code>preferDisconnected</code>). <code>targetUser</code> is applied after ranking so <code>NoInteractiveSession</code> and <code>TargetUserNotLoggedOn</code> stay distinguishable in the failure reason.</td>
-          </tr>
-          <tr>
-            <td><code>ShouldMigrate(sessions, currentSessionId, targetUser, preferDisconnected, mode, out reason)</code></td>
-            <td>Whether a <em>running</em> agent should be relaunched elsewhere. Returns no replacement id on purpose &mdash; the relaunch re-runs full bring-up, including the headless fallback. <code>currentSessionId</code> is <code>null</code> for a Session 0 agent, which is what makes "upgrade a headless agent" expressible under <code>Always</code>.</td>
-          </tr>
-          <tr>
-            <td><code>Describe(sessions)</code></td>
-            <td>Renders the session table for log lines (id, user, state), used both in failure warnings and as the migration guard's fingerprint.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p>The console key sits deliberately <em>below</em> the connect-state key: it exists so an autologon console desktop is the fallback rather than the permanent winner of the id tie-break. Promoting it would let a freshly signed-in <code>Active</code> RDP session steal the agent, which is exactly what <code>PreferDisconnectedSession</code> exists to prevent. Console-ness comes from the WinStation name (<code>Console</code> vs <code>RDP-Tcp#N</code>), never from "session 1".</p>
-
-    <h3 id="sessionmigrationtracker"><code>SessionMigrationTracker</code></h3>
-    <p><strong>File:</strong> <code>SessionMigrationTracker.cs</code>. Worker state, unit-tested. <code>Evaluate(currentSession, sessionSnapshot)</code> returns a <code>MigrationVerdict</code>: it remembers the <code>(agent session, rendered session table)</code> a migration was ordered from and refuses an identical repeat, reporting once. Because a failed interactive launch falls back to headless, <code>Always</code> on a box where that launch <em>cannot</em> succeed would otherwise see "a desktop exists, upgrade the headless agent" forever &mdash; dropping the node and killing the running build every stability window, with <code>MaxRetries</code> unable to stop it (migrations are off the crash path). The guard self-clears: any change to either half of the origin is a new state.</p>
-
-    <h3 id="interactivelaunchacl"><code>InteractiveLaunchAcl</code></h3>
-    <p><strong>File:</strong> <code>InteractiveLaunchAcl.cs</code>. <code>GrantTo(sessionUser, settings, logger)</code> gives the session user what the agent needs when it runs as somebody other than the service: read on the secret file, <code>Modify</code> on <code>work\</code>, and <strong>read-only</strong> on <code>agent\</code>. Never write on <code>agent\</code> or the data root &mdash; a build step must not be able to clobber <code>agent.jar</code>, the logs or the secret. All grants are best-effort, logged on failure, and no-ops when the service and session user are the same account.</p>
 
     <hr>
 
@@ -378,7 +310,7 @@ void Kill();                          // whole process tree; never throws</code>
     <h3 id="executeasync"><code>ExecuteAsync(CancellationToken)</code></h3>
     <ol>
       <li><code>LogStartupBanner()</code></li>
-      <li><code>ValidateSettings()</code> &mdash; re-runs the validator, warns on a non-HTTPS URL, resolves the agent name (hostname when empty), resolves the secret via <code>ISecretResolver</code>, resolves the data/agent/work directories, picks the initial transport, and warns when the interactive launch is enabled (or when <code>SessionMigration</code> is set while <code>Enabled</code> is false, which is otherwise a silent no-op)</li>
+      <li><code>ValidateSettings()</code> &mdash; re-runs the validator, warns on a non-HTTPS URL, resolves the agent name (hostname when empty), resolves the secret via <code>ISecretResolver</code>, resolves the data/agent/work directories, and picks the initial transport</li>
       <li><code>ResolveJavaPath()</code></li>
       <li><code>RunSupervisionLoop(ct)</code> &mdash; connectivity, download and start all live inside it</li>
     </ol>
@@ -400,7 +332,6 @@ void Kill();                          // whole process tree; never throws</code>
     <ul>
       <li><code>RunSupervisionLoop(ct)</code> &mdash; <code>while (true)</code> with a single shutdown gate at the top (kill, then return) so an agent started by bring-up <em>after</em> <code>StopAsync</code> ran is still reaped. Snapshots <code>_agent</code> into a local each iteration, because <code>StopAsync</code> nulls the field from another thread.</li>
       <li><code>TryBringUpAgent(ct)</code> &mdash; one attempt: connectivity &rarr; <code>IJarDownloader.Download</code> &rarr; <code>StartAgentProcess</code>. Returns <code>false</code> for both "unreachable" and "download/start failed", which drives backoff but never the give-up counter.</li>
-      <li><code>ShouldMigrateInteractiveSession(agent)</code> &mdash; runs from the <em>still-running</em> branch once per stability window; combines <code>InteractiveSessionSelector.ShouldMigrate</code> with <code>SessionMigrationTracker</code>. The kill happens before the exit is observed, so a migration never reaches the crash path, and <code>bringUpAttempts</code> is reset so no backoff is applied.</li>
       <li><code>ApplyAutoTransportFallback(agentActuallyExited)</code> &mdash; delegates to <code>AgentTransport.ShouldFallback</code> and toggles <code>_effectiveMethod</code>.</li>
       <li><code>KillAgent()</code> &mdash; takes ownership with <code>Interlocked.Exchange(ref _agent, null)</code> so two threads cannot kill or dispose the same instance, then clears the SEVERE tally so a deliberate kill does not inflate the next run's report.</li>
       <li><code>HasExceededMaxRetries(crashCount, maxRetries)</code> and <code>ComputeBackoffDelaySeconds(attempt, baseSec, maxSec, multiplier)</code> &mdash; <code>internal static</code> pure functions (10&nbsp;s base, &times;2, 300&nbsp;s cap).</li>

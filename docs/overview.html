@@ -82,7 +82,6 @@
       <li><strong>Dual logging</strong> &mdash; Serilog rolling file (<code>agent.log</code> or <code>agent.clef</code>) plus Windows Event Log</li>
       <li><strong>Secret redaction</strong> &mdash; agent secrets scrubbed from all log output</li>
       <li><strong>Schema-reconciling upgrades</strong> &mdash; an in-place MSI upgrade adds settings the new version introduces at their defaults, prunes ones it no longer defines, and preserves your values and secret (detected without decrypting, so a secret bound to the service account survives)</li>
-      <li><strong>Visible GUI/browser tests</strong> &mdash; opt-in, off by default: launch the agent on a logged-on user's desktop instead of Session 0, with session selection, optional migration while running, and an automatic headless fallback. A <a href="configuration.html#interactive-session">deliberate isolation downgrade</a> &mdash; debug nodes only</li>
       <li><strong>Single-file deploy</strong> &mdash; self-contained .exe with R2R, compression, and embedded PDB</li>
       <li><strong>Unit-tested</strong> &mdash; xUnit + NSubstitute + FluentAssertions, including an end-to-end watchdog harness driven by a fake process; CI on every push</li>
     </ul>

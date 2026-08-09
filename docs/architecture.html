@@ -69,8 +69,6 @@
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; IConnectivityChecker.cs / TcpConnectivityChecker.cs
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; CertificateThumbprintValidator.cs             # Controller cert pinning
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; AgentProcessLauncher.cs                       # IAgentProcessLauncher/IAgentProcess seam
-&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; InteractiveSessionLauncher.cs, InteractiveSessionSelector.cs,
-&#x2502;   &#x2502;   &#x2502;   SessionMigrationTracker.cs, InteractiveLaunchAcl.cs
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ProcessMitigations.cs, EnvironmentSanitizer.cs, ConfigAclHardener.cs,
 &#x2502;   &#x2502;   &#x2502;   EventLogSourceInstaller.cs                    # Hardening
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; Properties/AssemblyInfo.cs # Explicit assembly attributes (required for Codacy)
@@ -163,10 +161,7 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
     Q -->|Yes| W[Await exit signal OR 60s stability timer]
     W -->|Shutting down _stopping| X[Return — StopAsync handles cleanup]
     W -->|60s elapsed, still alive| D[Reset crash counter on stability]
-    D --> M{Session migration due?}
-    M -->|Yes| MK["Kill off the crash path — relaunch re-runs selection"]
-    MK --> S
-    M -->|No| S
+    D --> S
     W -->|Process exited| E[Log SEVERE count, capture exit code, kill, Auto-transport fallback]
     E --> F{Consecutive crashes exceed MaxRetries?}
     F -->|Yes| G["StopApplication() — service stops so SCM can recover"]
@@ -181,7 +176,6 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
       <li><strong>Backoff:</strong> 10s &rarr; 20s &rarr; 40s &rarr; 80s &rarr; ... capped at 300s.</li>
       <li><strong>Auto-transport fallback:</strong> on a fast crash in <code>Auto</code> mode, the next bring-up toggles WebSocket &harr; direct-TCP. <code>Auto</code> also launches the agent with <code>-noReconnect</code> so a failed handshake exits the process instead of the agent retrying one transport internally forever &mdash; that exit is what lets the fallback fire.</li>
       <li><strong>SEVERE counter:</strong> <code>_severeCount</code> is <code>Interlocked.Increment</code>-ed per SEVERE line; read and reset via <code>Interlocked.Exchange</code> on each exit, and cleared by <code>KillAgent</code> so a deliberate kill doesn't carry lines into the next run's report.</li>
-      <li><strong>Session migration:</strong> when <a href="configuration.html#interactive-session-migration"><code>SessionMigration</code></a> is on, the still-running branch re-runs session selection once per stability window. A process can't move between sessions, so a migration is a kill and relaunch &mdash; deliberately performed <em>before</em> the exit is observed, so it stays off the crash path and can never burn <code>MaxRetries</code>. A <code>SessionMigrationTracker</code> refuses an identical repeat, so a launch that can't succeed can't drop the node every window forever.</li>
     </ul>
 
     <h2 id="logging-serilog">Logging (Serilog)</h2>
@@ -348,18 +342,6 @@ C:\ProgramData\JenkinsAsService\   # Writable data folder (Agent:DataDirectory)
           <tr>
             <td><code>ConnectionMethodTests</code></td>
             <td>Auto/WebSocket/Https initial transport, fallback toggling, ShouldFallback decision matrix, which modes add <code>-noReconnect</code></td>
-          </tr>
-          <tr>
-            <td><code>InteractiveSessionSelectorTests</code></td>
-            <td>Session-selection policy: session 0 excluded, logged-on user required, disconnected/locked sessions qualify, the three ordering keys, <code>TargetUser</code> matching, and the <code>ShouldMigrate</code> matrix per <code>SessionMigration</code> mode</td>
-          </tr>
-          <tr>
-            <td><code>SessionMigrationTrackerTests</code></td>
-            <td>An ineffective migration is not repeated, reported once, and the guard self-clears when either half of the origin changes</td>
-          </tr>
-          <tr>
-            <td><code>InteractiveSessionLauncherTests</code> / <code>InteractiveSessionEnvironmentTests</code></td>
-            <td>Privilege metadata (a typo in a privilege constant fails silently at runtime) and the child environment block built from the target token, with the allow-list still applied</td>
           </tr>
           <tr>
             <td><code>ConfigBindingTests</code></td>
