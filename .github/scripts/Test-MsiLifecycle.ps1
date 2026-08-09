@@ -82,8 +82,57 @@ function Get-Config {
     return Get-Content $configPath -Raw | ConvertFrom-Json
 }
 
+# Reads a property straight out of the MSI's Property table, without installing it.
+function Get-MsiProperty {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Name)
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $installer.GetType().InvokeMember(
+        'OpenDatabase', 'InvokeMethod', $null, $installer, @($Path, 0))
+    $view = $database.GetType().InvokeMember(
+        'OpenView', 'InvokeMethod', $null, $database, @("SELECT Value FROM Property WHERE Property='$Name'"))
+    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+    $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+    if ($null -eq $record) { return $null }
+    return $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1)
+}
+
+# The installed product's version, from the uninstall registry keys.
+#
+# Deliberately NOT Win32_Product: querying that class makes Windows Installer walk every installed package
+# and reconfigure it, which took 1m42s of this job's runtime and can itself repair or alter packages - a
+# test must not mutate the machine state it is inspecting. The registry is read-only and immediate.
+function Get-InstalledVersion {
+    param([Parameter(Mandatory)][string]$DisplayName)
+    $roots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    return Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -eq $DisplayName } |
+        Select-Object -First 1 -ExpandProperty DisplayVersion -ErrorAction SilentlyContinue
+}
+
 # --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 1. Fresh install (1.0.0) ==="
+# Precondition, checked BEFORE anything is installed.
+#
+# If the two packages carry the same ProductVersion, msiexec treats the second /i as a maintenance-mode
+# reconfigure of the product already on the machine: RemoveExistingProducts is skipped, the reconcile custom
+# actions never run, and every downstream assertion still passes because nothing was touched. That is exactly
+# how this job first failed - a build-caching bug made both packages 1.0.0 and the "upgrade" tested nothing.
+# A suite that cannot tell "the upgrade worked" from "the upgrade never happened" is worse than no suite, so
+# this is a hard stop rather than an assertion.
+Write-Host "`n=== 0. Package preconditions ==="
+$v1Version = Get-MsiProperty -Path $V1Msi -Name 'ProductVersion'
+$v2Version = Get-MsiProperty -Path $V2Msi -Name 'ProductVersion'
+Write-Host "  v1 package: $v1Version"
+Write-Host "  v2 package: $v2Version"
+if ($v1Version -eq $v2Version) {
+    Write-Host "::error::Both MSIs are stamped $v1Version - the upgrade would be a no-op reconfigure, not an upgrade."
+    throw "MSI ProductVersion must differ between the two packages (both are $v1Version)"
+}
+
+# --------------------------------------------------------------------------------------------------
+Write-Host "`n=== 1. Fresh install ($v1Version) ==="
 Invoke-Msi -LogName 'install-v1' -Arguments (@('/i', $V1Msi) + $commonProperties + 'JENKINS_AGENT_NAME=ci-node')
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -105,7 +154,7 @@ $service.Refresh()
 Assert-That ($service.Status -eq 'Running') "service is Running after install (bring-up retries, it must not exit)"
 
 # --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 2. Operator edits the config, then upgrades to 1.0.1 ==="
+Write-Host "`n=== 2. Operator edits the config, then upgrades to $v2Version ==="
 
 # (a) an edited in-schema value that must survive; (b) a schema key removed, standing in for a config
 # written by an older version, which the reconcile must re-add at its default; (c) an unknown key that
@@ -131,23 +180,29 @@ Assert-That ($null -eq $cfg.Jenkins.Logging.PSObject.Properties['NoSuchSetting']
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service -and $service.Status -eq 'Running') "service is Running after the upgrade"
 
-$installed = (Get-CimInstance Win32_Product -Filter "Name='$productName'" -ErrorAction SilentlyContinue)
-if ($installed) {
-    Assert-That ($installed.Version -eq '1.0.1') "installed product version is 1.0.1 (in-place upgrade, not side-by-side)"
-}
+# Unconditional: an absent product is a failure, not a reason to skip the check. The previous `if ($installed)`
+# guard meant a lookup that found nothing silently reported success.
+$installedVersion = Get-InstalledVersion -DisplayName $productName
+Assert-That ($installedVersion -eq $v2Version) `
+    "installed product version is $v2Version (in-place upgrade, not side-by-side) - found '$installedVersion'"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 3. Uninstall ==="
 
-# Drop a file in the data folder: uninstall must not take the operator's logs with it.
-$sentinel = Join-Path $dataFolder 'agent.log'
-Set-Content -Path $sentinel -Value 'log content that must outlive the uninstall' -Encoding utf8
+# Drop a file in the data folder: uninstall must not take the operator's data with it.
+#
+# NOT named agent.log. The service is still running and Serilog holds its own agent.log open, so writing to
+# that name threw "the process cannot access the file" and killed the script before uninstall ran at all -
+# which is why the uninstall assertions below have never actually executed. An inert file is also the better
+# probe: it proves the FOLDER survived, with no ambiguity about a handle the service happens to hold.
+$sentinel = Join-Path $dataFolder 'operator-data.txt'
+Set-Content -Path $sentinel -Value 'operator data that must outlive the uninstall' -Encoding utf8
 
 Invoke-Msi -LogName 'uninstall' -Arguments @('/x', $V2Msi)
 
 Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) "service is removed"
 Assert-That (-not (Test-Path $configPath)) "appsettings.json is removed from the install folder"
-Assert-That (Test-Path $sentinel) "the data folder and its logs are DELIBERATELY kept (documented behaviour)"
+Assert-That (Test-Path $sentinel) "the data folder and its contents are DELIBERATELY kept (documented behaviour)"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host ''

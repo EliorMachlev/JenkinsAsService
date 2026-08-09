@@ -80,10 +80,17 @@ jobs:
           output: publish/x64/
 
       # Two versions from one publish: the upgrade needs a higher ProductVersion, nothing else differs.
+      #
+      # BaseIntermediateOutputPath must differ per version. Version reaches the .wxs through DefineConstants,
+      # which is an MSBuild PROPERTY, not a tracked file input — so with a shared obj/ the second build sees an
+      # up-to-date project, skips the compile in ~1s and just copies the FIRST MSI to the new -o directory.
+      # Both packages then carry ProductVersion 1.0.0 and the same ProductCode, and the "upgrade" degrades into
+      # a maintenance-mode reconfigure of the already-installed product: RemoveExistingProducts is skipped and
+      # the reconcile custom actions never run. Separate intermediate directories force two real builds.
       - name: Build MSI 1.0.0 and 1.0.1
         run: |
-          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.0 -o msi/v1/
-          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.1 -o msi/v2/
+          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.0 -p:BaseIntermediateOutputPath=obj/msi-v1/ -o msi/v1/
+          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.1 -p:BaseIntermediateOutputPath=obj/msi-v2/ -o msi/v2/
 
       - name: Install, upgrade, uninstall
         shell: pwsh
