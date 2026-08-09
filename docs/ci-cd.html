@@ -59,7 +59,15 @@
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
       <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet test</code> &rarr; CycloneDX SBOM (uploaded as artifact) &rarr; optimized publish (win-x64 + win-x86) &rarr; WiX v5 MSI build (both architectures, <code>Version=0.0.0</code>)</li>
       <li><strong>Tests:</strong> the full xUnit suite (xUnit + NSubstitute + FluentAssertions) &mdash; a failure blocks the publish and MSI steps</li>
-      <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time.</li>
+      <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time &mdash; see <a href="#publish-action">the shared publish action</a> for how that mirroring is enforced rather than merely intended.</li>
+    </ul>
+
+    <h3 id="publish-action">Shared publish action (<code>.github/actions/publish</code>)</h3>
+    <p>Both workflows publish the executable through one local composite action rather than repeating the flag list. The set previously lived in five near-identical copies across <code>build.yml</code> and <code>release.yml</code>; since <code>build.yml</code> exists precisely to mirror the release compile and package steps, a flag drifting between the two would have defeated the point of having it. One definition means the binary validated on a PR is built exactly like the one attached to a release.</p>
+    <ul>
+      <li><strong>Inputs:</strong> <code>runtime</code> (<code>win-x64</code> / <code>win-x86</code>), <code>output</code>, and an optional <code>version</code> stamped as <code>InformationalVersion</code> &mdash; omitted, the project value applies.</li>
+      <li><strong>Fixed flags:</strong> self-contained single-file, ReadyToRun, compression, speed-optimized, deterministic, embedded PDB, and locked restore. The exact list is in <a href="installation.html#build-publish">Installation &rarr; Build &amp; publish</a>.</li>
+      <li>The <code>msi-lifecycle</code> job uses the same action, so the MSI it installs contains the shipped binary rather than a cheaper approximation of it.</li>
     </ul>
 
     <h3 id="msi-lifecycle">MSI Install / Upgrade / Uninstall (<code>build.yml</code>, second job)</h3>
@@ -89,7 +97,7 @@
         <ol>
           <li>Setup .NET 10 &rarr; <code>dotnet test</code></li>
           <li>Resolve version (from tag, explicit input, or auto-bump via <code>gh api</code>)</li>
-          <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
+          <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> via the <a href="#publish-action">shared publish action</a> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
           <li>Build MSI installers for both architectures via <strong>WiX v5</strong></li>
           <li>Create <code>.7z</code> archives (LZMA2, max compression) via 7-Zip</li>
           <li>Install WinRAR via Chocolatey &rarr; create <code>.rar</code> archives (RAR5 with 5% recovery record)</li>

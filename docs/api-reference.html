@@ -211,6 +211,17 @@
       <li><code>Delete(path?)</code> &mdash; called from <code>StopAsync</code>; null-safe and never throws.</li>
     </ul>
 
+    <h3 id="secretredactor"><code>SecretRedactor</code></h3>
+    <pre data-lang="csharp"><code>string[] BuildPatterns(string? secret);
+string   Redact(string line, IReadOnlyList&lt;string&gt; patterns);</code></pre>
+    <p><strong>File:</strong> <code>SecretRedactor.cs</code>. Every line of the Java agent's stdout/stderr passes through <code>Redact</code> before it reaches a sink. Redacting only the literal secret is not enough: the value travels through a URL, a JVM argument and the controller's own error bodies before coming back on stderr, and any of those can re-encode it &mdash; a percent-encoded secret in a log file is just as disclosed as a plain one.</p>
+    <ul>
+      <li><strong>Forms scrubbed:</strong> the secret as configured, <code>Uri.EscapeDataString</code>, XML/HTML-escaped (<code>&amp;</code> first, or it would double-escape what the later replacements introduce), and Base64.</li>
+      <li><strong>Longest-first ordering</strong> &mdash; when one form contains another, replacing the longest first stops a shorter match from carving up a longer one and leaving recognisable fragments behind.</li>
+      <li><strong>Ordinal comparison</strong> &mdash; a secret is case-sensitive, and a case-insensitive scrub would mangle unrelated text.</li>
+      <li>An empty secret yields an empty pattern array, so callers need no null-check of their own.</li>
+    </ul>
+
     <h3 id="tpmsecretprotector"><code>TpmSecretProtector</code></h3>
     <p><strong>File:</strong> <code>TpmSecretProtector.cs</code>. <code>Protect</code> / <code>Resolve</code> against a persistent machine-scoped RSA key in the TPM Platform Crypto Provider (<code>JenkinsAsService-AgentSecret</code>, RSA-OAEP-SHA256), plus <code>IsAvailable()</code>, <code>DeleteKey()</code> and <code>ResolveAccountSid(account)</code> &mdash; the last computes the virtual service-account SID so key <em>use</em>-rights can be granted to the identity that will run the service. Not exercised by CI: the tests early-<code>return</code> when no TPM or no elevation is present.</p>
 
@@ -230,6 +241,28 @@
     <h3 id="iconnectivitychecker"><code>IConnectivityChecker</code> / <code>TcpConnectivityChecker</code></h3>
     <pre data-lang="csharp"><code>Task Check(string host, int port, int timeoutMs, CancellationToken ct);</code></pre>
     <p>Connects a <code>TcpClient</code> under a linked <code>CancellationTokenSource</code> (2&nbsp;s in the worker), throwing <code>InvalidOperationException</code> with a distinct message for a timeout (<code>OperationCanceledException</code>) versus a refused connection or DNS failure (<code>SocketException</code>). The supervision loop treats that exception as "unreachable" &mdash; retry forever, never count toward <code>MaxRetries</code>.</p>
+
+    <h3 id="agentjar"><code>AgentJar</code></h3>
+    <p><strong>File:</strong> <code>AgentJar.cs</code>. The single definition of <code>agent.jar</code> and its two sidecars, <code>agent.jar.etag</code> and <code>agent.jar.sha256</code> (both derived from <code>FileName</code>, not spelled out again). The downloader writes this file and the worker launches it from the same directory, so the names must be <em>identical</em> &mdash; one constant makes that structural instead of a convention.</p>
+
+    <h3 id="proxyresolver"><code>ProxyResolver</code> / <code>ProxyMode</code></h3>
+    <pre data-lang="csharp"><code>enum ProxyMode { System, Direct, Explicit }
+
+ProxyMode  ClassifyMode(string? proxy);
+Uri        ParseAddress(string address);
+string[]   ParseBypassList(string? bypass);
+IWebProxy? Create(string? proxy, string? bypass);
+string     ToBypassRegex(string entry);</code></pre>
+    <p><strong>File:</strong> <code>ProxyResolver.cs</code>. Turns <code>Connection:Proxy</code> / <code>Connection:ProxyBypass</code> into the proxy attached to the jar client's handler. Parsing is split out from the HTTP wiring because it is unit-testable policy, and a silently misparsed value looks exactly like an unreachable controller. Operator-facing behaviour is documented under <a href="configuration.html#proxy">Configuration &rarr; Proxy</a>.</p>
+    <ul>
+      <li><strong><code>ClassifyMode</code></strong> &mdash; empty/whitespace &rarr; <code>System</code> (inherit the machine/WinHTTP proxy); <code>direct</code> or <code>none</code>, case-insensitively &rarr; <code>Direct</code>; anything else &rarr; <code>Explicit</code>.</li>
+      <li><strong><code>ParseAddress</code></strong> &mdash; a bare <code>host:port</code> is given the <code>http</code> scheme, since that is how proxies are conventionally written. An unparseable value throws at <em>startup</em>, not on the first download.</li>
+      <li><strong><code>Create</code></strong> &mdash; returns <code>null</code> for <code>System</code> and <code>Direct</code>: the first leaves the handler default alone, and the second is expressed by the caller clearing <code>UseProxy</code>, not by an empty <code>WebProxy</code>.</li>
+    </ul>
+    <div class="callout callout-note">
+      <div class="callout-title">Why bypass entries become URI-shaped regexes</div>
+      <p><code>WebProxy.BypassList</code> holds <em>regular expressions</em>, not wildcards, and matches them against the <strong>whole URI</strong> (<code>https://host:8443/path</code>) &mdash; not the hostname. A host-only pattern therefore never matches anything, silently. <code>ToBypassRegex</code> escapes the entry, reinstates <code>*</code> as <code>[^/]*</code>, and wraps it as <code>^[^:]+://&lt;host&gt;(:[0-9]+)?(/.*)?$</code>, so <code>*.corp.local</code> matches <code>https://jenkins.corp.local:8443/</code> but not <code>https://evil-corp.local.example.com/</code>.</p>
+    </div>
 
     <h3 id="certificatethumbprintvalidator"><code>CertificateThumbprintValidator</code></h3>
     <p><code>Normalize(thumbprint)</code> strips colons/spaces and upper-cases; <code>Matches(certificate, expectedThumbprint)</code> compares the certificate's SHA-256 thumbprint against it. Wired in <code>Program.cs</code> as the <code>RemoteCertificateValidationCallback</code> of the jar client's <code>SocketsHttpHandler</code> when a thumbprint is configured &mdash; the pin <em>replaces</em> chain trust for that connection.</p>
@@ -294,10 +327,36 @@ void Kill();                          // whole process tree; never throws</code>
       <li><strong>Boot config</strong> &mdash; a throwaway <code>ConfigurationBuilder</code> reads <code>Logging:DebugMode</code>, <code>Logging:CompactLog</code>, <code>Logging:RetainedLogs</code> and <code>Agent:DataDirectory</code> before the host exists.</li>
       <li><strong>Serilog</strong> &mdash; rolling file sink in the <em>data</em> directory (10&nbsp;MB, <code>RetainedLogs</code> kept; <code>agent.log</code> or <code>agent.clef</code>), Event Log sink at Warning+ when the source is usable, enrichers <code>ProcessId</code> / <code>MachineName</code> / <code>EnvironmentName</code>, and level overrides muting <code>Microsoft</code>, <code>System.Net.Http</code> and <code>Polly</code> below Warning.</li>
       <li><strong><code>ProcessMitigations.Apply</code></strong> &mdash; hardens the service process itself.</li>
-      <li><strong>Host</strong> &mdash; <code>AddWindowsService(ServiceName = "Jenkins")</code>, <code>Configure&lt;ServiceSettings&gt;</code>, the <code>"JarDownloader"</code> <code>HttpClient</code> (+ cert pinning when configured), singletons for <code>IJarDownloader</code> / <code>IConnectivityChecker</code> / <code>ISecretResolver</code> / <code>IAgentProcessLauncher</code>, the <code>JenkinsAgentWorker</code> hosted service, and OpenTelemetry metrics when <code>Telemetry:Enabled</code> and an endpoint are both set.</li>
+      <li><strong>Host</strong> &mdash; <code>BuildHost(args, basePath)</code>, split into four single-purpose steps:
+        <ul>
+          <li><strong>Config source</strong> &mdash; <code>AddJsonFile(Path.Combine(basePath, "appsettings.json"), reloadOnChange: true)</code>, then <code>AddWindowsService(ServiceName = "Jenkins")</code> and <code>Configure&lt;ServiceSettings&gt;</code>.</li>
+          <li><code>ConfigureJarDownloadClient</code> &mdash; the <code>"JarDownloader"</code> <code>HttpClient</code> with <code>AddStandardResilienceHandler()</code>, plus proxy and certificate pinning. With neither configured the default handler is left alone; otherwise both are applied in <em>one</em> <code>ConfigurePrimaryHttpMessageHandler</code> callback, because a second call would discard the first handler.</li>
+          <li><code>RegisterCoreServices</code> &mdash; singletons for <code>IJarDownloader</code> / <code>IConnectivityChecker</code> / <code>ISecretResolver</code> / <code>IAgentProcessLauncher</code>, and the <code>LogLevelController</code> and <code>JenkinsAgentWorker</code> hosted services.</li>
+          <li><code>ConfigureTelemetry</code> &mdash; OpenTelemetry metrics when <code>Telemetry:Enabled</code> and an endpoint are both set; enabled without an endpoint warns rather than failing.</li>
+        </ul>
+      </li>
       <li><strong>Pre-flight validation</strong> &mdash; <code>ServiceSettingsValidator.Validate</code> on the bound settings; a failure logs the reason plus the config path and returns without starting the host.</li>
       <li><strong><code>host.RunAsync()</code></strong>, with a global catch logging <code>Log.Fatal</code> and a <code>finally</code> that flushes Serilog.</li>
     </ol>
+
+    <div class="callout callout-warning">
+      <div class="callout-title">Configuration is pinned to the install folder</div>
+      <p>The host's default content root is the process <em>working directory</em>, which for a service started by SCM is <code>%SystemRoot%\system32</code>. Without the explicit <code>AddJsonFile(Path.Combine(basePath, &hellip;))</code> the bound settings come back empty and the service exits claiming <code>Connection:Url</code> is missing &mdash; while naming a config file that is fully populated. The same registration's <code>reloadOnChange</code> is what makes <a href="#loglevelcontroller"><code>LogLevelController</code></a> work; it is added last so it wins over the default source.</p>
+    </div>
+
+    <hr>
+
+    <h2 id="loglevelcontroller"><code>LogLevelController : IHostedService</code></h2>
+    <pre data-lang="csharp"><code>static readonly LoggingLevelSwitch Switch;      // shared with the Serilog pipeline
+static LogEventLevel LevelFor(bool debugMode);  // the only place the mapping is defined</code></pre>
+    <p><strong>File:</strong> <code>LogLevelController.cs</code>. Keeps Serilog's minimum level in step with <code>Logging:DebugMode</code> while the service runs. Diagnosing a crash-loop used to require editing the config and <em>restarting</em> &mdash; which destroys the state you were trying to observe and, on a build node, drops the agent mid-build.</p>
+    <ul>
+      <li><code>Switch</code> is <code>static</code> because the logger is built in <code>Program.cs</code> before the host (and therefore before DI) exists; both sides must share the one instance or a change never reaches the running pipeline.</li>
+      <li><code>StartAsync</code> applies the current value, then subscribes to <code>IOptionsMonitor&lt;ServiceSettings&gt;.OnChange</code>; <code>StopAsync</code> and <code>Dispose</code> release the subscription.</li>
+      <li>A no-op change is ignored &mdash; <code>OnChange</code> can fire more than once for a single file save.</li>
+      <li>A real change is logged at <strong>Warning</strong>, so it reaches the Event Log too: a sudden shift in log volume needs an explanation with a timestamp.</li>
+    </ul>
+    <p>Everything else in the config remains startup-only. See <a href="configuration.html#live-debug">Configuration &rarr; Live debug logging</a>.</p>
 
     <hr>
 
