@@ -70,6 +70,14 @@
       <li>The <code>msi-lifecycle</code> job uses the same action, so the MSI it installs contains the shipped binary rather than a cheaper approximation of it.</li>
     </ul>
 
+    <h3 id="build-msi-action">Shared MSI action (<code>.github/actions/build-msi</code>)</h3>
+    <p>The installer build was repeated six times across the two workflows, and every copy had to remember one non-obvious rule: <strong>the intermediate directory must be unique per package</strong>. <code>PublishDir</code>, <code>InstallerPlatform</code> and <code>Version</code> reach the build as MSBuild <em>properties</em>, which the up-to-date check does not track &mdash; so a shared <code>obj/</code> turns the second build into a sub-second no-op that copies the first package to the new output directory. The action derives the intermediate path from its own inputs, so the rule cannot be forgotten by the next person to add a build step.</p>
+    <ul>
+      <li><strong>Inputs:</strong> <code>publish-dir</code>, <code>platform</code> (<code>x64</code>/<code>x86</code>), <code>version</code>, <code>output</code>.</li>
+      <li><strong>Why it matters:</strong> that defect shipped. Every release published an x86 installer that was a byte-identical copy of the x64 package, and the <code>msi-lifecycle</code> job's first run performed a maintenance-mode reconfigure instead of an upgrade &mdash; while reporting its assertions as passed.</li>
+      <li>MSI identity is read through one module, <code>.github/scripts/MsiQuery.psm1</code> (<code>Get-MsiProperty</code>, <code>Get-MsiPlatform</code>), used by both the platform check and the lifecycle test. The same COM interop previously existed in three places, which is how two copies came to ask slightly different questions about the same packages.</li>
+    </ul>
+
     <h3 id="msi-lifecycle">MSI Install / Upgrade / Uninstall (<code>build.yml</code>, second job)</h3>
     <ul>
       <li><strong>Purpose:</strong> Actually install the MSI. <code>ServiceSettingsNormalizer</code> is unit-tested, but custom-action <em>sequencing</em> during a real in-place upgrade (<code>WIX_UPGRADE_DETECTED</code> gating, <code>UpgradeConfig</code> before <code>StartServices</code>, the config surviving <code>RemoveExistingProducts</code>) is only reachable by installing &mdash; which is why the upgrade path stayed on the &ldquo;not verified&rdquo; list for so long.</li>

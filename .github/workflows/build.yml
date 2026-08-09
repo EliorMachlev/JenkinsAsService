@@ -51,30 +51,26 @@ jobs:
           runtime: win-x86
           output: publish/x86/
 
-      # Separate BaseIntermediateOutputPath per architecture — see the same note in release.yml. With a shared
-      # obj/ the x86 build took 0.80s against x64's 16.77s and simply copied the x64 package.
       - name: Build MSI x64
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=0.0.0 -p:BaseIntermediateOutputPath=obj/msi-x64/ -o msi/x64/
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: 0.0.0
+          output: msi/x64/
 
       - name: Build MSI x86
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=0.0.0 -p:BaseIntermediateOutputPath=obj/msi-x86/ -o msi/x86/
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x86/
+          platform: x86
+          version: 0.0.0
+          output: msi/x86/
 
       # build.yml mirrors the release steps, so it mirrors the guard too.
       - name: Verify each MSI targets its own architecture
         shell: pwsh
-        run: |
-          function Get-MsiPlatform([string]$Path) {
-            $installer = New-Object -ComObject WindowsInstaller.Installer
-            $summary = $installer.GetType().InvokeMember(
-              'SummaryInformation', 'GetProperty', $null, $installer, @($Path, 0))
-            return $summary.GetType().InvokeMember('Property', 'GetProperty', $null, $summary, @(7))
-          }
-          $x64 = Get-MsiPlatform (Get-Item msi/x64/*.msi).FullName
-          $x86 = Get-MsiPlatform (Get-Item msi/x86/*.msi).FullName
-          Write-Host "x64 package: $x64"
-          Write-Host "x86 package: $x86"
-          if ($x64 -notlike 'x64*') { throw "The x64 MSI reports platform '$x64'" }
-          if ($x86 -notlike 'Intel*') { throw "The x86 MSI reports platform '$x86' (expected Intel = 32-bit)" }
+        run: .github/scripts/Test-MsiPlatform.ps1 -X64Msi (Get-Item msi/x64/*.msi).FullName -X86Msi (Get-Item msi/x86/*.msi).FullName
 
   # Installs the MSI for real. The reconcile logic is unit-tested, but custom-action SEQUENCING under
   # WIX_UPGRADE_DETECTED only happens during an actual in-place upgrade — previously a manual-verify step,
@@ -98,18 +94,24 @@ jobs:
           runtime: win-x64
           output: publish/x64/
 
-      # Two versions from one publish: the upgrade needs a higher ProductVersion, nothing else differs.
-      #
-      # BaseIntermediateOutputPath must differ per version. Version reaches the .wxs through DefineConstants,
-      # which is an MSBuild PROPERTY, not a tracked file input — so with a shared obj/ the second build sees an
-      # up-to-date project, skips the compile in ~1s and just copies the FIRST MSI to the new -o directory.
-      # Both packages then carry ProductVersion 1.0.0 and the same ProductCode, and the "upgrade" degrades into
-      # a maintenance-mode reconfigure of the already-installed product: RemoveExistingProducts is skipped and
-      # the reconcile custom actions never run. Separate intermediate directories force two real builds.
-      - name: Build MSI 1.0.0 and 1.0.1
-        run: |
-          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.0 -p:BaseIntermediateOutputPath=obj/msi-v1/ -o msi/v1/
-          dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=1.0.1 -p:BaseIntermediateOutputPath=obj/msi-v2/ -o msi/v2/
+      # Two versions from one publish: the upgrade needs a higher ProductVersion, nothing else differs. The
+      # build-msi action derives a per-version intermediate directory, which is what keeps these two builds
+      # from collapsing into one copied package — see the action for why that matters.
+      - name: Build MSI 1.0.0
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: 1.0.0
+          output: msi/v1/
+
+      - name: Build MSI 1.0.1
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: 1.0.1
+          output: msi/v2/
 
       - name: Install, upgrade, uninstall
         shell: pwsh

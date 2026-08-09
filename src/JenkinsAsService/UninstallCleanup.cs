@@ -20,19 +20,47 @@ namespace JenkinsAsService;
 internal static class UninstallCleanup
 {
     /// <summary>
-    /// Directory names that must never be deleted as a data directory, even if configured as one. Compared
-    /// against the full resolved path, case-insensitively.
+    /// Minimum path segments below the root. One segment (<c>C:\Data</c>) is too close to the root to be a
+    /// deliberate data directory, and too expensive to get wrong.
     /// </summary>
-    private static readonly Environment.SpecialFolder[] ProtectedFolders =
-    [
-        Environment.SpecialFolder.Windows,
-        Environment.SpecialFolder.System,
-        Environment.SpecialFolder.SystemX86,
-        Environment.SpecialFolder.ProgramFiles,
-        Environment.SpecialFolder.ProgramFilesX86,
-        Environment.SpecialFolder.CommonApplicationData,
-        Environment.SpecialFolder.UserProfile,
-    ];
+    private const int MinimumSegmentsBelowRoot = 2;
+
+    /// <summary>
+    /// Directories that must never be deleted as a data directory, even if configured as one.
+    /// <para>
+    /// Resolved once at first use rather than on every call: <see cref="Environment.GetFolderPath"/> hits the
+    /// shell API per invocation, and this list is fixed for the life of the process. A
+    /// <see cref="StringComparer.OrdinalIgnoreCase"/> set also turns the check into one hash lookup instead
+    /// of a linear scan of string comparisons.
+    /// </para>
+    /// </summary>
+    private static readonly HashSet<string> ProtectedPaths = BuildProtectedPaths();
+
+    private static HashSet<string> BuildProtectedPaths()
+    {
+        Environment.SpecialFolder[] folders =
+        [
+            Environment.SpecialFolder.Windows,
+            Environment.SpecialFolder.System,
+            Environment.SpecialFolder.SystemX86,
+            Environment.SpecialFolder.ProgramFiles,
+            Environment.SpecialFolder.ProgramFilesX86,
+            Environment.SpecialFolder.CommonApplicationData,
+            Environment.SpecialFolder.UserProfile,
+        ];
+
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in folders)
+        {
+            var path = Environment.GetFolderPath(folder);
+            if (!string.IsNullOrEmpty(path))
+            {
+                paths.Add(Path.TrimEndingDirectorySeparator(path));
+            }
+        }
+
+        return paths;
+    }
 
     /// <summary>
     /// Whether <paramref name="path"/> is safe to delete recursively.
@@ -78,26 +106,38 @@ internal static class UninstallCleanup
             return false; // a drive root, or not rooted at all
         }
 
-        // At least two segments below the root: deleting C:\Something wholesale is never what was meant.
-        var relative = full[root.Length..].Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-                StringSplitOptions.RemoveEmptyEntries).Length < 2)
+        // Deleting C:\Something wholesale is never what was meant.
+        if (CountSegments(full.AsSpan(root.Length)) < MinimumSegmentsBelowRoot)
         {
             return false;
         }
 
-        foreach (var folder in ProtectedFolders)
+        return !ProtectedPaths.Contains(full);
+    }
+
+    /// <summary>
+    /// Counts non-empty path segments. Walks the span rather than calling <c>Split</c>, which would allocate
+    /// an array and a string per segment purely to read its <c>Length</c>.
+    /// </summary>
+    private static int CountSegments(ReadOnlySpan<char> relativePath)
+    {
+        var count = 0;
+        var inSegment = false;
+
+        foreach (var c in relativePath)
         {
-            var protectedPath = Environment.GetFolderPath(folder);
-            if (!string.IsNullOrEmpty(protectedPath)
-                && string.Equals(full, Path.TrimEndingDirectorySeparator(protectedPath),
-                    StringComparison.OrdinalIgnoreCase))
+            if (c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar)
             {
-                return false;
+                inSegment = false;
+            }
+            else if (!inSegment)
+            {
+                inSegment = true;
+                count++;
             }
         }
 
-        return true;
+        return count;
     }
 
     /// <summary>

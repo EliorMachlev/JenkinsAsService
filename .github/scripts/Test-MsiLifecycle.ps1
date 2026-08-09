@@ -34,6 +34,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
+
 $installFolder = Join-Path $env:ProgramFiles 'Jenkins'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
@@ -82,20 +84,6 @@ function Invoke-Msi {
 function Get-Config {
     if (-not (Test-Path $configPath)) { return $null }
     return Get-Content $configPath -Raw | ConvertFrom-Json
-}
-
-# Reads a property straight out of the MSI's Property table, without installing it.
-function Get-MsiProperty {
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Name)
-    $installer = New-Object -ComObject WindowsInstaller.Installer
-    $database = $installer.GetType().InvokeMember(
-        'OpenDatabase', 'InvokeMethod', $null, $installer, @($Path, 0))
-    $view = $database.GetType().InvokeMember(
-        'OpenView', 'InvokeMethod', $null, $database, @("SELECT Value FROM Property WHERE Property='$Name'"))
-    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
-    $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-    if ($null -eq $record) { return $null }
-    return $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1)
 }
 
 # The installed product's version, from the uninstall registry keys.
