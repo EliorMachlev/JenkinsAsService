@@ -51,11 +51,30 @@ jobs:
           runtime: win-x86
           output: publish/x86/
 
+      # Separate BaseIntermediateOutputPath per architecture — see the same note in release.yml. With a shared
+      # obj/ the x86 build took 0.80s against x64's 16.77s and simply copied the x64 package.
       - name: Build MSI x64
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=0.0.0 -o msi/x64/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=0.0.0 -p:BaseIntermediateOutputPath=obj/msi-x64/ -o msi/x64/
 
       - name: Build MSI x86
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=0.0.0 -o msi/x86/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=0.0.0 -p:BaseIntermediateOutputPath=obj/msi-x86/ -o msi/x86/
+
+      # build.yml mirrors the release steps, so it mirrors the guard too.
+      - name: Verify each MSI targets its own architecture
+        shell: pwsh
+        run: |
+          function Get-MsiPlatform([string]$Path) {
+            $installer = New-Object -ComObject WindowsInstaller.Installer
+            $summary = $installer.GetType().InvokeMember(
+              'SummaryInformation', 'GetProperty', $null, $installer, @($Path, 0))
+            return $summary.GetType().InvokeMember('Property', 'GetProperty', $null, $summary, @(7))
+          }
+          $x64 = Get-MsiPlatform (Get-Item msi/x64/*.msi).FullName
+          $x86 = Get-MsiPlatform (Get-Item msi/x86/*.msi).FullName
+          Write-Host "x64 package: $x64"
+          Write-Host "x86 package: $x86"
+          if ($x64 -notlike 'x64*') { throw "The x64 MSI reports platform '$x64'" }
+          if ($x86 -notlike 'Intel*') { throw "The x86 MSI reports platform '$x86' (expected Intel = 32-bit)" }
 
   # Installs the MSI for real. The reconcile logic is unit-tested, but custom-action SEQUENCING under
   # WIX_UPGRADE_DETECTED only happens during an actual in-place upgrade — previously a manual-verify step,

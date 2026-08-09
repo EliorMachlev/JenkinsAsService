@@ -83,11 +83,34 @@ jobs:
           output: publish/x86/
           version: ${{ steps.version.outputs.VERSION }}
 
+      # BaseIntermediateOutputPath MUST differ per architecture. PublishDir and InstallerPlatform reach the
+      # build as MSBuild PROPERTIES, which the up-to-date check does not track — so with a shared obj/ the
+      # second build finished in under a second and copied the FIRST package to msi/x86/. The shipped x86
+      # installer was then a byte-identical x64 package (summary Template "x64;1033" instead of "Intel;1033"),
+      # which fails to install on a 32-bit machine. Separate intermediate directories force two real builds.
       - name: Build MSI x64
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x64/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -p:BaseIntermediateOutputPath=obj/msi-x64/ -o msi/x64/
 
       - name: Build MSI x86
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x86/
+        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -p:BaseIntermediateOutputPath=obj/msi-x86/ -o msi/x86/
+
+      # The defect above was invisible for every release to date because nothing ever checked. Both packages
+      # are now verified to carry the platform they claim, before they are renamed and published.
+      - name: Verify each MSI targets its own architecture
+        shell: pwsh
+        run: |
+          function Get-MsiPlatform([string]$Path) {
+            $installer = New-Object -ComObject WindowsInstaller.Installer
+            $summary = $installer.GetType().InvokeMember(
+              'SummaryInformation', 'GetProperty', $null, $installer, @($Path, 0))
+            return $summary.GetType().InvokeMember('Property', 'GetProperty', $null, $summary, @(7))
+          }
+          $x64 = Get-MsiPlatform (Get-Item msi/x64/*.msi).FullName
+          $x86 = Get-MsiPlatform (Get-Item msi/x86/*.msi).FullName
+          Write-Host "x64 package: $x64"
+          Write-Host "x86 package: $x86"
+          if ($x64 -notlike 'x64*') { throw "The x64 MSI reports platform '$x64'" }
+          if ($x86 -notlike 'Intel*') { throw "The x86 MSI reports platform '$x86' (expected Intel = 32-bit)" }
 
       - name: Rename MSI files
         run: |
