@@ -102,10 +102,12 @@ At runtime the resolved secret is written to a separate ACL-restricted file and 
 - **Binaries and runtime data are separated**: the install folder stays read-only to the agent identity, while logs, the secret file, the jar cache and the build work directory live under `%ProgramData%`. A malicious pipeline therefore cannot overwrite the service binary and wait for a restart
 - The cached `agent.jar` lives in its own subfolder, isolated from the build workspace, and its **SHA-256 is re-verified** before reuse — trust-on-first-use local integrity, complementing controller certificate pinning for upstream authenticity
 - The service runs under a least-privilege **virtual service account** (`NT SERVICE\Jenkins`) by default
+- **Uninstall leaves no secret behind, in any store**: `appsettings.json` and the whole data folder are deleted, *and* the secret is removed from wherever the configured mode put it — the machine-scoped **TPM key**, the **Credential Manager** entry, or the **machine environment variable**. Only `Unprotected` and `Dpapi` keep the material in the config itself; the other modes store a *pointer* there, so deleting the file alone would leave a working agent credential on a host the product had supposedly been removed from. None of it is a tracked MSI file, so Windows Installer removes none of it on its own
+  - Credential Manager entries are per-user. The uninstall runs as SYSTEM, so a credential written under another account (`update-secret --impersonate`) cannot be removed for you; the purge says so explicitly and prints the `cmdkey /delete:` command to run while logged on as that account
 
 ### Secret Redaction
 
-Agent secrets are scrubbed from all log output (file and Event Log) before being written. The redaction logic replaces any occurrence of the resolved secret with `*****`.
+Agent secrets are scrubbed from all log output (file and Event Log) before being written. Every occurrence is replaced with `*****` — and not only the literal value: the secret travels through a URL, a JVM argument and the controller's own error bodies before returning on the agent's stderr, so the **URL-encoded, XML/HTML-escaped and Base64** forms are scrubbed too. A percent-encoded secret in a log file is just as disclosed as a plain one. Patterns are applied longest-first, so a shorter form cannot carve up a longer one and leave a recognisable fragment behind.
 
 ### Network Security
 

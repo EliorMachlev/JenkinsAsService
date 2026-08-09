@@ -27,16 +27,20 @@ internal static class DataPaths
     /// Returns the absolute data directory (creating it best-effort): the configured value if set
     /// (environment variables expanded), otherwise <c>%ProgramData%\JenkinsAsService</c>.
     /// </summary>
-    internal static string ResolveDataDirectory(string? configured)
-    {
-        var dir = string.IsNullOrWhiteSpace(configured)
+    internal static string ResolveDataDirectory(string? configured) =>
+        EnsureDirectory(ComputeDataDirectory(configured));
+
+    /// <summary>
+    /// The data directory path, <em>without</em> creating it. Uninstall cleanup needs the location of a
+    /// directory it is about to delete — resolving through <see cref="ResolveDataDirectory"/> there would
+    /// re-create the very tree being removed.
+    /// </summary>
+    internal static string ComputeDataDirectory(string? configured) =>
+        string.IsNullOrWhiteSpace(configured)
             ? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                 AppFolderName)
             : Environment.ExpandEnvironmentVariables(configured.Trim());
-
-        return EnsureDirectory(dir);
-    }
 
     /// <summary>Returns (creating best-effort) the agent-binary cache subfolder under the data directory.</summary>
     internal static string ResolveAgentDirectory(string dataDirectory) =>

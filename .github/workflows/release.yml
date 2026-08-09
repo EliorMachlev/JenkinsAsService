@@ -70,54 +70,40 @@ jobs:
           echo "TAG=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Publish x64
-        run: >-
-          dotnet publish src/JenkinsAsService
-          --nologo
-          --configuration Release
-          -p:RestoreLockedMode=true
-          --runtime win-x64
-          --self-contained true
-          --output publish/x64/
-          -p:PublishSingleFile=true
-          -p:EnableCompressionInSingleFile=true
-          -p:PublishReadyToRun=true
-          -p:OptimizationPreference=Speed
-          -p:UseSharedCompilation=true
-          -p:DebuggerSupport=false
-          -p:MetadataUpdaterSupport=false
-          -p:Deterministic=true
-          -p:DebugType=Embedded
-          -p:DebugSymbols=true
-          -p:InformationalVersion="${{ steps.version.outputs.VERSION }}"
-          /v:q /clp:ErrorsOnly
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-x64
+          output: publish/x64/
+          version: ${{ steps.version.outputs.VERSION }}
 
       - name: Publish x86
-        run: >-
-          dotnet publish src/JenkinsAsService
-          --nologo
-          --configuration Release
-          -p:RestoreLockedMode=true
-          --runtime win-x86
-          --self-contained true
-          --output publish/x86/
-          -p:PublishSingleFile=true
-          -p:EnableCompressionInSingleFile=true
-          -p:PublishReadyToRun=true
-          -p:OptimizationPreference=Speed
-          -p:UseSharedCompilation=true
-          -p:DebuggerSupport=false
-          -p:MetadataUpdaterSupport=false
-          -p:Deterministic=true
-          -p:DebugType=Embedded
-          -p:DebugSymbols=true
-          -p:InformationalVersion="${{ steps.version.outputs.VERSION }}"
-          /v:q /clp:ErrorsOnly
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-x86
+          output: publish/x86/
+          version: ${{ steps.version.outputs.VERSION }}
 
       - name: Build MSI x64
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x64/
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: ${{ steps.version.outputs.VERSION }}
+          output: msi/x64/
 
       - name: Build MSI x86
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=${{ steps.version.outputs.VERSION }} -o msi/x86/
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x86/
+          platform: x86
+          version: ${{ steps.version.outputs.VERSION }}
+          output: msi/x86/
+
+      # Every release to date shipped an x86 package that was really the x64 one, because nothing ever
+      # checked. Verified before the packages are renamed and published.
+      - name: Verify each MSI targets its own architecture
+        shell: pwsh
+        run: .github/scripts/Test-MsiPlatform.ps1 -X64Msi (Get-Item msi/x64/*.msi).FullName -X86Msi (Get-Item msi/x86/*.msi).FullName
 
       - name: Rename MSI files
         run: |

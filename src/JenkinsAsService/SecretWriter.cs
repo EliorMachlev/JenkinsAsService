@@ -12,9 +12,11 @@ namespace JenkinsAsService;
 
 public static class SecretWriter
 {
-    private const string EnvVarName = "JENKINS_AGENT_SECRET";
-    private const string CredTargetName = "JenkinsAsService/AgentSecret";
-    private const string CredUserName = "JenkinsAgent";
+    // Aliases onto the single definition in SecretStoreNames — SecretPurger deletes what this writes, so a
+    // second copy of these strings could drift and leave the secret behind on uninstall.
+    private const string EnvVarName = SecretStoreNames.EnvironmentVariable;
+    private const string CredTargetName = SecretStoreNames.CredentialTarget;
+    private const string CredUserName = SecretStoreNames.CredentialUserName;
     private const string ConfigFileName = ConfigKeys.FileName;
     private const string ConfigSectionName = ConfigKeys.Section;
 

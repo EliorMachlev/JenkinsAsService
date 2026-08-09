@@ -59,7 +59,32 @@
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
       <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet test</code> &rarr; CycloneDX SBOM (uploaded as artifact) &rarr; optimized publish (win-x64 + win-x86) &rarr; WiX v5 MSI build (both architectures, <code>Version=0.0.0</code>)</li>
       <li><strong>Tests:</strong> the full xUnit suite (xUnit + NSubstitute + FluentAssertions) &mdash; a failure blocks the publish and MSI steps</li>
-      <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time.</li>
+      <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time &mdash; see <a href="#publish-action">the shared publish action</a> for how that mirroring is enforced rather than merely intended.</li>
+    </ul>
+
+    <h3 id="publish-action">Shared publish action (<code>.github/actions/publish</code>)</h3>
+    <p>Both workflows publish the executable through one local composite action rather than repeating the flag list. The set previously lived in five near-identical copies across <code>build.yml</code> and <code>release.yml</code>; since <code>build.yml</code> exists precisely to mirror the release compile and package steps, a flag drifting between the two would have defeated the point of having it. One definition means the binary validated on a PR is built exactly like the one attached to a release.</p>
+    <ul>
+      <li><strong>Inputs:</strong> <code>runtime</code> (<code>win-x64</code> / <code>win-x86</code>), <code>output</code>, and an optional <code>version</code> stamped as <code>InformationalVersion</code> &mdash; omitted, the project value applies.</li>
+      <li><strong>Fixed flags:</strong> self-contained single-file, ReadyToRun, compression, speed-optimized, deterministic, embedded PDB, and locked restore. The exact list is in <a href="installation.html#build-publish">Installation &rarr; Build &amp; publish</a>.</li>
+      <li>The <code>msi-lifecycle</code> job uses the same action, so the MSI it installs contains the shipped binary rather than a cheaper approximation of it.</li>
+    </ul>
+
+    <h3 id="build-msi-action">Shared MSI action (<code>.github/actions/build-msi</code>)</h3>
+    <p>The installer build was repeated six times across the two workflows, and every copy had to remember one non-obvious rule: <strong>the intermediate directory must be unique per package</strong>. <code>PublishDir</code>, <code>InstallerPlatform</code> and <code>Version</code> reach the build as MSBuild <em>properties</em>, which the up-to-date check does not track &mdash; so a shared <code>obj/</code> turns the second build into a sub-second no-op that copies the first package to the new output directory. The action derives the intermediate path from its own inputs, so the rule cannot be forgotten by the next person to add a build step.</p>
+    <ul>
+      <li><strong>Inputs:</strong> <code>publish-dir</code>, <code>platform</code> (<code>x64</code>/<code>x86</code>), <code>version</code>, <code>output</code>.</li>
+      <li><strong>Why it matters:</strong> that defect shipped. Every release published an x86 installer that was a byte-identical copy of the x64 package, and the <code>msi-lifecycle</code> job's first run performed a maintenance-mode reconfigure instead of an upgrade &mdash; while reporting its assertions as passed.</li>
+      <li>MSI identity is read through one module, <code>.github/scripts/MsiQuery.psm1</code> (<code>Get-MsiProperty</code>, <code>Get-MsiPlatform</code>), used by both the platform check and the lifecycle test. The same COM interop previously existed in three places, which is how two copies came to ask slightly different questions about the same packages.</li>
+    </ul>
+
+    <h3 id="msi-lifecycle">MSI Install / Upgrade / Uninstall (<code>build.yml</code>, second job)</h3>
+    <ul>
+      <li><strong>Purpose:</strong> Actually install the MSI. <code>ServiceSettingsNormalizer</code> is unit-tested, but custom-action <em>sequencing</em> during a real in-place upgrade (<code>WIX_UPGRADE_DETECTED</code> gating, <code>UpgradeConfig</code> before <code>StartServices</code>, the config surviving <code>RemoveExistingProducts</code>) is only reachable by installing &mdash; which is why the upgrade path stayed on the &ldquo;not verified&rdquo; list for so long.</li>
+      <li><strong>Flow:</strong> publish x64 &rarr; build the MSI at <code>1.0.0</code> and <code>1.0.1</code> &rarr; install 1.0.0 &rarr; edit the config as an operator would &rarr; upgrade in place &rarr; uninstall.</li>
+      <li><strong>Asserted:</strong> the two packages really differ in <code>ProductVersion</code> (checked before anything is installed &mdash; identical versions would make the upgrade a no-op reconfigure whose assertions all still pass); the service registers and is <em>Running</em> (a stopped service means startup itself broke); edited values, the secret and the <strong>data folder</strong> survive the upgrade; a schema key missing from the old config is re-added at its default; an unknown key is pruned; the installed <code>ProductVersion</code> really advanced; and uninstall removes the service, the install folder <em>and</em> the data folder.</li>
+      <li><strong>The upgrade/uninstall pair is the point.</strong> The purge custom action must fire on a real uninstall and never during an upgrade's removal of the old product; asserting only one of the two would let the opposite defect through unnoticed.</li>
+      <li><strong>No controller needed:</strong> the URL points at a closed port, so the agent never connects &mdash; every assertion is about files, the registry and SCM. Verbose <code>msiexec</code> logs are uploaded as an artifact when the job fails.</li>
     </ul>
 
     <h3 id="release">Release (<code>.github/workflows/release.yml</code>)</h3>
@@ -81,7 +106,7 @@
         <ol>
           <li>Setup .NET 10 &rarr; <code>dotnet test</code></li>
           <li>Resolve version (from tag, explicit input, or auto-bump via <code>gh api</code>)</li>
-          <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
+          <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> via the <a href="#publish-action">shared publish action</a> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
           <li>Build MSI installers for both architectures via <strong>WiX v5</strong></li>
           <li>Create <code>.7z</code> archives (LZMA2, max compression) via 7-Zip</li>
           <li>Install WinRAR via Chocolatey &rarr; create <code>.rar</code> archives (RAR5 with 5% recovery record)</li>
@@ -168,6 +193,7 @@
         <ol>
           <li><strong>W3C Nu HTML Checker</strong> &mdash; <code>pip install html5validator</code>, then <code>html5validator --root docs/ --match "*.html"</code>. Wraps the official vnu.jar validator; catches malformed markup, invalid nesting, and missing attributes.</li>
           <li><strong>Stylelint</strong> &mdash; <code>npm install stylelint stylelint-config-standard</code>, then <code>npx stylelint "docs/*.css"</code>. Enforces modern CSS standards: no vendor-prefix shortcuts, modern <code>rgb()</code>/<code>hsl()</code> notation, range media queries (<code>width &lt;= N</code>), no deprecated <code>page-break-*</code>, consistent selector specificity ordering, and kebab-case class naming.</li>
+          <li><strong>Internal link check</strong> &mdash; <code>.github/scripts/check_doc_links.py</code> (standard library only, no install, no new action pin). Nu validates markup and Stylelint validates CSS; neither notices an <code>href</code> pointing at a section that no longer exists. Verifies every internal link and every <code>search-index.json</code> URL resolves to a real page <em>and</em> a real <code>id</code>, and that no page defines the same <code>id</code> twice.</li>
         </ol>
       </li>
       <li><strong>Config:</strong> <code>.stylelintrc.json</code> at repo root extends <code>stylelint-config-standard</code> with <code>alpha-value-notation: number</code> (keep <code>.4</code> instead of <code>40%</code>)</li>

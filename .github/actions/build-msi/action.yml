@@ -1,0 +1,39 @@
+name: Build WiX MSI
+description: >-
+  Builds the WiX v5 installer for one architecture and version. The command was repeated six times across
+  build.yml and release.yml, and every copy had to remember one non-obvious rule: the intermediate directory
+  MUST be unique per package. PublishDir, InstallerPlatform and Version reach the build as MSBuild PROPERTIES,
+  which the up-to-date check does not track - so a shared obj/ makes the second build a ~1s no-op that copies
+  the first package to the new output directory. That shipped an x86 installer which was a byte-identical x64
+  package. Here the intermediate path is derived from the inputs, so it cannot be forgotten.
+
+inputs:
+  publish-dir:
+    description: Published payload to package, relative to the installer project (e.g. ../../publish/x64/).
+    required: true
+  platform:
+    description: InstallerPlatform - x64 or x86.
+    required: true
+  version:
+    description: Package ProductVersion, e.g. 1.0.0.
+    required: true
+  output:
+    description: Output directory for the built .msi.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build MSI ${{ inputs.platform }} ${{ inputs.version }}
+      shell: pwsh
+      # The intermediate directory is derived, never passed in: unique per platform+version by construction.
+      run: >-
+        dotnet build src/JenkinsAsService.Installer
+        --nologo
+        --configuration Release
+        -p:RestoreLockedMode=true
+        -p:PublishDir=${{ inputs.publish-dir }}
+        -p:InstallerPlatform=${{ inputs.platform }}
+        -p:Version=${{ inputs.version }}
+        -p:BaseIntermediateOutputPath=obj/msi-${{ inputs.platform }}-${{ inputs.version }}/
+        --output ${{ inputs.output }}

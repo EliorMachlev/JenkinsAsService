@@ -14,24 +14,41 @@ public class ParseAgentOutputTests
     private readonly ILogger<JenkinsAgentWorker> _logger = Substitute.For<ILogger<JenkinsAgentWorker>>();
     private readonly JenkinsAgentWorker _worker;
 
-    public ParseAgentOutputTests()
-    {
-        var settings = new ServiceSettings
-        {
-            Connection = new() { Url = "https://jenkins:8443" },
-            Secret = new() { Value = "secret" },
-            Logging = new() { DebugMode = true }
-        };
+    public ParseAgentOutputTests() => _worker = CreateWorker(_logger, debugMode: true);
 
-        _worker = new JenkinsAgentWorker(
-            _logger,
-            Options.Create(settings),
+    /// <summary>
+    /// A worker wired entirely to substitutes: these tests only drive <c>ParseAgentOutput</c>, so nothing
+    /// beyond the logger and the settings participates.
+    /// </summary>
+    private static JenkinsAgentWorker CreateWorker(ILogger<JenkinsAgentWorker> logger, bool debugMode) =>
+        new(logger,
+            Options.Create(new ServiceSettings
+            {
+                Connection = new() { Url = "https://jenkins:8443" },
+                Secret = new() { Value = "secret" },
+                Logging = new() { DebugMode = debugMode }
+            }),
             Substitute.For<IJarDownloader>(),
             Substitute.For<IConnectivityChecker>(),
             Substitute.For<ISecretResolver>(),
             Substitute.For<IAgentProcessLauncher>(),
             Substitute.For<IHostApplicationLifetime>());
-    }
+
+    /// <summary>
+    /// Asserts one log call at <paramref name="level"/> whose rendered state contains <paramref name="expected"/>.
+    /// <para>
+    /// ILogger&lt;T&gt; has a single generic <c>Log</c> method, so every assertion needs the same five-argument
+    /// matcher; spelling it out per test buried the one line that differs. The null-guard on the state object
+    /// is what the matcher needs to be honest — a null state should fail to match, not throw.
+    /// </para>
+    /// </summary>
+    private static void AssertLogged(ILogger<JenkinsAgentWorker> logger, LogLevel level, string expected) =>
+        logger.Received().Log(
+            level,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(state => state != null && state.ToString()!.Contains(expected, StringComparison.Ordinal)),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
 
     [Fact]
     public void Ignores_whitespace_lines()
@@ -41,43 +58,15 @@ public class ParseAgentOutputTests
         _logger.ReceivedCalls().Should().BeEmpty();
     }
 
-    [Fact]
-    public void Parses_INFO_prefix_as_Information()
+    [Theory]
+    [InlineData("INFO: Connected to Jenkins", LogLevel.Information, "Connected to Jenkins")]
+    [InlineData("WARNING: Connection lost", LogLevel.Warning, "Connection lost")]
+    [InlineData("SEVERE: Fatal error", LogLevel.Error, "Fatal error")]
+    public void The_java_log_prefix_selects_the_level(string line, LogLevel expectedLevel, string expectedText)
     {
-        _worker.ParseAgentOutput("INFO: Connected to Jenkins");
+        _worker.ParseAgentOutput(line);
 
-        _logger.Received().Log(
-            LogLevel.Information,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("Connected to Jenkins")),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
-    }
-
-    [Fact]
-    public void Parses_WARNING_prefix_as_Warning()
-    {
-        _worker.ParseAgentOutput("WARNING: Connection lost");
-
-        _logger.Received().Log(
-            LogLevel.Warning,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("Connection lost")),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
-    }
-
-    [Fact]
-    public void Parses_SEVERE_prefix_as_Error()
-    {
-        _worker.ParseAgentOutput("SEVERE: Fatal error");
-
-        _logger.Received().Log(
-            LogLevel.Error,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("Fatal error")),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
+        AssertLogged(_logger, expectedLevel, expectedText);
     }
 
     [Fact]
@@ -85,40 +74,17 @@ public class ParseAgentOutputTests
     {
         _worker.ParseAgentOutput(RawJavaOutput);
 
-        _logger.Received().Log(
-            LogLevel.Debug,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains(RawJavaOutput)),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
+        AssertLogged(_logger, LogLevel.Debug, RawJavaOutput);
     }
 
     [Fact]
     public void Unprefixed_line_without_debug_mode_logs_as_Information()
     {
         var logger = Substitute.For<ILogger<JenkinsAgentWorker>>();
-        var settings = new ServiceSettings
-        {
-            Connection = new() { Url = "https://jenkins:8443" },
-            Secret = new() { Value = "secret" },
-            Logging = new() { DebugMode = false }
-        };
-        var worker = new JenkinsAgentWorker(
-            logger,
-            Options.Create(settings),
-            Substitute.For<IJarDownloader>(),
-            Substitute.For<IConnectivityChecker>(),
-            Substitute.For<ISecretResolver>(),
-            Substitute.For<IAgentProcessLauncher>(),
-            Substitute.For<IHostApplicationLifetime>());
+        var worker = CreateWorker(logger, debugMode: false);
 
         worker.ParseAgentOutput(RawJavaOutput);
 
-        logger.Received().Log(
-            LogLevel.Information,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains(RawJavaOutput)),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
+        AssertLogged(logger, LogLevel.Information, RawJavaOutput);
     }
 }

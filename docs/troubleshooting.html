@@ -187,6 +187,9 @@
       <li><strong>Download hangs</strong> &mdash; network or proxy. The named <code>HttpClient</code> has a standard resilience handler (retry, circuit breaker, timeout), so a genuine hang shows up as repeated timeout warnings rather than a stuck service.</li>
       <li><strong>Repeated full downloads instead of 304s</strong> &mdash; the cached jar failed its SHA-256 check (tampered, or truncated by something outside the service) and was deliberately re-fetched, or the controller sends no <code>ETag</code>. Check what else writes to the <code>agent\</code> cache directory; nothing else should.</li>
       <li><strong>TLS failure with a pin configured</strong> &mdash; <code>Connection:ControllerCertThumbprint</code> replaces chain trust for this download. After a controller certificate renewal the pin must be updated, or the download fails while everything else looks healthy.</li>
+      <li><strong>Behind a proxy: the jar downloads but the node never comes online</strong> &mdash; the classic symptom of configuring one side only. <code>Connection:Proxy</code> covers the <strong>.NET jar download</strong>; the Java agent's own long-lived connection is the <em>JVM's</em> and ignores it. Pass the JVM flags too, via <code>Agent:CustomArguments</code>: <code>-Dhttps.proxyHost=&hellip; -Dhttps.proxyPort=&hellip;</code>.</li>
+      <li><strong>A <code>ProxyBypass</code> entry seems to be ignored</strong> &mdash; entries are turned into whole-URI anchored regexes for you, because <code>WebProxy.BypassList</code> matches the entire URI rather than the hostname. A pattern written by hand elsewhere as just a host would silently never match. Check the startup line that logs the chosen proxy: the selection is logged in the first few lines of <code>agent.log</code>, so a misrouted download is visible immediately.</li>
+      <li><strong>The service refuses to start with a proxy message</strong> &mdash; deliberate. <code>Connection:Proxy</code> is parsed at startup so a malformed address fails loudly instead of looking like an unreachable controller for the next hour. Use <code>host:port</code>, a full URL, empty for the system proxy, or <code>direct</code> to bypass.</li>
     </ul>
 
     <h3 id="agent-connects-but-disconnects-randomly">Agent connects but disconnects randomly</h3>
@@ -215,12 +218,19 @@
 
     <h2 id="debug-mode">Debug Mode</h2>
 
-    <p>Set <code>DebugMode</code> to <code>true</code> in <code>appsettings.json</code> to enable verbose Java agent output in the log file. This captures all Java stdout/stderr including remoting/JNLP handshake details.</p>
+    <p>Set <code>Logging:DebugMode</code> to <code>true</code> in <code>appsettings.json</code> to enable verbose Java agent output in the log file. This captures all Java stdout/stderr including remoting/JNLP handshake details.</p>
 
-    <div class="callout callout-note">
-      <div class="callout-title">Note</div>
-      <p>Debug mode is set at startup via Serilog minimum level. A service restart is required to toggle it.</p>
+    <div class="callout callout-tip">
+      <div class="callout-title">No restart needed &mdash; that is the point</div>
+      <p>Save the file and the level changes within a second or two; the service logs <em>&ldquo;Logging:DebugMode changed to true &mdash; log level is now Debug. No restart required.&rdquo;</em> at Warning, so the change is visible in the log and the Event Log with a timestamp.</p>
+      <p>Restarting to enable debug logging would kill the agent and destroy the state you were trying to observe &mdash; and on a build node, drop a running build. Everything else in the config is still read at startup only. See <a href="configuration.html#live-debug">Configuration &rarr; Live debug logging</a>.</p>
     </div>
+
+    <h2 id="uninstall-took-my-logs">Uninstall took my logs</h2>
+    <p>Expected, and unprompted: uninstall removes the install folder <em>and</em> <code>%ProgramData%\JenkinsAsService</code> &mdash; logs, the cached <code>agent.jar</code>, and the <code>work\</code> tree. Copy anything you need out <strong>before</strong> uninstalling. An in-place <em>upgrade</em> keeps the data folder in full; only a genuine uninstall clears it.</p>
+    <p>This changed deliberately: leaving <code>appsettings.json</code> behind meant leaving a file holding the agent secret on a machine the product had supposedly been removed from. The secret is also cleared from its own store &mdash; TPM key, Credential Manager entry or machine environment variable. One exception is reported rather than silently skipped: a Credential Manager entry written with <code>--impersonate</code> lives in that user's vault, which the SYSTEM-run uninstall cannot reach, so remove it with <code>cmdkey /delete:JenkinsAsService/AgentSecret</code> while logged on as that account. Details in <a href="installation.html#uninstall">Installation &rarr; What uninstall removes</a>.</p>
+    <p>After a <strong>manual</strong> (non-MSI) removal there is no custom action to run the cleanup, so do it yourself:</p>
+    <pre data-lang="powershell"><code>.\JenkinsAsService.exe purge</code></pre>
 
     <h2 id="service-recovery-windows-level">Service Recovery (Windows-Level)</h2>
 

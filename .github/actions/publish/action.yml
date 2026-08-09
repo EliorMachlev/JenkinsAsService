@@ -1,0 +1,44 @@
+name: Publish self-contained executable
+description: >-
+  Publishes the service as an optimized, self-contained single-file executable. The flag set lived in five
+  near-identical copies across build.yml and release.yml; build.yml exists to mirror the release compile and
+  package steps, so a flag drifting between them defeated the point of having it. One definition here means
+  the binary CI validates is built exactly like the one that ships.
+
+inputs:
+  runtime:
+    description: RID to publish for, e.g. win-x64 or win-x86.
+    required: true
+  output:
+    description: Output directory for the published files.
+    required: true
+  version:
+    description: InformationalVersion stamped into the assembly. Defaults to the project value.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Publish ${{ inputs.runtime }}
+      shell: pwsh
+      run: >-
+        dotnet publish src/JenkinsAsService
+        --nologo
+        --configuration Release
+        -p:RestoreLockedMode=true
+        --runtime ${{ inputs.runtime }}
+        --self-contained true
+        --output ${{ inputs.output }}
+        -p:PublishSingleFile=true
+        -p:EnableCompressionInSingleFile=true
+        -p:PublishReadyToRun=true
+        -p:OptimizationPreference=Speed
+        -p:UseSharedCompilation=true
+        -p:DebuggerSupport=false
+        -p:MetadataUpdaterSupport=false
+        -p:Deterministic=true
+        -p:DebugType=Embedded
+        -p:DebugSymbols=true
+        ${{ inputs.version != '' && format('-p:InformationalVersion={0}', inputs.version) || '' }}
+        /v:q /clp:ErrorsOnly

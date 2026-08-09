@@ -76,6 +76,16 @@
         "title": "Config migration on MSI upgrade",
         "url": "configuration.html#config-migration-on-upgrade",
         "keywords": ["upgrade", "migration", "schema", "reconcile", "normalize", "prune", "preserve secret", "in-place upgrade"]
+      },
+      {
+        "title": "Proxy",
+        "url": "configuration.html#proxy",
+        "keywords": ["proxy", "proxybypass", "corporate proxy", "winhttp", "bypass list", "direct", "nonproxyhosts", "firewall"]
+      },
+      {
+        "title": "Live debug logging (no restart)",
+        "url": "configuration.html#live-debug",
+        "keywords": ["debugmode", "live", "no restart", "reload", "log level", "verbose", "diagnose", "hot toggle"]
       }
     ]
   },
@@ -151,6 +161,11 @@
         "title": "Build & publish",
         "url": "installation.html#build-publish",
         "keywords": ["build", "publish", "single-file", "self-contained", "r2r", "ready to run", "central package management", "cpm", "nuget"]
+      },
+      {
+        "title": "What uninstall removes",
+        "url": "installation.html#uninstall",
+        "keywords": ["uninstall", "remove", "programdata", "purge", "cleanup", "msiexec /x", "data folder"]
       }
     ]
   },
@@ -181,6 +196,11 @@
         "title": "Action versioning policy",
         "url": "ci-cd.html#action-versioning-policy",
         "keywords": ["action versioning", "sha pinning", "supply chain", "tag mutation", "pinned actions"]
+      },
+      {
+        "title": "MSI install / upgrade / uninstall test",
+        "url": "ci-cd.html#msi-lifecycle",
+        "keywords": ["msi test", "upgrade test", "install test", "custom action", "wix_upgrade_detected", "lifecycle", "ci"]
       }
     ]
   },
@@ -201,6 +221,21 @@
         "title": "Service recovery",
         "url": "troubleshooting.html#service-recovery-windows-level",
         "keywords": ["service recovery", "auto-recovery", "restart", "failure actions", "watchdog", "resilience", "sc failure"]
+      },
+      {
+        "title": "Jar download problems (incl. proxy)",
+        "url": "troubleshooting.html#download-failures",
+        "keywords": ["proxy", "proxybypass", "jar download", "304", "etag", "sha-256", "cert pinning", "node never comes online"]
+      },
+      {
+        "title": "Uninstall took my logs",
+        "url": "troubleshooting.html#uninstall-took-my-logs",
+        "keywords": ["uninstall", "logs deleted", "data folder", "programdata", "purge", "recover", "work directory"]
+      },
+      {
+        "title": "Debug mode (live, no restart)",
+        "url": "troubleshooting.html#debug-mode",
+        "keywords": ["debug", "verbose", "log level", "debugmode", "no restart", "live"]
       },
       {
         "title": "Watchdog & auto-recovery",

@@ -26,7 +26,9 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **Structured logging** — Serilog rolling file + Windows Event Log, with `ProcessId`/`MachineName` enrichment
 - **CLEF JSON mode** — machine-parseable compact log format for Seq, Datadog, or any log aggregator
 - **OpenTelemetry metrics** — opt-in OTLP export: restart counter, SEVERE event counter, .NET runtime metrics
-- **Secret redaction** — agent secrets are scrubbed from all log output
+- **Secret redaction** — agent secrets are scrubbed from all log output, including URL-encoded, XML-escaped and Base64 forms the controller may echo back
+- **Live debug toggle** — flip `Logging:DebugMode` and the level changes within seconds, so diagnosing a crash-loop no longer means restarting the service and destroying the evidence
+- **Proxy aware** — explicit proxy and bypass list for the jar download, or inherit the system proxy
 - **Binary/data separation** — read-only binaries in `Program Files`, writable runtime data in `ProgramData`; the cached `agent.jar` is isolated from the build workspace so a build step can't swap the binary the watchdog launches
 - **Non-destructive upgrades** — an in-place MSI upgrade reconciles `appsettings.json` to the new schema, preserving your values and secret (detected without decrypting it)
 - **Unit-tested** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness driven by a fake process), CI on every push
@@ -123,7 +125,15 @@ To uninstall:
 ```powershell
 sc.exe stop Jenkins
 sc.exe delete Jenkins
+.\JenkinsAsService.exe purge   # removes %ProgramData%\JenkinsAsService and appsettings.json
 ```
+
+> [!WARNING]
+> **Uninstalling is destructive.** The MSI removes the install folder *and* `%ProgramData%\JenkinsAsService` — logs, the cached `agent.jar`, and the `work\` directory (build workspaces, `remoting/` state) all go with it, without prompting. Copy anything you need out first. An **upgrade** preserves the data folder in full; only a genuine uninstall clears it.
+>
+> It also removes the **secret from its store** — the TPM key, Credential Manager entry, or machine environment variable, per `Secret:Mode` — so nothing usable is left behind. A Credential Manager entry written with `--impersonate` belongs to that user's vault and must be removed while logged on as them (`cmdkey /delete:JenkinsAsService/AgentSecret`); the purge tells you if it hit this.
+>
+> For a manual install there is no MSI to run the cleanup, hence the `purge` call above. It honours a relocated `Agent:DataDirectory` and refuses to delete a drive root or a system folder.
 
 ## Configuration
 
@@ -135,6 +145,8 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 | `Connection:Method` | No | `Auto` | Agent transport: `Auto` (WebSocket first, fall back to direct TCP inbound), `WebSocket`, or `Https` (direct TCP inbound) |
 | `Connection:AgentName` | No | Hostname | Node name in Jenkins (case-sensitive) |
 | `Connection:ControllerCertThumbprint` | No | *(empty)* | SHA-256 thumbprint to pin the controller TLS cert (empty = chain validation) |
+| `Connection:Proxy` | No | *(empty)* | Proxy for the `agent.jar` download: empty = system proxy, `direct` = bypass, or `host:port`. The Java agent's own connection needs JVM flags via `Agent:CustomArguments` |
+| `Connection:ProxyBypass` | No | *(empty)* | Hosts skipping an explicit proxy (`;`/`,`-separated, `*` wildcards) |
 | `Secret:Value` | Yes | — | JNLP secret (or ciphertext / env-var name / credential target, per `Secret:Mode`) |
 | `Secret:Mode` | No | `Unprotected` | `Unprotected`, `Dpapi`, `Tpm`, `EnvironmentVariable`, or `CredentialManager` |
 | `Secret:DpapiScope` | No | `Machine` | `Machine` or `User` (only when `Secret:Mode` is `Dpapi`) |
@@ -144,7 +156,7 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 | `Agent:DataDirectory` | No | `%ProgramData%\JenkinsAsService` | Writable root for runtime data, separate from the read-only install folder: logs + secret at the root, cached `agent.jar` under `agent\`, Jenkins `-workDir` under `work\` |
 | `Hardening:SanitizeEnvironment` | No | `true` | Launch the agent with a deny-by-default environment (curated allow-list only) |
 | `Hardening:AllowedEnvironmentVariables` | No | *(empty)* | Extra env var names (`;`/`,`-separated) to pass through when sanitizing |
-| `Logging:DebugMode` | No | `false` | Verbose Java agent output in logs |
+| `Logging:DebugMode` | No | `false` | Verbose Java agent output in logs. **Applied live** — no service restart needed |
 | `Logging:CompactLog` | No | `false` | CLEF JSON output (`agent.clef`) instead of human-readable (`agent.log`) |
 | `Logging:RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
 | `Recovery:MaxRetries` | No | `0` | Max consecutive agent *crashes* before the service stops itself for SCM recovery. Unreachable-controller retries don't count. `0` = infinite |

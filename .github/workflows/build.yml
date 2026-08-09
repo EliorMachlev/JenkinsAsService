@@ -40,49 +40,87 @@ jobs:
           if-no-files-found: error
 
       - name: Publish x64
-        run: >-
-          dotnet publish src/JenkinsAsService
-          --nologo
-          --configuration Release
-          -p:RestoreLockedMode=true
-          --runtime win-x64
-          --self-contained true
-          --output publish/x64/
-          -p:PublishSingleFile=true
-          -p:EnableCompressionInSingleFile=true
-          -p:PublishReadyToRun=true
-          -p:OptimizationPreference=Speed
-          -p:UseSharedCompilation=true
-          -p:DebuggerSupport=false
-          -p:MetadataUpdaterSupport=false
-          -p:Deterministic=true
-          -p:DebugType=Embedded
-          -p:DebugSymbols=true
-          /v:q /clp:ErrorsOnly
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-x64
+          output: publish/x64/
 
       - name: Publish x86
-        run: >-
-          dotnet publish src/JenkinsAsService
-          --nologo
-          --configuration Release
-          -p:RestoreLockedMode=true
-          --runtime win-x86
-          --self-contained true
-          --output publish/x86/
-          -p:PublishSingleFile=true
-          -p:EnableCompressionInSingleFile=true
-          -p:PublishReadyToRun=true
-          -p:OptimizationPreference=Speed
-          -p:UseSharedCompilation=true
-          -p:DebuggerSupport=false
-          -p:MetadataUpdaterSupport=false
-          -p:Deterministic=true
-          -p:DebugType=Embedded
-          -p:DebugSymbols=true
-          /v:q /clp:ErrorsOnly
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-x86
+          output: publish/x86/
 
       - name: Build MSI x64
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x64/ -p:InstallerPlatform=x64 -p:Version=0.0.0 -o msi/x64/
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: 0.0.0
+          output: msi/x64/
 
       - name: Build MSI x86
-        run: dotnet build src/JenkinsAsService.Installer -c Release -p:RestoreLockedMode=true -p:PublishDir=../../publish/x86/ -p:InstallerPlatform=x86 -p:Version=0.0.0 -o msi/x86/
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x86/
+          platform: x86
+          version: 0.0.0
+          output: msi/x86/
+
+      # build.yml mirrors the release steps, so it mirrors the guard too.
+      - name: Verify each MSI targets its own architecture
+        shell: pwsh
+        run: .github/scripts/Test-MsiPlatform.ps1 -X64Msi (Get-Item msi/x64/*.msi).FullName -X86Msi (Get-Item msi/x86/*.msi).FullName
+
+  # Installs the MSI for real. The reconcile logic is unit-tested, but custom-action SEQUENCING under
+  # WIX_UPGRADE_DETECTED only happens during an actual in-place upgrade — previously a manual-verify step,
+  # which is why the upgrade path stayed on the "not verified" list release after release.
+  msi-lifecycle:
+    name: MSI Install / Upgrade / Uninstall
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # Same flags as the shipped artifact: this job installs and runs the binary, so it must exercise the
+      # one users actually get, not a cheaper approximation of it.
+      - name: Publish x64
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-x64
+          output: publish/x64/
+
+      # Two versions from one publish: the upgrade needs a higher ProductVersion, nothing else differs. The
+      # build-msi action derives a per-version intermediate directory, which is what keeps these two builds
+      # from collapsing into one copied package — see the action for why that matters.
+      - name: Build MSI 1.0.0
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: 1.0.0
+          output: msi/v1/
+
+      - name: Build MSI 1.0.1
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: 1.0.1
+          output: msi/v2/
+
+      - name: Install, upgrade, uninstall
+        shell: pwsh
+        run: .github/scripts/Test-MsiLifecycle.ps1 -V1Msi (Get-Item msi/v1/*.msi).FullName -V2Msi (Get-Item msi/v2/*.msi).FullName
+
+      - name: Upload MSI logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: msi-logs
+          path: msi-logs/
+          if-no-files-found: warn

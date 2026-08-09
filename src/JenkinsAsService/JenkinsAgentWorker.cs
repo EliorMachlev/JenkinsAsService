@@ -17,7 +17,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const int UnknownExitCode = -1;
 
     // ─── Files / process ──────────────────────────────────────────────────────
-    private const string JarFilename = "agent.jar";
+    private const string JarFilename = AgentJar.FileName;
 
     // ─── Java agent CLI argument names ─────────────────────────────────────────
     private const string ArgJar = "-jar";
@@ -35,7 +35,6 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     // ─── Misc ─────────────────────────────────────────────────────────────────
     private const string SecretFileArgPrefix = "@";
-    private const string SecretRedaction = "*****";
     private const string UrlPathSeparator = "/";
     private const char TrailingSlash = '/';
     private const int ConnectivityTimeoutMs = 2_000;
@@ -62,6 +61,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private string _javaExe = "";
     private string _agentName = "";
     private string _resolvedSecret = "";
+    private string[] _secretPatterns = [];
     private string? _secretFilePath;
     private ConnectionMethod _effectiveMethod;
     private bool _currentRunReachedStability;
@@ -186,6 +186,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
         }
 
         _resolvedSecret = _secretResolver.Resolve(_settings);
+        // Every encoded form of the secret, computed once — the redaction runs on every output line.
+        _secretPatterns = SecretRedactor.BuildPatterns(_resolvedSecret);
         _logger.LogInformation("Secret resolved via {Mode} mode", _settings.Secret.Mode);
 
         _dataDir = DataPaths.ResolveDataDirectory(_settings.Agent.DataDirectory);
@@ -290,11 +292,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
             return;
         }
 
-        var command = $"{psi.FileName} {string.Join(' ', psi.ArgumentList)}";
-        if (!string.IsNullOrEmpty(_resolvedSecret))
-        {
-            command = command.Replace(_resolvedSecret, SecretRedaction, StringComparison.Ordinal);
-        }
+        var command = SecretRedactor.Redact(
+            $"{psi.FileName} {string.Join(' ', psi.ArgumentList)}", _secretPatterns);
 
         _logger.LogDebug("Launching agent ({Transport}): {Command}", _effectiveMethod, command);
     }
@@ -323,11 +322,8 @@ public sealed class JenkinsAgentWorker : BackgroundService
             return;
         }
 
-        // Redact resolved secret in case Jenkins emits it on handshake failure
-        if (!string.IsNullOrEmpty(_resolvedSecret))
-        {
-            line = line.Replace(_resolvedSecret, SecretRedaction, StringComparison.Ordinal);
-        }
+        // Redact the secret in case Jenkins echoes it on handshake failure — in any form it may come back in.
+        line = SecretRedactor.Redact(line, _secretPatterns);
 
         if (line.StartsWith(InfoPrefix, StringComparison.Ordinal))
         {
