@@ -1,7 +1,10 @@
 # Build output
 bin/
 obj/
-publish/
+# Anchored to the repo root: unanchored, this matched a 'publish' directory at ANY depth and
+# silently swallowed .github/actions/publish/ — git add skipped it without a word and CI failed
+# with "Can't find 'action.yml'". bin/ and obj/ stay unanchored; those really do occur per-project.
+/publish/
 
 # Archives
 *.7z
