@@ -101,15 +101,22 @@ function Get-MsiProperty {
 # Deliberately NOT Win32_Product: querying that class makes Windows Installer walk every installed package
 # and reconfigure it, which took 1m42s of this job's runtime and can itself repair or alter packages - a
 # test must not mutate the machine state it is inspecting. The registry is read-only and immediate.
+# Every property access is guarded through PSObject.Properties because Set-StrictMode -Version Latest turns
+# reading an absent property into a terminating error, and a great many uninstall keys carry no DisplayName
+# (or no DisplayVersion) at all. `$_.DisplayName -eq ...` therefore throws on the first such key rather than
+# simply not matching it.
 function Get-InstalledVersion {
     param([Parameter(Mandatory)][string]$DisplayName)
     $roots = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
     )
-    return Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -eq $DisplayName } |
-        Select-Object -First 1 -ExpandProperty DisplayVersion -ErrorAction SilentlyContinue
+    $entry = Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue |
+        Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -eq $DisplayName } |
+        Select-Object -First 1
+
+    if ($null -eq $entry -or -not $entry.PSObject.Properties['DisplayVersion']) { return $null }
+    return $entry.DisplayVersion
 }
 
 # --------------------------------------------------------------------------------------------------
