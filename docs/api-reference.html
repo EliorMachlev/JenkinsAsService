@@ -310,6 +310,11 @@ void Kill();                          // whole process tree; never throws</code>
             <td>Breaks inheritance on <code>appsettings.json</code> and reduces access to SYSTEM, Administrators and the service account, removing <code>Users</code>. Called from the <code>update-secret</code> write path.</td>
           </tr>
           <tr>
+            <td><code>UninstallCleanup</code></td>
+            <td><code>IsSafeToDelete(path)</code><br><code>Purge(basePath, dataDirectory, report)</code></td>
+            <td>Backs <code>update-secret --purge</code>, the uninstall custom action. Deletes the runtime data tree and the CA-generated <code>appsettings.json</code> &mdash; neither is a tracked MSI file, so Windows Installer removes neither. <code>Purge</code> never throws: a locked log file must not fail an uninstall. <code>IsSafeToDelete</code> guards a recursive delete that runs as SYSTEM against an operator-supplied path, rejecting anything not fully qualified (a relative path would resolve against the CA's unpredictable working directory), drive roots, paths less than two levels deep, and well-known system folders.</td>
+          </tr>
+          <tr>
             <td><code>EventLogSourceInstaller</code></td>
             <td><code>Ensure(source, logName)</code></td>
             <td>Returns whether the event source is usable. The low-privilege service account cannot create one (HKLM write), so the installer pre-creates it as SYSTEM and <code>Program.cs</code> attaches the sink only if this returns true &mdash; with <code>manageEventSource: false</code>, so startup can never fail on a registry write.</td>

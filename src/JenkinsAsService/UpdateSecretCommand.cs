@@ -40,6 +40,9 @@ public static class UpdateSecretCommand
                                   add new settings at their defaults, prune settings the schema no longer
                                   defines, and preserve existing values and the secret. If no secret is
                                   present, falls back to a full write from --secret/--url/--mode.
+          --purge                 Uninstall cleanup: delete the runtime data directory and appsettings.json,
+                                  then exit. Used by the installer's uninstall custom action to remove what
+                                  Windows Installer cannot (both are created at runtime, not installed).
           --debug <bool>          Verbose Java agent logging (true/false)
           --compact-log <bool>    Compact JSON log format (true/false)
           --retained-logs <int>   Number of rolled log files to keep
@@ -49,6 +52,8 @@ public static class UpdateSecretCommand
 
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
+
+    private const string PurgeFlag = "--purge";
 
     private const string ConfigFileName = ConfigKeys.FileName;
     private const string ConfigSectionName = ConfigKeys.Section;
@@ -97,6 +102,14 @@ public static class UpdateSecretCommand
         if (Array.Exists(args, a => a is "--help" or "-h"))
         {
             Console.WriteLine(UsageText);
+            return 0;
+        }
+
+        // Uninstall cleanup. Checked before ParseArgs because it shares none of the write path's required
+        // arguments - there is no secret, URL or mode to supply when the product is being removed.
+        if (Array.Exists(args, a => a == PurgeFlag))
+        {
+            PurgeInstallation(basePath);
             return 0;
         }
 
@@ -479,6 +492,31 @@ public static class UpdateSecretCommand
 
     // Reads existing appsettings.json so interactive prompts can offer defaults.
     // Falls back to empty strings / Dpapi on a missing or corrupt file.
+    /// <summary>
+    /// Removes the runtime data directory and the generated config. The data directory is read from the
+    /// config being deleted - an operator who moved it via <c>Agent:DataDirectory</c> must have <em>their</em>
+    /// directory removed, not the default one. A missing or unreadable config falls back to the default
+    /// location, which is where the data would be in that case anyway.
+    /// </summary>
+    private static void PurgeInstallation(string basePath)
+    {
+        string? configured = null;
+        try
+        {
+            configured = new ConfigurationBuilder()
+                .SetBasePath(basePath)
+                .AddJsonFile(ConfigFileName, optional: true)
+                .Build()
+                .GetSection(ConfigSectionName)[ConfigKeys.Agent.DataDirectoryPath];
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"Could not read {ConfigFileName} ({ex.Message}); using the default data directory.");
+        }
+
+        UninstallCleanup.Purge(basePath, DataPaths.ComputeDataDirectory(configured), Console.WriteLine);
+    }
+
     private static void TryReadExistingConfig(string basePath, string configPath,
         out string existingServer, out string existingAgentName, out string existingJavaPath,
         out SecretMode existingMode)

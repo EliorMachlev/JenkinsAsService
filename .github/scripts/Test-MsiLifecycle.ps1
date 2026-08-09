@@ -10,10 +10,12 @@
 
     Asserted here:
       * install registers the service, writes appsettings.json, creates the data folder
-      * an in-place upgrade PRESERVES operator edits and the secret
+      * an in-place upgrade PRESERVES operator edits, the secret, and the data folder
       * the upgrade ADDS a schema key missing from the old config, at its default
       * the upgrade PRUNES a key the schema does not define
-      * uninstall removes the service and the binaries but DELIBERATELY KEEPS the data folder (logs)
+      * uninstall removes the service, the install folder (incl. the CA-generated appsettings.json) AND the
+        data folder - neither of the latter two is a tracked MSI file, so both depend on the purge custom
+        action, which must fire on a real uninstall and never during an upgrade's removal of the old product
 
     No Jenkins controller is involved: the URL points at a closed port, so the agent never connects. That is
     fine - every assertion is about files, the registry and SCM, not about connectivity.
@@ -172,6 +174,13 @@ $raw.Jenkins.Connection.PSObject.Properties.Remove('ControllerCertThumbprint')
 $raw.Jenkins.Logging | Add-Member -NotePropertyName 'NoSuchSetting' -NotePropertyValue 'remove-me'
 $raw | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding utf8
 
+# Uninstall now purges the data folder, and a major upgrade removes the OLD product first
+# (MajorUpgrade Schedule="afterInstallInitialize") - so if the purge is not correctly gated on
+# NOT UPGRADINGPRODUCTCODE, an upgrade silently destroys the operator's logs and the cached agent.jar.
+# This file is planted before the upgrade and checked after it.
+$sentinel = Join-Path $dataFolder 'operator-data.txt'
+Set-Content -Path $sentinel -Value 'operator data that must survive an upgrade and die on uninstall' -Encoding utf8
+
 Invoke-Msi -LogName 'upgrade-v2' -Arguments (@('/i', $V2Msi) + $commonProperties)
 
 $cfg = Get-Config
@@ -183,6 +192,8 @@ Assert-That ($null -ne $cfg.Jenkins.Connection.PSObject.Properties['ControllerCe
     "a schema key missing from the old config is re-added by the reconcile"
 Assert-That ($null -eq $cfg.Jenkins.Logging.PSObject.Properties['NoSuchSetting']) `
     "a key the schema does not define is pruned"
+
+Assert-That (Test-Path $sentinel) "the data folder SURVIVES an upgrade (the purge must be gated on NOT UPGRADINGPRODUCTCODE)"
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service -and $service.Status -eq 'Running') "service is Running after the upgrade"
@@ -196,20 +207,17 @@ Assert-That ($installedVersion -eq $v2Version) `
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 3. Uninstall ==="
 
-# Drop a file in the data folder: uninstall must not take the operator's data with it.
-#
-# NOT named agent.log. The service is still running and Serilog holds its own agent.log open, so writing to
-# that name threw "the process cannot access the file" and killed the script before uninstall ran at all -
-# which is why the uninstall assertions below have never actually executed. An inert file is also the better
-# probe: it proves the FOLDER survived, with no ambiguity about a handle the service happens to hold.
-$sentinel = Join-Path $dataFolder 'operator-data.txt'
-Set-Content -Path $sentinel -Value 'operator data that must outlive the uninstall' -Encoding utf8
+# The sentinel planted before the upgrade is still there, and now has to disappear: uninstall removes BOTH
+# trees. The service is running and holds its own agent.log open, so the data folder is deliberately probed
+# with an inert file - a handle the service happens to hold would otherwise confuse the result.
+Assert-That (Test-Path $sentinel) "sentinel is present going into the uninstall (guards the assertion below)"
 
 Invoke-Msi -LogName 'uninstall' -Arguments @('/x', $V2Msi)
 
 Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) "service is removed"
 Assert-That (-not (Test-Path $configPath)) "appsettings.json is removed from the install folder"
-Assert-That (Test-Path $sentinel) "the data folder and its contents are DELIBERATELY kept (documented behaviour)"
+Assert-That (-not (Test-Path $installFolder)) "the install folder is removed"
+Assert-That (-not (Test-Path $dataFolder)) "the data folder is removed, with the logs, agent.jar and work tree"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host ''

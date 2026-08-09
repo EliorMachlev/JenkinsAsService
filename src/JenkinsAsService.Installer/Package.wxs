@@ -122,6 +122,15 @@
                   ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE]'
                   Execute="deferred" Impersonate="no" />
 
+    <!-- Uninstall-only CA: delete the runtime data directory and appsettings.json. Windows Installer removes
+         only what it installed, and neither of those was installed - the config is written by WriteConfig and
+         the data tree is created at runtime - so without this an uninstall left both behind, including a file
+         holding the agent secret. Return="ignore" because a locked log file must not fail an uninstall. -->
+    <CustomAction Id="PurgeInstallation"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='update-secret --purge'
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+
     <!-- All CAs must run AFTER InstallFiles (the exe must be on disk to invoke) and BEFORE StartServices:
          the service is registered with Start="install" (ServiceControl, Wait="yes"), so SCM launches it at
          the standard StartServices action. If appsettings.json / the data dir aren't written yet, the service
@@ -143,6 +152,18 @@
       <!-- Upgrade path: run only the non-destructive reconcile. Still After InstallFiles (the exe must be on
            disk) and Before StartServices (so the full config exists before SCM launches the service). -->
       <Custom Action="UpgradeConfig" After="SetDataDir" Condition="WIX_UPGRADE_DETECTED" />
+      <!-- Uninstall cleanup. Two parts of the condition, each load-bearing:
+             REMOVE="ALL"             - a full uninstall, not a feature-level or partial removal.
+             NOT UPGRADINGPRODUCTCODE - the old product's removal during a MAJOR UPGRADE must not purge.
+                                        MajorUpgrade is scheduled afterInstallInitialize, so the old product
+                                        is uninstalled BEFORE the new files land; purging there would delete
+                                        the very appsettings.json UpgradeConfig then reconciles, and take the
+                                        cached agent.jar and the operator's logs with it.
+           Before RemoveFiles, so the exe is still on disk to invoke and the emptied install folder can then
+           be removed normally. StopServices has already run by this point, so the service no longer holds
+           its log file open. -->
+      <Custom Action="PurgeInstallation" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
   </Package>

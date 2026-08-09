@@ -429,8 +429,8 @@ sc.exe start Jenkins</code></pre>
     <pre data-lang="powershell"><code>sc.exe stop Jenkins
 sc.exe delete Jenkins</code></pre>
 
-    <h2 id="uninstall">What uninstall removes &mdash; and what it keeps</h2>
-    <p>Uninstalling (Add/Remove Programs, or <code>msiexec /x</code>) stops and deregisters the service and deletes everything it installed. It <strong>deliberately leaves the data folder in place</strong>:</p>
+    <h2 id="uninstall">What uninstall removes</h2>
+    <p>Uninstalling (Add/Remove Programs, or <code>msiexec /x</code>) stops and deregisters the service and removes <strong>everything</strong> &mdash; the install folder and the runtime data folder both. Nothing is left behind to clean up by hand:</p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -440,7 +440,7 @@ sc.exe delete Jenkins</code></pre>
           <tr>
             <td><code>C:\Program Files\Jenkins</code> (install folder)</td>
             <td><strong>Removed</strong>, including <code>appsettings.json</code></td>
-            <td>Everything here was installed by the MSI, and the config &mdash; which may hold an encrypted secret &mdash; goes with it</td>
+            <td>The config may hold an encrypted secret, so it goes with the product</td>
           </tr>
           <tr>
             <td>The <code>Jenkins</code> service</td>
@@ -449,16 +449,21 @@ sc.exe delete Jenkins</code></pre>
           </tr>
           <tr>
             <td><code>C:\ProgramData\JenkinsAsService</code> (data folder)</td>
-            <td><strong>Kept</strong> &mdash; logs, cached <code>agent.jar</code>, and the <code>work\</code> directory</td>
-            <td>Logs are usually the reason you are uninstalling. Deleting a build workspace and its history as a side effect of removing a service would be a bad surprise</td>
+            <td><strong>Removed</strong> &mdash; logs, cached <code>agent.jar</code>, the <code>work\</code> directory and the runtime secret file</td>
+            <td>Uninstalling means removing the product, not leaving a build workspace and a secret-bearing folder orphaned on disk</td>
           </tr>
         </tbody>
       </table>
     </div>
+    <div class="callout callout-warning">
+      <div class="callout-title">Save your logs and workspace first</div>
+      <p>Uninstall is destructive: the <code>work\</code> directory (build workspaces, <code>remoting/</code> state) and every rolled log file go with it. Copy anything you need out of <code>%ProgramData%\JenkinsAsService</code> <em>before</em> uninstalling &mdash; the MSI does not prompt.</p>
+    </div>
     <div class="callout callout-note">
-      <div class="callout-title">The secret is not left behind in the data folder</div>
-      <p>The runtime secret file (<code>.agent-secret</code>) is deleted when the service <em>stops</em>, so a normal uninstall removes it before the folder is orphaned. If a machine was powered off hard, check for it and delete it by hand. Remove the whole folder yourself once you have what you need:</p>
-      <pre data-lang="powershell"><code>Remove-Item 'C:\ProgramData\JenkinsAsService' -Recurse -Force</code></pre>
+      <div class="callout-title">How this works, and why an upgrade is safe</div>
+      <p>Neither the config nor the data folder is a tracked MSI file &mdash; <code>appsettings.json</code> is written by a custom action and the data tree is created at runtime &mdash; so Windows Installer alone removes neither. A deferred custom action sequenced just before <code>RemoveFiles</code> runs <code>update-secret --purge</code> to delete both.</p>
+      <p>It is conditioned on <code>REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</code>. That second clause is what keeps an <strong>upgrade</strong> safe: a major upgrade removes the old product <em>first</em>, and without the gate that removal would delete the config the upgrade is meant to reconcile, along with your logs and cached <code>agent.jar</code>. An in-place upgrade therefore preserves the data folder in full; only a genuine uninstall clears it. Both behaviours are asserted on every CI run &mdash; see <a href="ci-cd.html#msi-lifecycle">CI/CD &rarr; MSI install / upgrade / uninstall</a>.</p>
+      <p>A relocated <code>Agent:DataDirectory</code> is honoured: the purge reads the configured path and removes <em>that</em> tree. It refuses to delete a drive root or a well-known system directory, so a mistyped path leaves data behind rather than taking the machine with it.</p>
     </div>
 
     <h2 id="automated-release">Automated Release</h2>

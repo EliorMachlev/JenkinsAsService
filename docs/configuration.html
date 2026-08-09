@@ -507,8 +507,9 @@
   --merge                Apply only the optional settings supplied, leaving everything else untouched
   --set-data-dir &lt;path&gt;  Write only Agent:DataDirectory
   --upgrade              Reconcile appsettings.json to the current schema; preserve the existing secret
+  --purge                Uninstall cleanup: delete the data directory and appsettings.json, then exit
   --help                 Show usage</code></pre>
-    <p><code>--merge</code>, <code>--set-data-dir</code> and <code>--upgrade</code> exist because an MSI custom-action command line is capped at 255 characters &mdash; the installer splits the work across several calls. They are equally usable in a hand-rolled deployment script.</p>
+    <p><code>--merge</code>, <code>--set-data-dir</code> and <code>--upgrade</code> exist because an MSI custom-action command line is capped at 255 characters &mdash; the installer splits the work across several calls. They are equally usable in a hand-rolled deployment script. <code>--purge</code> is the uninstall counterpart: it removes the runtime data directory (the configured one, if <code>Agent:DataDirectory</code> was relocated) and <code>appsettings.json</code>, which the MSI cannot remove because it never installed them. See <a href="installation.html#uninstall">Installation &rarr; What uninstall removes</a>.</p>
 
     <div class="callout callout-tip">
       <div class="callout-title">Tip</div>
