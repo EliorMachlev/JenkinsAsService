@@ -34,7 +34,7 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **Unit-tested** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness driven by a fake process), CI on every push
 - **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy; all actions SHA-pinned
 - **Single-file deploy** — self-contained `.exe` with R2R, compression, and embedded PDB symbols
-- **Dual-arch releases** — x64 + x86 MSI installers, 7z/RAR archives, SHA256 checksums
+- **Dual-arch releases** — x64 + x86 MSI installers, 7z archives, SHA256 checksums
 
 ## How It Works
 
@@ -99,7 +99,7 @@ msiexec /i JenkinsAsService_x64.msi /qn `
 
 ### Portable (Archive)
 
-For environments where MSI installation isn't possible, download the `.7z` or `.rar` archive from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases):
+For environments where MSI installation isn't possible, download the `.7z` archive from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases):
 
 1. Extract to a folder of your choice (e.g. `D:\Jenkins`)
 2. Edit `appsettings.json` — fill in `Connection:Url`, `Secret:Value`, and any other settings

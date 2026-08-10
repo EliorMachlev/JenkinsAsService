@@ -431,7 +431,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     </div>
 
     <h3 id="portable-archive">Portable (Archive)</h3>
-    <p>For environments where MSI installation isn't possible, download the <code>.7z</code> or <code>.rar</code> archive from <a href="https://github.com/EliorMachlev/JenkinsAsService/releases">Releases</a>:</p>
+    <p>For environments where MSI installation isn't possible, download the <code>.7z</code> archive from <a href="https://github.com/EliorMachlev/JenkinsAsService/releases">Releases</a>:</p>
     <ol>
       <li>Extract to a folder of your choice (e.g. <code>D:\Jenkins</code>)</li>
       <li>Edit <code>appsettings.json</code> &mdash; fill in <code>Connection:Url</code>, <code>Secret:Value</code>, and any other settings</li>
@@ -507,7 +507,7 @@ sc.exe delete Jenkins</code></pre>
       <li>Push a tag matching <code>v*</code> (e.g., <code>v1.0.4</code>)</li>
       <li>Runs tests, publishes optimized self-contained executables for <strong>x64</strong> and <strong>x86</strong></li>
       <li>Builds MSI installers for both architectures via WiX v5</li>
-      <li>Creates <code>.7z</code> (LZMA2, max compression) and <code>.rar</code> (RAR5 with 5% recovery record) archives</li>
+      <li>Creates <code>.7z</code> (LZMA2, max compression) archives</li>
       <li>Generates a CycloneDX SBOM for the service project</li>
       <li>Generates <code>checksums.json</code> with SHA256 hashes for all artifacts (SBOM included)</li>
       <li>Creates GitHub Release with auto-generated release notes</li>
@@ -537,16 +537,8 @@ sc.exe delete Jenkins</code></pre>
             <td>64-bit archive (7z)</td>
           </tr>
           <tr>
-            <td><code>JenkinsAsService_1.0.4_x64.rar</code></td>
-            <td>64-bit archive (RAR5 + recovery)</td>
-          </tr>
-          <tr>
             <td><code>JenkinsAsService_1.0.4_x86.7z</code></td>
             <td>32-bit archive (7z)</td>
-          </tr>
-          <tr>
-            <td><code>JenkinsAsService_1.0.4_x86.rar</code></td>
-            <td>32-bit archive (RAR5 + recovery)</td>
           </tr>
           <tr>
             <td><code>JenkinsAsService_1.0.4_sbom.json</code></td>
