@@ -36,11 +36,16 @@ jobs:
           # The retry covers the residue. Findings never fail this job (they are uploaded as SARIF below),
           # so the only way it can fail is the analyzer itself throwing - which must still fail loudly after
           # a few attempts rather than be swallowed into a green check.
-          # -Filter, not -Include: with a directory -Path, -Include matches against the path leaf and needs a
-          # trailing \* to behave, which silently found zero files on the Linux runner while working locally
-          # on Windows. -Filter is applied by the provider and behaves the same on both.
+          # -Force is the load-bearing switch, and the reason two attempts at this found zero files on the
+          # runner while working locally: every script in this repo lives under .github, a DOT-PREFIXED
+          # directory. POSIX treats that as hidden, and Get-ChildItem -Recurse does not descend into hidden
+          # directories without -Force. On Windows .github carries no hidden attribute, so it is enumerated
+          # either way - the platform difference is in the filesystem, not in PowerShell.
+          #
+          # -Filter rather than -Include for the extensions: with a directory -Path, -Include matches the
+          # path leaf and needs a trailing wildcard to behave. -Filter is applied by the provider.
           $files = @('*.ps1', '*.psm1', '*.psd1' | ForEach-Object {
-              Get-ChildItem -Path $root -Filter $_ -Recurse -File
+              Get-ChildItem -Path $root -Filter $_ -Recurse -File -Force
             } |
             Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|\.git)[\\/]' } |
             Select-Object -ExpandProperty FullName -Unique | Sort-Object)
