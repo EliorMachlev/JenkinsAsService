@@ -23,8 +23,40 @@ jobs:
       - name: Run PSScriptAnalyzer
         shell: pwsh
         run: |
-          $root    = $env:GITHUB_WORKSPACE ?? $PWD.Path
-          $results = Invoke-ScriptAnalyzer -Path $root -Recurse
+          $root = $env:GITHUB_WORKSPACE ?? $PWD.Path
+
+          # Explicit file list rather than `-Path $root -Recurse`, and a bounded retry.
+          #
+          # Recursing a tree makes PSScriptAnalyzer walk directories and probe for modules, and that path
+          # throws an intermittent "Object reference not set to an instance of an object" - reproduced here
+          # as 1 crash in 3 runs over an UNCHANGED tree, on 1.22.0 and 1.25.0 alike. It is a flake in the
+          # analyzer, not a finding: the same files analyzed individually are always clean. Passing paths
+          # directly skips the traversal that trips it.
+          #
+          # The retry covers the residue. Findings never fail this job (they are uploaded as SARIF below),
+          # so the only way it can fail is the analyzer itself throwing - which must still fail loudly after
+          # a few attempts rather than be swallowed into a green check.
+          $files = @(Get-ChildItem -Path $root -Include *.ps1, *.psm1, *.psd1 -Recurse -File |
+            Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|\.git)[\\/]' } |
+            Select-Object -ExpandProperty FullName)
+          Write-Host "Analyzing $($files.Count) PowerShell file(s)."
+          if ($files.Count -eq 0) { throw 'No PowerShell files found - the file filter is wrong.' }
+
+          # -Path takes one path, so this is a loop rather than an array argument - which also scopes each
+          # retry to the single file that flaked instead of redoing the whole set.
+          $results = @(foreach ($file in $files) {
+            foreach ($attempt in 1..3) {
+              try {
+                Invoke-ScriptAnalyzer -Path $file -ErrorAction Stop
+                break
+              }
+              catch {
+                Write-Host "::warning::PSScriptAnalyzer attempt $attempt on $file failed: $($_.Exception.Message)"
+                if ($attempt -eq 3) { throw }
+              }
+            }
+          })
+          Write-Host "$($results.Count) finding(s)."
 
           $sarifResults = @($results | ForEach-Object {
             $rel = $_.ScriptPath.Replace($root, '').TrimStart('/\').Replace('\', '/')
