@@ -1,26 +1,30 @@
 <#
 .SYNOPSIS
-    End-to-end test of the x64 <-> x86 migration gate.
+    End-to-end test of the x64 <-> x86 migration policy, in both directions.
 
 .DESCRIPTION
     The two packages share an UpgradeCode, so Windows Installer will happily let one replace the other and
     FindRelatedProducts cannot tell that the architecture changed. Left alone that is a foot-gun with no undo:
     MajorUpgrade is scheduled afterInstallInitialize, so by the time anyone notices, the old product is gone.
 
-    So the migration is supported but opt-in, via FORCE_UPGRADE=1, and this asserts both halves of that.
-    Asserting only the "forced" half would let a gate that never blocks anything pass; asserting only the
-    blocked half would let a gate that blocks everything - including the migration it is supposed to permit -
-    pass just as easily.
+    The policy is deliberately ASYMMETRIC, and this asserts both halves of it:
 
-    Asserted here:
-      * an install of the other architecture WITHOUT FORCE_UPGRADE fails, and fails harmlessly: the installed
-        product is untouched, still the original architecture, still running, config and data intact
-      * the same install WITH FORCE_UPGRADE=1 succeeds and lands on the ORIGINAL install and data folders,
-        recovered from the recorded locations rather than reset to defaults
-      * the config, the operator's edits and the secret survive the migration
-      * the recorded architecture is updated to the new one, so the gate does not then fire against itself
+      x86 install -> x64 package  SUPPORTED, opt-in via FORCE_UPGRADE=1. The install folder, data folder,
+                                  config and secret are all carried across.
+      x64 install -> x86 package  REFUSED, and FORCE_UPGRADE does NOT override it. A 32-bit package cannot
+                                  recover a 64-bit install folder: the registry search works, but Windows
+                                  Installer's WIN64DUALFOLDERS substitution rewrites the result's
+                                  `C:\Program Files\` prefix to `C:\Program Files (x86)\`. The migration
+                                  would install beside the real one and strand appsettings.json - the only
+                                  copy of the secret - at the original path. CI caught exactly that, as a
+                                  1603 from UpgradeConfig running an exe with no config beside it.
 
-    Direction is a parameter because the gate has to work symmetrically; CI runs x64 -> x86.
+    Nothing is lost by refusing: the bundle's policy is the machine's NATIVE architecture, so it only ever
+    needs the supported direction (x64 on a 64-bit machine; on a 32-bit machine no x64 install can exist).
+
+    Asserting only one half would be worthless. Asserting only the forced half would let a gate that never
+    blocks anything pass; asserting only the blocked half would let a gate that blocks everything - including
+    the migration it is supposed to permit - pass just as easily.
 
     No Jenkins controller is involved: the URL points at a closed port, so the agent never connects.
 #>
@@ -29,12 +33,13 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
     'PSAvoidUsingWriteHost', '', Justification = 'Intentional CI transcript output')]
 param(
-    # The package to install first.
-    [Parameter(Mandatory)][string]$FromMsi,
-    [Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$FromPlatform,
-    # The other architecture's package, at a HIGHER ProductVersion.
-    [Parameter(Mandatory)][string]$ToMsi,
-    [Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$ToPlatform
+    # x64, and the LOWEST version of the three: the refused direction is attempted as an upgrade of it.
+    [Parameter(Mandatory)][string]$X64BaselineMsi,
+    # x86, at a HIGHER version than the baseline - so the refused attempt is a genuine upgrade candidate and
+    # is refused on architecture rather than on a version rule.
+    [Parameter(Mandatory)][string]$X86Msi,
+    # x64, at a HIGHER version than the x86 package: the supported migration's target.
+    [Parameter(Mandatory)][string]$X64TargetMsi
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,9 +48,12 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 
-$installFolder = Join-Path $env:ProgramFiles 'Jenkins'
+# The x64 and x86 packages install to DIFFERENT default folders - ProgramFiles6432Folder resolves to
+# "C:\Program Files" in a 64-bit package and "C:\Program Files (x86)" in a 32-bit one. Which folder the
+# migrated install ends up in is the whole point of the supported half, so both are named here.
+$x64InstallFolder = Join-Path $env:ProgramFiles 'Jenkins'
+$x86InstallFolder = Join-Path ${env:ProgramFiles(x86)} 'Jenkins'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceArchTest'
-$configPath = Join-Path $installFolder 'appsettings.json'
 $serviceName = 'Jenkins'
 $logDir = Join-Path (Get-Location) 'msi-logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
@@ -55,103 +63,163 @@ function Get-ArchLogPath {
     return Join-Path $logDir "$Name.log"
 }
 
-# --------------------------------------------------------------------------------------------------
-# Same hard stop as the lifecycle suite, for the same reason: matching ProductVersions turn the second /i
-# into a maintenance reconfigure that touches nothing and passes everything.
-Write-Host "`n=== 0. Package preconditions ==="
-$fromVersion = Get-MsiProperty -Path $FromMsi -Name 'ProductVersion'
-$toVersion = Get-MsiProperty -Path $ToMsi -Name 'ProductVersion'
-Write-Host "  from: $FromPlatform $fromVersion"
-Write-Host "  to:   $ToPlatform $toVersion"
-if ($fromVersion -eq $toVersion) {
-    Write-Host "::error::Both MSIs are stamped $fromVersion - the migration would be a no-op reconfigure."
-    throw "MSI ProductVersion must differ between the two packages (both are $fromVersion)"
-}
-if ($FromPlatform -eq $ToPlatform) {
-    throw "This suite tests a CROSS-architecture migration; both packages are $FromPlatform."
-}
-
-# The packages must really be the architectures they are claimed to be, or the gate could be passing for the
-# wrong reason entirely.
-Assert-That ((Get-MsiArchitecture -Path $FromMsi) -eq $FromPlatform) `
-    "the 'from' package really targets $FromPlatform"
-Assert-That ((Get-MsiArchitecture -Path $ToMsi) -eq $ToPlatform) `
-    "the 'to' package really targets $ToPlatform"
-
-# --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 1. Install $FromPlatform $fromVersion ==="
-$log = Get-ArchLogPath -Name 'arch-install'
-$code = Invoke-Msiexec -LogPath $log -Arguments @(
-    '/i', $FromMsi,
+$freshInstallProperties = @(
     "DATAFOLDER=$dataFolder",
     'JENKINS_URL=https://127.0.0.1:59999',
     'JENKINS_SECRET=arch-smoke-secret',
     'JENKINS_SECRET_MODE=Unprotected',
-    'JENKINS_AGENT_NAME=arch-node')
-Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'baseline install'
+    'JENKINS_AGENT_NAME=arch-node'
+)
 
-Assert-That ((Get-InstalledPlatform) -eq $FromPlatform) `
-    "installed architecture recorded as $FromPlatform, and under that key only"
-Assert-That (Test-Path $configPath) "appsettings.json written"
+# Asserts a refused install was also INERT. BlockArchMigration is sequenced at 58/59, far ahead of
+# InstallInitialize (1500) and RemoveExistingProducts (1501), so nothing should have been removed, moved or
+# reconfigured - a gate that blocks but damages the installed product on its way out is not a gate.
+function Assert-RefusalWasInert {
+    param(
+        [Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$ExpectedPlatform,
+        [Parameter(Mandatory)][string]$ConfigPath,
+        [Parameter(Mandatory)][string]$What
+    )
+    Assert-That ((Get-InstalledPlatform) -eq $ExpectedPlatform) `
+        "$What : the installed product is still $ExpectedPlatform"
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    Assert-That ($null -ne $service -and $service.Status -eq 'Running') `
+        "$What : the service is still Running - a blocked install must not disturb the installed one"
+    $cfg = Get-InstalledConfig -Path $ConfigPath
+    Assert-That ($null -ne $cfg -and $cfg.Jenkins.Secret.Value -eq 'arch-smoke-secret') `
+        "$What : the config and secret are untouched"
+}
+
+# --------------------------------------------------------------------------------------------------
+Write-Host "`n=== 0. Package preconditions ==="
+$baselineVersion = Get-MsiProperty -Path $X64BaselineMsi -Name 'ProductVersion'
+$x86Version = Get-MsiProperty -Path $X86Msi -Name 'ProductVersion'
+$targetVersion = Get-MsiProperty -Path $X64TargetMsi -Name 'ProductVersion'
+Write-Host "  x64 baseline: $baselineVersion"
+Write-Host "  x86         : $x86Version"
+Write-Host "  x64 target  : $targetVersion"
+
+# Hard stops, not assertions. Matching ProductVersions turn a second /i into a maintenance reconfigure that
+# touches nothing and passes everything, and a lower version makes MajorUpgrade refuse on a version rule
+# while the failure appears to say something about architecture.
+foreach ($pair in @(
+        @{ Lower = $baselineVersion; Higher = $x86Version; What = 'x86 package vs x64 baseline' },
+        @{ Lower = $x86Version; Higher = $targetVersion; What = 'x64 target vs x86 package' })) {
+    if ([version]$pair.Higher -le [version]$pair.Lower) {
+        Write-Host "::error::$($pair.What): $($pair.Higher) must be strictly greater than $($pair.Lower)."
+        throw "Version ladder is wrong for $($pair.What)."
+    }
+}
+
+Assert-That ((Get-MsiArchitecture -Path $X64BaselineMsi) -eq 'x64') 'the baseline package really targets x64'
+Assert-That ((Get-MsiArchitecture -Path $X86Msi) -eq 'x86') 'the x86 package really targets x86'
+Assert-That ((Get-MsiArchitecture -Path $X64TargetMsi) -eq 'x64') 'the target package really targets x64'
+
+# ==================================================================================================
+# PART ONE - the refused direction: x64 installed, x86 package must not take over.
+# ==================================================================================================
+Write-Host "`n=== 1. Install x64 $baselineVersion ==="
+$log = Get-ArchLogPath -Name 'arch-x64-install'
+$code = Invoke-Msiexec -LogPath $log -Arguments (@('/i', $X64BaselineMsi) + $freshInstallProperties)
+Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'x64 baseline install'
+
+$x64ConfigPath = Join-Path $x64InstallFolder 'appsettings.json'
+Assert-That ((Get-InstalledPlatform) -eq 'x64') 'installed architecture recorded as x64, and under that key only'
+Assert-That (Test-Path $x64ConfigPath) "appsettings.json written to $x64InstallFolder"
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'InstallPath') -eq "$x64InstallFolder\") `
+    'the x64 install recorded its real install folder'
+
+Write-Host "`n=== 2. x86 $x86Version must be refused - with AND without FORCE_UPGRADE ==="
+# Without the flag first, then with it. The second is the one that matters: this direction is refused
+# outright, so FORCE_UPGRADE must NOT be a way through. If it ever becomes one, the migration silently
+# installs to C:\Program Files (x86) and strands the secret.
+foreach ($attempt in @(
+        @{ Name = 'arch-x86-blocked'; Args = @('/i', $X86Msi); What = 'x86 over x64 without FORCE_UPGRADE' },
+        @{ Name = 'arch-x86-forced'; Args = @('/i', $X86Msi, 'FORCE_UPGRADE=1'); What = 'x86 over x64 WITH FORCE_UPGRADE' })) {
+    $code = Invoke-Msiexec -LogPath (Get-ArchLogPath -Name $attempt.Name) -Arguments $attempt.Args
+    Assert-That (-not (Test-InstallerSuccess -ExitCode $code)) `
+        "$($attempt.What) is refused (msiexec exit code $code)"
+    Assert-RefusalWasInert -ExpectedPlatform 'x64' -ConfigPath $x64ConfigPath -What $attempt.What
+}
+
+Assert-That (-not (Test-Path (Join-Path $x86InstallFolder 'JenkinsAsService.exe'))) `
+    'the refused x86 install left nothing in the 32-bit Program Files - it never got as far as installing'
+
+Write-Host "`n=== 3. Remove the x64 install ==="
+Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-x64-uninstall') -Arguments @('/x', $X64BaselineMsi) | Out-Null
+Assert-That ($null -eq (Get-InstalledPlatform)) 'no architecture key survives the x64 uninstall'
+Assert-That (-not (Test-Path $dataFolder)) 'the data folder is removed by the x64 uninstall'
+
+# ==================================================================================================
+# PART TWO - the supported direction: x86 installed, x64 package migrates it on FORCE_UPGRADE=1.
+# ==================================================================================================
+Write-Host "`n=== 4. Install x86 $x86Version ==="
+$log = Get-ArchLogPath -Name 'arch-x86-install'
+$code = Invoke-Msiexec -LogPath $log -Arguments (@('/i', $X86Msi) + $freshInstallProperties)
+Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'x86 install'
+
+$x86ConfigPath = Join-Path $x86InstallFolder 'appsettings.json'
+Assert-That ((Get-InstalledPlatform) -eq 'x86') 'installed architecture recorded as x86, and under that key only'
+Assert-That ((Get-PeMachine -Path (Join-Path $x86InstallFolder 'JenkinsAsService.exe')) -eq 'x86') `
+    'the installed binary really is x86'
+Assert-That ((Get-RecordedLocation -Platform 'x86' -Name 'InstallPath') -eq "$x86InstallFolder\") `
+    'the x86 install recorded its real install folder'
 
 # An operator edit, so "the config survived" means the real file survived rather than an identical one having
-# been rewritten from the properties below (which are deliberately not supplied to either migration attempt).
-$raw = Get-Content $configPath -Raw | ConvertFrom-Json
+# been rewritten from the properties below (which are deliberately not supplied to either attempt).
+$raw = Get-Content $x86ConfigPath -Raw | ConvertFrom-Json
 $raw.Jenkins.Logging.RetainedLogs = 7
-$raw | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding utf8
+$raw | ConvertTo-Json -Depth 8 | Set-Content $x86ConfigPath -Encoding utf8
 
-# --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 2. $ToPlatform $toVersion WITHOUT FORCE_UPGRADE must be refused ==="
-$code = Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-blocked') -Arguments @('/i', $ToMsi)
+Write-Host "`n=== 5. x64 $targetVersion WITHOUT FORCE_UPGRADE must be refused ==="
+$code = Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-x64-blocked') -Arguments @('/i', $X64TargetMsi)
 Assert-That (-not (Test-InstallerSuccess -ExitCode $code)) `
-    "the cross-architecture install is refused (msiexec exit code $code)"
+    "x64 over x86 without FORCE_UPGRADE is refused (msiexec exit code $code)"
+Assert-RefusalWasInert -ExpectedPlatform 'x86' -ConfigPath $x86ConfigPath -What 'x64 over x86 without FORCE_UPGRADE'
 
-# The refusal has to be inert. BlockArchMigration is sequenced at 60, far ahead of InstallInitialize (1500)
-# and RemoveExistingProducts (1501), so nothing should have been removed, moved or reconfigured.
-Assert-That ((Get-InstalledPlatform) -eq $FromPlatform) `
-    "the installed product is still $FromPlatform after the refusal"
-$service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-Assert-That ($null -ne $service -and $service.Status -eq 'Running') `
-    "the service is still Running after the refusal - a blocked install must not disturb the installed one"
-$cfg = Get-InstalledConfig -Path $configPath
-Assert-That ($null -ne $cfg -and $cfg.Jenkins.Secret.Value -eq 'arch-smoke-secret') `
-    "the config and secret are untouched by the refusal"
-
-# --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 3. $ToPlatform $toVersion WITH FORCE_UPGRADE=1 must succeed ==="
+Write-Host "`n=== 6. x64 $targetVersion WITH FORCE_UPGRADE=1 must succeed and preserve everything ==="
 # No DATAFOLDER, no URL, no secret: a migration must recover all of that from what is already recorded on the
 # machine. Supplying any of it would hide a recovery that never happened.
-$log = Get-ArchLogPath -Name 'arch-forced'
-$code = Invoke-Msiexec -LogPath $log -Arguments @('/i', $ToMsi, 'FORCE_UPGRADE=1')
-Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'forced migration'
+$log = Get-ArchLogPath -Name 'arch-x64-forced'
+$code = Invoke-Msiexec -LogPath $log -Arguments @('/i', $X64TargetMsi, 'FORCE_UPGRADE=1')
+Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'forced x86 -> x64 migration'
 
 # Not just "the new key exists" - the OLD one has to be gone, or the next package sees two architectures
 # installed at once and the gate starts firing against a product that no longer exists.
-Assert-That ((Get-InstalledPlatform) -eq $ToPlatform) `
-    "the recorded architecture is now $ToPlatform, and only $ToPlatform - the $FromPlatform key is gone"
-Assert-That ((Get-RecordedLocation -Platform $ToPlatform -Name 'InstallPath') -eq "$installFolder\") `
-    "the migrated install kept the original install folder"
-Assert-That ((Get-RecordedLocation -Platform $ToPlatform -Name 'DataPath') -eq "$dataFolder\") `
-    "the migrated install kept the original data folder, recovered rather than reset to the default"
-Assert-That (-not (Test-Path (Join-Path $env:ProgramData 'JenkinsAsService'))) `
-    "no stray default data folder was created by the migration"
+Assert-That ((Get-InstalledPlatform) -eq 'x64') `
+    'the recorded architecture is now x64, and only x64 - the x86 key is gone'
 
-$cfg = Get-InstalledConfig -Path $configPath
-Assert-That ($null -ne $cfg) "appsettings.json still exists after the migration"
+# The load-bearing assertion of this half: the migrated x64 install stayed in the folder the x86 install used,
+# recovered from the registry rather than reset to the x64 default. If this ever fails, appsettings.json and
+# the secret have been stranded at the old path - which is the failure the refused direction suffers from.
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'InstallPath') -eq "$x86InstallFolder\") `
+    "the migrated install kept the original install folder ($x86InstallFolder), not the x64 default"
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'DataPath') -eq "$dataFolder\") `
+    'the migrated install kept the original data folder, recovered rather than reset to the default'
+Assert-That (-not (Test-Path (Join-Path $env:ProgramData 'JenkinsAsService'))) `
+    'no stray default data folder was created by the migration'
+Assert-That (-not (Test-Path (Join-Path $x64InstallFolder 'JenkinsAsService.exe'))) `
+    'nothing was installed into the x64 default folder - the recovered location was used'
+
+Assert-That ((Get-PeMachine -Path (Join-Path $x86InstallFolder 'JenkinsAsService.exe')) -eq 'x64') `
+    'the binary at the original path really is x64 now - the architecture actually changed'
+
+$cfg = Get-InstalledConfig -Path $x86ConfigPath
+Assert-That ($null -ne $cfg) 'appsettings.json still exists after the migration'
 Assert-That ($cfg.Jenkins.Secret.Value -eq 'arch-smoke-secret') `
-    "the secret survives a migration that was never given JENKINS_SECRET"
+    'the secret survives a migration that was never given JENKINS_SECRET'
 Assert-That ($cfg.Jenkins.Logging.RetainedLogs -eq 7) "the operator's edit survives the migration"
-Assert-That ($cfg.Jenkins.Connection.AgentName -eq 'arch-node') "an unrelated value survives the migration"
+Assert-That ($cfg.Jenkins.Connection.AgentName -eq 'arch-node') 'an unrelated value survives the migration'
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-Assert-That ($null -ne $service -and $service.Status -eq 'Running') "the service is Running after the migration"
+Assert-That ($null -ne $service -and $service.Status -eq 'Running') 'the service is Running after the migration'
 
 # --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 4. Clean up ==="
-Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-uninstall') -Arguments @('/x', $ToMsi) | Out-Null
-Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) "service is removed"
-Assert-That (-not (Test-Path $dataFolder)) "the data folder is removed"
-Assert-That ($null -eq (Get-InstalledPlatform)) "neither architecture key survives the uninstall"
+Write-Host "`n=== 7. Clean up ==="
+Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-final-uninstall') -Arguments @('/x', $X64TargetMsi) | Out-Null
+Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) 'service is removed'
+Assert-That (-not (Test-Path $dataFolder)) 'the data folder is removed'
+Assert-That ($null -eq (Get-InstalledPlatform)) 'neither architecture key survives the uninstall'
 
 # --------------------------------------------------------------------------------------------------
 Complete-AssertionReport -Subject 'architecture-migration'

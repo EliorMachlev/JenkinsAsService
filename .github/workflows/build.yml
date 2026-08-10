@@ -145,20 +145,6 @@ jobs:
           version: ${{ env.X86_VERSION }}
           output: msi/x86/
 
-      - name: Install, upgrade, uninstall
-        shell: pwsh
-        run: .github/scripts/Test-MsiLifecycle.ps1 -V1Msi (Get-Item msi/v1/*.msi).FullName -V2Msi (Get-Item msi/v2/*.msi).FullName
-
-      # Runs after the lifecycle suite, which ends with an uninstall - both suites install the same product,
-      # so they must not overlap. This one installs x64, proves the x86 package is refused without
-      # FORCE_UPGRADE=1 and accepted with it, then uninstalls.
-      - name: Cross-architecture migration gate
-        shell: pwsh
-        run: >-
-          .github/scripts/Test-MsiArchMigration.ps1
-          -FromMsi (Get-Item msi/v1/*.msi).FullName -FromPlatform x64
-          -ToMsi (Get-Item msi/x86/*.msi).FullName -ToPlatform x86
-
       # The bundle embeds BOTH architectures at the SAME version — a dedicated pair rather than reusing an
       # earlier x64 build, because that version has to outrank the x86 baseline the bundle test installs (see
       # the ladder above). This is the rung whose ordering matters most and is easiest to get wrong.
@@ -185,6 +171,27 @@ jobs:
           x86-msi: ../../msi/bundle-x86/JenkinsAsService.Installer.msi
           version: ${{ env.BUNDLE_VERSION }}
           output: bundle/
+
+      # Every package exists by this point, so the three real-install suites run back to back. They install
+      # the SAME product, so they must never overlap - each ends by uninstalling, and the order is fixed.
+      - name: Install, upgrade, uninstall
+        shell: pwsh
+        run: .github/scripts/Test-MsiLifecycle.ps1 -V1Msi (Get-Item msi/v1/*.msi).FullName -V2Msi (Get-Item msi/v2/*.msi).FullName
+
+      # Runs after the lifecycle suite, which ends with an uninstall - both suites install the same product,
+      # so they must not overlap.
+      #
+      # Both halves of the asymmetric policy, so it needs three packages in a strict version ladder: the x64
+      # baseline that the x86 package must be REFUSED over (even with FORCE_UPGRADE, since a 32-bit package
+      # cannot recover a 64-bit install folder), then the x86 install that the higher x64 package migrates on
+      # FORCE_UPGRADE=1. The x64 target is the bundle's package, reused rather than built a fourth time.
+      - name: Cross-architecture migration policy
+        shell: pwsh
+        run: >-
+          .github/scripts/Test-MsiArchMigration.ps1
+          -X64BaselineMsi (Get-Item msi/v1/*.msi).FullName
+          -X86Msi (Get-Item msi/x86/*.msi).FullName
+          -X64TargetMsi (Get-Item msi/bundle-x64/*.msi).FullName
 
       # Runs last: like the two suites above it installs the same product, so they must not overlap. This is
       # the one that proves an architecture migration does not trip the MSI's purge and destroy the config.

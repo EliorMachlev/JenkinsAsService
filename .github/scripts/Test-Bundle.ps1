@@ -43,7 +43,12 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 
-$installFolder = Join-Path $env:ProgramFiles 'Jenkins'
+# The 32-bit Program Files, because the baseline installed here is the x86 package: ProgramFiles6432Folder
+# resolves to "C:\Program Files (x86)" in a 32-bit package. The migration must PRESERVE this folder rather
+# than relocate to the x64 default, so it stays the expected path throughout - before and after the bundle
+# runs. Using $env:ProgramFiles here would have looked for the baseline in a folder it was never installed to.
+$installFolder = Join-Path ${env:ProgramFiles(x86)} 'Jenkins'
+$x64DefaultInstallFolder = Join-Path $env:ProgramFiles 'Jenkins'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceBundleTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
 $agentExe = Join-Path $installFolder 'JenkinsAsService.exe'
@@ -114,6 +119,10 @@ Assert-That ($null -ne $cfg -and $cfg.Jenkins.Logging.RetainedLogs -eq 5) `
     "the operator's edit survives - the config was preserved, not rewritten"
 Assert-That (Test-Path $sentinel) "the data folder survives the migration with its contents"
 
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'InstallPath') -eq "$installFolder\") `
+    "the migrated install kept the original install folder, recovered rather than reset to the x64 default"
+Assert-That (-not (Test-Path (Join-Path $x64DefaultInstallFolder 'JenkinsAsService.exe'))) `
+    "nothing was installed into the x64 default folder - the recovered location was used"
 Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'DataPath') -eq "$dataFolder\") `
     "the migrated install kept the original data folder, recovered rather than reset to the default"
 Assert-That (-not (Test-Path (Join-Path $env:ProgramData 'JenkinsAsService'))) `
