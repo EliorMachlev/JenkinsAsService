@@ -31,7 +31,7 @@ transmitted to the project:
 - **Logs** (`agent.log` or `agent.clef`, in the data folder) — service and Java-agent output. These may
   contain your machine's hostname, the configured agent name, exit codes, and controller connection
   messages. Agent secrets are [redacted](#secrets) before anything is written.
-- **The cached agent binary** (`agent.jar` plus `.etag`/`.sha256` sidecars, under `agent\`) and the
+- **The cached agent binary** (`agent.jar` plus its `.etag` or `.modified` and `.sha256` sidecars, under `agent\`) and the
   Jenkins work directory (under `work\`).
 
 The install folder lives in `Program Files` (read-only to the service account) and the writable data

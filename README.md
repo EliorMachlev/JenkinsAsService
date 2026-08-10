@@ -21,7 +21,7 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **Auto-start on boot** — runs under a least-privilege virtual service account (`NT SERVICE\Jenkins`), no interactive login required
 - **Event-driven watchdog** — detects agent death instantly (not polling), auto-recovers with exponential backoff (10s to 5min); a persistent crash-loop stops the service so Windows Service Recovery can act, while a merely-unreachable controller is retried indefinitely
 - **Secret protection** — TPM 2.0 hardware-backed key, DPAPI machine/user-scope encryption, Windows Credential Manager, environment variables, or plaintext
-- **Smart jar caching + integrity** — ETag conditional GET skips the download when `agent.jar` is unchanged; its SHA-256 is recorded on download and re-checked before reuse, so a tampered or corrupt cached jar is re-downloaded instead of launched
+- **Smart jar caching + integrity** — a conditional GET skips the download when `agent.jar` is unchanged, using the controller's `ETag` where offered and its `Last-Modified` otherwise; its SHA-256 is recorded on download and re-checked before reuse, so a tampered or corrupt cached jar is re-downloaded instead of launched
 - **HTTP resilience** — Polly-based retry, circuit breaker, and timeout on all HTTP calls
 - **Structured logging** — Serilog rolling file + Windows Event Log, with `ProcessId`/`MachineName` enrichment
 - **CLEF JSON mode** — machine-parseable compact log format for Seq, Datadog, or any log aggregator
@@ -44,7 +44,7 @@ flowchart TD
     B -->|Invalid config| D[Log error and StopApplication]
     B -->|OK| E[Supervision loop]
     E --> F{Agent running?}
-    F -->|No — bring-up| G["Backoff, then connect → download agent.jar ETag → start"]
+    F -->|No — bring-up| G["Backoff, then connect → refresh agent.jar (conditional GET) → start"]
     G -->|Unreachable or start fails| H[Retry forever — does not count toward MaxRetries]
     H --> E
     G -->|Started| E
@@ -217,7 +217,7 @@ The watchdog is event-driven — it awaits the process exit signal, not a pollin
 
 1. Wait with exponential backoff (10s, 20s, 40s, ... capped at 300s)
 2. Test TCP connectivity — an **unreachable** controller is retried indefinitely and never counts toward `MaxRetries`
-3. Refresh `agent.jar` via conditional GET (ETag/304); on a 304 the cached jar is SHA-256-verified (re-downloaded if it fails), then start a new agent process
+3. Refresh `agent.jar` via conditional GET — `If-None-Match` from the ETag-sidecar, or `If-Modified-Since` from the Modified-sidecar when the controller offers no ETag; on a 304 the cached jar is SHA-256-verified (re-downloaded if it fails), then start a new agent process
 
 **Live agent** — awaits the exit signal or a 60s stability timer:
 
