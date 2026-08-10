@@ -462,7 +462,7 @@
           <tr>
             <td>Data folder (<code>Agent:DataDirectory</code>)</td>
             <td><code>C:\ProgramData\JenkinsAsService</code></td>
-            <td><code>agent.log</code>/<code>.clef</code> + <code>.agent-secret</code> at the root; cached <code>agent.jar</code> (+ <code>.etag</code>/<code>.sha256</code>) under <code>agent\</code>; Jenkins <code>-workDir</code> under <code>work\</code></td>
+            <td><code>agent.log</code>/<code>.clef</code> + <code>.agent-secret</code> at the root; cached <code>agent.jar</code> (+ <code>.etag</code> or <code>.modified</code>, and <code>.sha256</code>) under <code>agent\</code>; Jenkins <code>-workDir</code> under <code>work\</code></td>
             <td>Service account granted write (set by the MSI)</td>
           </tr>
         </tbody>

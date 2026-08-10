@@ -17,8 +17,14 @@ internal static class AgentJar
     /// <summary>The agent binary, as served by the controller under <c>/jnlpJars/</c>.</summary>
     internal const string FileName = "agent.jar";
 
-    /// <summary>Sidecar holding the ETag of the cached jar, for the conditional GET.</summary>
-    internal const string ETagFileName = FileName + ".etag";
+    /// <summary>ETag-sidecar: the cached jar's <c>ETag</c>, replayed as <c>If-None-Match</c>.</summary>
+    internal const string ETagSidecarFileName = FileName + ".etag";
+
+    /// <summary>
+    /// Modified-sidecar: the cached jar's <c>Last-Modified</c> date, replayed as <c>If-Modified-Since</c>.
+    /// Used when the controller offers no ETag. See <see cref="JarCacheValidator"/>.
+    /// </summary>
+    internal const string ModifiedSidecarFileName = FileName + ".modified";
 
     /// <summary>Sidecar holding the SHA-256 recorded at download time, re-verified before reuse.</summary>
     internal const string HashFileName = FileName + ".sha256";

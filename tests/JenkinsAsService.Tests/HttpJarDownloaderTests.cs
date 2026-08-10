@@ -1,5 +1,6 @@
 // Copyright (c) 2024 All rights reserved
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -15,8 +16,10 @@ public class HttpJarDownloaderTests : IDisposable
     private const string JenkinsUrl = "https://jenkins:8443"; // NOSONAR
     private const string JarFilename = "agent.jar";
     private const string ETagFilename = "agent.jar.etag";
+    private const string ModifiedFilename = "agent.jar.modified";
     private const string HashFilename = "agent.jar.sha256";
     private const string ETagV1 = "\"v1\"";
+    private const string LastModified = "Sat, 08 Aug 2026 07:59:27 GMT";
     private const int TempDirSuffixLength = 8;
 
     private readonly string _tempDir;
@@ -38,6 +41,7 @@ public class HttpJarDownloaderTests : IDisposable
 
     private string JarPath => Path.Combine(_tempDir, JarFilename);
     private string ETagPath => Path.Combine(_tempDir, ETagFilename);
+    private string ModifiedPath => Path.Combine(_tempDir, ModifiedFilename);
     private string HashPath => Path.Combine(_tempDir, HashFilename);
 
     private static string Sha256Hex(string content) =>
@@ -85,7 +89,7 @@ public class HttpJarDownloaderTests : IDisposable
         await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
 
         File.ReadAllText(JarPath).Should().Be("OLDJAR", "304 with a matching hash must not overwrite the existing jar");
-        File.ReadAllText(ETagPath).Should().Be(ETagV1, "304 must not change the stored etag");
+        File.ReadAllText(ETagPath).Should().Be(ETagV1, "304 must not change the stored validator");
     }
 
     [Fact]
@@ -122,7 +126,7 @@ public class HttpJarDownloaderTests : IDisposable
     [Fact]
     public async Task Download_redownloads_on_304_when_hash_file_is_missing()
     {
-        // Legacy/first-run state: a cached jar+etag with no recorded hash can't be verified, so re-fetch.
+        // Legacy/first-run state: a cached jar+validator with no recorded hash can't be verified, so re-fetch.
         File.WriteAllText(ETagPath, ETagV1);
         File.WriteAllText(JarPath, "UNVERIFIED");
 
@@ -143,7 +147,7 @@ public class HttpJarDownloaderTests : IDisposable
     [Fact]
     public async Task Download_sends_if_none_match_when_etag_exists()
     {
-        // Both jar and etag must exist — etag alone is treated as an orphaned state and ignored.
+        // Both jar and validator must exist — a validator alone is treated as an orphaned state and ignored.
         File.WriteAllText(JarPath, "EXISTINGJAR");
         File.WriteAllText(ETagPath, "\"abc\"");
 
@@ -167,7 +171,7 @@ public class HttpJarDownloaderTests : IDisposable
     [Fact]
     public async Task Download_does_not_send_if_none_match_when_etag_exists_but_jar_is_missing()
     {
-        // Orphan state: stale etag left on disk but the jar was deleted.
+        // Orphan state: stale validator left on disk but the jar was deleted.
         // Without this guard, an If-None-Match would be sent → server returns 304 → no jar downloaded → agent can't start.
         File.WriteAllText(ETagPath, "\"orphan\"");
 
@@ -192,9 +196,10 @@ public class HttpJarDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Download_deletes_etag_file_on_200_without_etag_header()
+    public async Task Download_deletes_both_sidecars_on_200_with_neither_etag_nor_last_modified()
     {
         File.WriteAllText(ETagPath, "\"stale\"");
+        File.WriteAllText(ModifiedPath, LastModified);
 
         var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -203,8 +208,138 @@ public class HttpJarDownloaderTests : IDisposable
 
         await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
 
-        File.Exists(ETagPath).Should().BeFalse("a 200 without an ETag header must drop the stale etag file");
+        File.Exists(ETagPath).Should().BeFalse(
+            "a response offering no validator at all leaves nothing cacheable, so the stale token must go");
+        File.Exists(ModifiedPath).Should().BeFalse();
         File.Exists(JarPath).Should().BeTrue();
+    }
+
+    // The regression this file exists to prevent. Against a controller that sends Last-Modified and no ETag
+    // — observed on a live one — the ETag-only cache never populated: every start re-downloaded the full
+    // jar, and the missing-validator branch deleted the sidecar, making the miss permanent.
+    [Fact]
+    public async Task Download_stores_last_modified_when_the_server_sends_no_etag()
+    {
+        var handler = new FakeHandler(_ => JarResponseWithLastModified("JARBYTES"));
+
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        File.Exists(ModifiedPath).Should().BeTrue("a Last-Modified response is cacheable and must be recorded");
+        File.ReadAllText(ModifiedPath).Should().Be(LastModified);
+        File.Exists(ETagPath).Should().BeFalse("no ETag was offered, so the ETag-sidecar must not exist");
+    }
+
+    [Fact]
+    public async Task Download_replays_last_modified_as_if_modified_since_and_skips_on_304()
+    {
+        File.WriteAllText(ModifiedPath, LastModified);
+        File.WriteAllText(JarPath, "CACHEDJAR");
+        File.WriteAllText(HashPath, Sha256Hex("CACHEDJAR"));
+
+        string? sentIfModifiedSince = null;
+        var requests = 0;
+        var handler = new FakeHandler(req =>
+        {
+            requests++;
+            sentIfModifiedSince = req.Headers.TryGetValues("If-Modified-Since", out var vals)
+                ? string.Join(",", vals)
+                : null;
+            return new HttpResponseMessage(HttpStatusCode.NotModified);
+        });
+
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        sentIfModifiedSince.Should().Be(LastModified);
+        requests.Should().Be(1, "a 304 against a verified cached jar must not trigger a second, unconditional GET");
+        File.ReadAllText(JarPath).Should().Be("CACHEDJAR", "the cached jar must be reused, not re-downloaded");
+    }
+
+    [Fact]
+    public async Task Download_prefers_etag_when_the_server_sends_both_validators()
+    {
+        var handler = new FakeHandler(_ =>
+        {
+            var resp = JarResponseWithLastModified("JARBYTES");
+            resp.Headers.ETag = new EntityTagHeaderValue(ETagV1);
+            return resp;
+        });
+
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        File.ReadAllText(ETagPath).Should().Be(ETagV1,
+            "an ETag is an exact-identity match; Last-Modified has one-second granularity and trusts the controller's clock");
+    }
+
+    [Fact]
+    public async Task Download_reuses_an_etag_sidecar_written_by_an_earlier_version()
+    {
+        // The ETag-sidecar predates the Modified-sidecar and its contents are unchanged, so an in-place
+        // upgrade must keep using it rather than discarding a still-valid cache and re-downloading.
+        File.WriteAllText(ETagPath, ETagV1);
+        File.WriteAllText(JarPath, "CACHEDJAR");
+        File.WriteAllText(HashPath, Sha256Hex("CACHEDJAR"));
+
+        string? sentIfNoneMatch = null;
+        var handler = new FakeHandler(req =>
+        {
+            sentIfNoneMatch = req.Headers.TryGetValues("If-None-Match", out var vals)
+                ? string.Join(",", vals)
+                : null;
+            return new HttpResponseMessage(HttpStatusCode.NotModified);
+        });
+
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        sentIfNoneMatch.Should().Be(ETagV1, "the existing ETag is still valid and must be replayed");
+        File.ReadAllText(JarPath).Should().Be("CACHEDJAR");
+    }
+
+    [Fact]
+    public async Task Download_removes_the_etag_sidecar_when_it_switches_to_last_modified()
+    {
+        // A controller that stops sending ETags (upgrade, reverse proxy change) must not leave its old ETag
+        // on disk: two tokens for one jar is a disagreement waiting to be resolved the wrong way.
+        File.WriteAllText(ETagPath, "\"superseded\"");
+
+        var handler = new FakeHandler(_ => JarResponseWithLastModified("JARBYTES"));
+
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        File.Exists(ETagPath).Should().BeFalse("the superseded validator must not survive the switch");
+        File.ReadAllText(ModifiedPath).Should().Be(LastModified);
+    }
+
+    [Fact]
+    public async Task Download_removes_the_modified_sidecar_when_it_switches_to_an_etag()
+    {
+        // The mirror image: a controller that starts offering ETags. Without this the stale Modified-sidecar
+        // would still be there, and the ETag-first read order is the only thing keeping it from being used.
+        File.WriteAllText(ModifiedPath, "Fri, 01 Aug 2025 00:00:00 GMT");
+
+        var handler = new FakeHandler(_ =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("JARBYTES"))
+            };
+            resp.Headers.ETag = new EntityTagHeaderValue(ETagV1);
+            return resp;
+        });
+
+        await CreateDownloader(handler).Download(new Uri(JenkinsUrl), _tempDir, CancellationToken.None);
+
+        File.Exists(ModifiedPath).Should().BeFalse("the superseded validator must not survive the switch");
+        File.ReadAllText(ETagPath).Should().Be(ETagV1);
+    }
+
+    private static HttpResponseMessage JarResponseWithLastModified(string body)
+    {
+        var resp = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes(body))
+        };
+        resp.Content.Headers.LastModified = DateTimeOffset.Parse(LastModified, CultureInfo.InvariantCulture);
+        return resp;
     }
 
     [Fact]
