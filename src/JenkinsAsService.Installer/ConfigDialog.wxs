@@ -242,12 +242,28 @@
            config pages; the same path-valid condition is kept so an invalid folder still re-prompts rather
            than skipping ahead. The previous Order 2 lost to the stock Order 4 publish, so every config page
            was skipped and WriteConfig ran with an empty URL and secret (installer error 1722). -->
+      <!-- On an UPGRADE the config pages are skipped entirely and the wizard goes straight to the confirm
+           page. The execute-sequence CAs that consume these properties (WriteConfig / WriteAdvanced1-3 /
+           SetDataDir) are gated NOT WIX_UPGRADE_DETECTED and do not run on an upgrade - UpgradeConfig
+           reconciles the existing appsettings.json in place instead. Showing the pages anyway asked the
+           operator to re-type the controller URL and re-paste the AGENT SECRET (RequiredFieldDlg blocks Next
+           until both are non-empty) only to discard both answers, and blank fields read as though the upgrade
+           were about to overwrite a working config. Skipping them is what actually happens on disk.
+           Note that `Installed` is FALSE during a major upgrade - the new ProductCode is not installed yet -
+           so WIX_UPGRADE_DETECTED is the only thing that distinguishes the two paths here, exactly as in the
+           InstallExecuteSequence conditions. FindRelatedProducts is sequenced in the UI sequence too, so the
+           property is set by the time any of these controls can be clicked. -->
       <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="JenkinsConfigDlg" Order="5"
-               Condition="WIXUI_INSTALLDIR_VALID = &quot;1&quot;" />
+               Condition="WIXUI_INSTALLDIR_VALID = &quot;1&quot; AND NOT WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="6"
+               Condition="WIXUI_INSTALLDIR_VALID = &quot;1&quot; AND WIX_UPGRADE_DETECTED" />
       <!-- Return from the confirm page to the last config page on a fresh install; leave stock maintenance
-           navigation (Order 2) untouched when the product is already Installed. -->
+           navigation (Order 2) untouched when the product is already Installed. On an upgrade the config
+           pages were never shown, so this must stand down and let the stock Order 1 publish (NOT Installed ->
+           InstallDirDlg) take Back - otherwise Back walks into AdvancedOptionsDlg and the operator lands on
+           JenkinsConfigDlg, blocked by RequiredFieldDlg on fields the upgrade will not use. -->
       <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="AdvancedOptionsDlg" Order="5"
-               Condition="NOT Installed" />
+               Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
 
     </UI>
   </Fragment>

@@ -44,10 +44,8 @@ $productName = 'Jenkins Agent Service'
 $logDir = Join-Path (Get-Location) 'msi-logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-# The install and the upgrade must be given the SAME properties: the point of the upgrade assertions is that
-# the config survives, so any difference here would make a preserved value indistinguishable from a re-written
-# one. Declared once for exactly that reason.
-$commonProperties = @(
+# Fresh-install properties. The upgrade deliberately supplies NONE of these - see step 2.
+$installProperties = @(
     "DATAFOLDER=$dataFolder",
     'JENKINS_URL=https://127.0.0.1:59999',
     'JENKINS_SECRET=ci-smoke-secret',
@@ -129,8 +127,35 @@ if ($v1Version -eq $v2Version) {
 }
 
 # --------------------------------------------------------------------------------------------------
+# The wizard is never shown by this job - every msiexec call below is /quiet - so the upgrade UI gating is
+# checked by reading the navigation graph back out of the package instead.
+#
+# The invariant: on an upgrade the operator must not be routed into the configuration pages. Those pages
+# collect properties that WriteConfig / WriteAdvanced1-3 / SetDataDir consume, and all five are gated
+# NOT WIX_UPGRADE_DETECTED - so an upgrade would demand the controller URL and the AGENT SECRET (blocking
+# Next until both are filled in) and then discard both. Every edge INTO the config flow from outside it must
+# therefore carry that same gate; edges between the config pages are the flow's own Back/Next and are
+# unreachable once the entry points are gated.
+#
+# Asserting the routes exist at all is load-bearing too: this fragment is pulled in by a UIRef, and when that
+# reference was missing the linker dropped the whole thing and shipped an MSI with no custom pages.
+Write-Host "`n=== 0b. Upgrade skips the configuration pages ==="
+$configDialogs = @('JenkinsConfigDlg', 'SecurityOptionsDlg', 'AdvancedOptionsDlg')
+# @() so an empty result is an empty array rather than $null: Set-StrictMode turns .Count on $null into a
+# terminating error, which would abort the run instead of failing the assertion it is meant to fail.
+$intoConfigFlow = @(Get-MsiControlEvent -Path $V2Msi |
+    Where-Object { $_.Event -eq 'NewDialog' -and $_.Argument -in $configDialogs -and $_.Dialog -notin $configDialogs })
+
+Assert-That ($intoConfigFlow.Count -gt 0) `
+    "the custom configuration pages are present in the package (the UIRef still pulls the fragment in)"
+foreach ($edge in $intoConfigFlow) {
+    Assert-That ($edge.Condition -match 'NOT\s+WIX_UPGRADE_DETECTED') `
+        "$($edge.Dialog)/$($edge.Control) -> $($edge.Argument) is gated off on upgrade (condition: '$($edge.Condition)')"
+}
+
+# --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 1. Fresh install ($v1Version) ==="
-Invoke-Msi -LogName 'install-v1' -Arguments (@('/i', $V1Msi) + $commonProperties + 'JENKINS_AGENT_NAME=ci-node')
+Invoke-Msi -LogName 'install-v1' -Arguments (@('/i', $V1Msi) + $installProperties + 'JENKINS_AGENT_NAME=ci-node')
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service) "service '$serviceName' is registered"
@@ -169,13 +194,23 @@ $raw | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding utf8
 $sentinel = Join-Path $dataFolder 'operator-data.txt'
 Set-Content -Path $sentinel -Value 'operator data that must survive an upgrade and die on uninstall' -Encoding utf8
 
-Invoke-Msi -LogName 'upgrade-v2' -Arguments (@('/i', $V2Msi) + $commonProperties)
+# NO properties. An upgrade must not need to be told the URL, the data folder or - above all - the agent
+# secret: the wizard no longer asks for them, so a scripted upgrade must not have to supply them either.
+# This is also the stronger assertion. Passing the same values on both runs made a preserved value
+# indistinguishable from a re-written one; withholding them means every check below can only pass if
+# UpgradeConfig really did reconcile the config that was already on disk.
+Invoke-Msi -LogName 'upgrade-v2' -Arguments @('/i', $V2Msi)
 
 $cfg = Get-Config
 Assert-That ($null -ne $cfg) "appsettings.json still exists after the upgrade"
 Assert-That ($cfg.Jenkins.Logging.RetainedLogs -eq 9) "an operator's edited value survives the upgrade"
 Assert-That ($cfg.Jenkins.Connection.AgentName -eq 'ci-node') "an unrelated value survives the upgrade"
-Assert-That ($cfg.Jenkins.Secret.Value -eq 'ci-smoke-secret') "the secret survives the upgrade"
+Assert-That ($cfg.Jenkins.Connection.Url -eq 'https://127.0.0.1:59999') `
+    "Connection:Url survives an upgrade that was never given JENKINS_URL"
+Assert-That ($cfg.Jenkins.Agent.DataDirectory -eq $dataFolder) `
+    "Agent:DataDirectory survives an upgrade that was never given DATAFOLDER"
+Assert-That ($cfg.Jenkins.Secret.Value -eq 'ci-smoke-secret') `
+    "the secret survives an upgrade that was never given JENKINS_SECRET"
 Assert-That ($null -ne $cfg.Jenkins.Connection.PSObject.Properties['ControllerCertThumbprint']) `
     "a schema key missing from the old config is re-added by the reconcile"
 Assert-That ($null -eq $cfg.Jenkins.Logging.PSObject.Properties['NoSuchSetting']) `

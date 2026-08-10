@@ -84,4 +84,45 @@ function Get-MsiPlatform {
     return ($template -split ';')[0]
 }
 
-Export-ModuleMember -Function Get-MsiProperty, Get-MsiPlatform
+function Get-MsiControlEvent {
+    <#
+    .SYNOPSIS
+        Every row of the package's ControlEvent table - the wizard's navigation graph.
+    .DESCRIPTION
+        The UI sequence is authored, never executed by the /quiet lifecycle test, so the only automated way to
+        check that a dialog route is correctly gated is to read the routes back out of the built package. This
+        also catches the fragment being dropped by the linker altogether, which has happened here before: a
+        missing UIRef silently shipped an MSI with none of the custom pages in it.
+    .OUTPUTS
+        Objects with Dialog, Control, Event, Argument, Condition and Ordering.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $msi = Get-MsiDatabase -Path $Path
+    $database = $msi.Database
+
+    # No caller input reaches this query - the whole table is read and filtered in PowerShell.
+    $view = $database.GetType().InvokeMember(
+        'OpenView', 'InvokeMethod', $null, $database,
+        @('SELECT Dialog_, Control_, Event, Argument, Condition, Ordering FROM ControlEvent'))
+    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+
+    while ($true) {
+        $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+        if ($null -eq $record) { break }
+
+        $field = { param($i) $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, $i) }
+        [pscustomobject]@{
+            Dialog    = & $field 1
+            Control   = & $field 2
+            Event     = & $field 3
+            Argument  = & $field 4
+            Condition = & $field 5
+            Ordering  = & $field 6
+        }
+    }
+}
+
+Export-ModuleMember -Function Get-MsiProperty, Get-MsiPlatform, Get-MsiControlEvent

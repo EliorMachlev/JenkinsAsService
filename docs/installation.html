@@ -212,6 +212,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
 
     <div class="callout callout-note">
       <div class="callout-title">Configuration on upgrade</div>
+      <p><strong>An upgrade asks you nothing, and never asks for the agent secret.</strong> The wizard skips the three configuration pages entirely and goes straight to the confirm screen, because none of what they collect is used on an upgrade path.</p>
       <p>An in-place upgrade reconciles the existing <code>appsettings.json</code> to the new version's schema: settings introduced in the release appear at their defaults, settings the schema no longer defines are removed, and your existing values &mdash; including the secret &mdash; are preserved. The secret is detected by a decryption-free presence check, so a secret bound to the service account (User-scope DPAPI, TPM, or Credential Manager) survives the upgrade untouched; if no secret is present, the upgrade writes a fresh configuration from the supplied properties. Because unknown keys are pruned, configure only documented settings. See <a href="configuration.html#config-migration-on-upgrade">Configuration &rarr; Config migration on MSI upgrade</a>.</p>
     </div>
 
