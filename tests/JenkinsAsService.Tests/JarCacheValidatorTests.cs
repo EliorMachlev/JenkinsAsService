@@ -136,6 +136,50 @@ public class JarCacheValidatorTests : IDisposable
         JarCacheValidator.Read(_tempDir)!.Value.Value.Should().Be(ETagValue);
     }
 
+    [Theory]
+    [InlineData("\"v1\"\r\nX-Injected: evil")]
+    [InlineData("\"v1\"\nX-Injected: evil")]
+    [InlineData("\"v1\"\tpadded")]
+    [InlineData("\"v1\"\u007f")]
+    public void Read_rejects_a_value_containing_control_characters(string malicious)
+    {
+        // The value is replayed through TryAddWithoutValidation, which checks nothing by design — an embedded
+        // newline would let whatever wrote this file append headers to our request. The cache directory sits
+        // under %ProgramData% next to the build work dir and is writable by the account build steps run as,
+        // so "we wrote it ourselves" is not a safe assumption.
+        File.WriteAllText(ETagPath, malicious);
+
+        JarCacheValidator.Read(_tempDir).Should().BeNull("a value that cannot be safely sent must be discarded");
+    }
+
+    [Fact]
+    public void Read_rejects_an_oversized_sidecar_without_reading_it()
+    {
+        // Real validators are tens of characters. The cap is enforced against the file's length, so a huge
+        // file is refused rather than pulled into memory to be rejected afterwards.
+        File.WriteAllText(ETagPath, new string('x', 4096));
+
+        JarCacheValidator.Read(_tempDir).Should().BeNull();
+    }
+
+    [Fact]
+    public void Read_falls_through_to_the_modified_sidecar_when_the_etag_sidecar_is_unusable()
+    {
+        // A corrupt ETag-sidecar must not mask a perfectly good Last-Modified one.
+        File.WriteAllText(ETagPath, "\"v1\"\r\nX-Injected: evil");
+        File.WriteAllText(ModifiedPath, HttpDate);
+
+        JarCacheValidator.Read(_tempDir).Should().Be(new JarCacheValidator(ValidatorKind.LastModified, HttpDate));
+    }
+
+    [Fact]
+    public void AllKinds_covers_every_declared_kind()
+    {
+        // AllKinds is hand-written to avoid Enum.GetValues allocating per download; if a kind is ever added
+        // and not listed here, SaveValidator would silently stop clearing its sidecar.
+        JarCacheValidator.AllKinds.ToArray().Should().BeEquivalentTo(Enum.GetValues<ValidatorKind>());
+    }
+
     private static HttpResponseMessage ResponseWith(string? etag, string? lastModified)
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([1]) };

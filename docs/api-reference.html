@@ -253,6 +253,10 @@ JarCacheValidator? Read(string cacheDirectory);          // whichever sidecar is
 string             ConditionalHeader { get; }            // If-None-Match | If-Modified-Since
 string             SidecarFileName   { get; }            // agent.jar.etag | agent.jar.modified</code></pre>
     <p><strong>File:</strong> <code>JarCacheValidator.cs</code>. The freshness token stored beside the cached jar, and the rules for round-tripping it. One file per kind, so the name on disk says which validator it holds and nothing has to be parsed to find out; <code>Read</code> prefers the ETag-sidecar, and a blank or missing sidecar yields <code>null</code> &mdash; an unconditional GET rather than an empty conditional header. <code>Last-Modified</code> is normalised to a UTC HTTP-date, the only form <code>If-Modified-Since</code> accepts.</p>
+    <p>A stored value is screened before it is replayed: control characters are rejected and the sidecar is size-capped before it is read. The value goes out through <code>TryAddWithoutValidation</code>, which by design checks nothing, so an embedded newline would let whatever wrote the sidecar append headers to the request &mdash; and the cache directory sits under <code>%ProgramData%</code> beside the build work directory, writable by the account build steps run as. An unusable sidecar degrades to a full download rather than to a malformed request.</p>
+
+    <h3 id="jarcachepaths"><code>JarCachePaths</code></h3>
+    <p><strong>File:</strong> <code>JarCachePaths.cs</code>. Every path inside the agent-binary cache &mdash; the jar, its <code>.tmp</code>, the hash sidecar and either validator sidecar &mdash; derived once from the cache directory and passed as a single value. Keeps the four-string parameter lists (and the repeated <code>Path.Combine</code> calls) out of the download path.</p>
 
     <h3 id="proxyresolver"><code>ProxyResolver</code> / <code>ProxyMode</code></h3>
     <pre data-lang="csharp"><code>enum ProxyMode { System, Direct, Explicit }
