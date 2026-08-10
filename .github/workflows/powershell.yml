@@ -36,10 +36,18 @@ jobs:
           # The retry covers the residue. Findings never fail this job (they are uploaded as SARIF below),
           # so the only way it can fail is the analyzer itself throwing - which must still fail loudly after
           # a few attempts rather than be swallowed into a green check.
-          $files = @(Get-ChildItem -Path $root -Include *.ps1, *.psm1, *.psd1 -Recurse -File |
+          # -Filter, not -Include: with a directory -Path, -Include matches against the path leaf and needs a
+          # trailing \* to behave, which silently found zero files on the Linux runner while working locally
+          # on Windows. -Filter is applied by the provider and behaves the same on both.
+          $files = @('*.ps1', '*.psm1', '*.psd1' | ForEach-Object {
+              Get-ChildItem -Path $root -Filter $_ -Recurse -File
+            } |
             Where-Object { $_.FullName -notmatch '[\\/](obj|bin|node_modules|\.git)[\\/]' } |
-            Select-Object -ExpandProperty FullName)
+            Select-Object -ExpandProperty FullName -Unique | Sort-Object)
           Write-Host "Analyzing $($files.Count) PowerShell file(s)."
+          # A filter that matches nothing must fail, not report a clean run: "0 findings" and "analyzed
+          # nothing" are indistinguishable in the SARIF upload, and the second one is how a scan quietly
+          # stops scanning.
           if ($files.Count -eq 0) { throw 'No PowerShell files found - the file filter is wrong.' }
 
           # -Path takes one path, so this is a loop rather than an array argument - which also scopes each
