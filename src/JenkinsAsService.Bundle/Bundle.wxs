@@ -1,0 +1,132 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+
+  <!-- ════════════════════════════════════════════════════════════════════════════════════════════════
+       One downloadable file that installs the right architecture.
+
+       A single .msi cannot do this. An MSI's Summary Information Template field carries exactly one platform
+       token - "x64" or "Intel" - which is the field Test-MsiPlatform.ps1 already reads to prove the two
+       packages differ. There is no "both", a 32-bit package cannot install 64-bit components, and
+       ProgramFiles64Folder is not addressable from one. The container cannot express it, so the selection
+       moves one level up: a Burn bundle that carries both MSIs and installs the one matching the machine.
+
+       Both MSIs are still shipped separately, for anyone who wants to hand the exact package to a deployment
+       tool that only speaks MSI.
+
+       ARCHITECTURE POLICY: always the machine's native architecture. There is no reason to run the 32-bit
+       agent on a 64-bit machine, so the bundle does not preserve a mismatched install - it migrates it. That
+       is why both packages are handed FORCE_UPGRADE=1 below. The gate in the MSI stays strict for anyone
+       running a raw .msi by hand, where a wrong-architecture install is a mistake rather than a decision;
+       the bundle is the path that has already made the decision.
+       ════════════════════════════════════════════════════════════════════════════════════════════════ -->
+  <Bundle Name="Jenkins Agent Service"
+          Manufacturer="EliorMachlev"
+          Version="$(var.Version)"
+          UpgradeCode="015B49BD-10B0-4FC7-802B-A248BD50A205"
+          IconSourceFile="..\..\Resources\Logo.ico"
+          AboutUrl="https://github.com/EliorMachlev/JenkinsAsService"
+          HelpUrl="https://jenkinsasservice.machlev.org"
+          Compressed="yes">
+
+    <!-- Both payloads are embedded, so the file works on a machine with no network and nothing to resolve at
+         install time. That is ~76 MB of self-contained .NET runtime; the alternative (downloading the other
+         MSI on demand) trades that for a install that can fail halfway through, which is the worse deal for
+         something whose whole job is to come up unattended. -->
+
+    <BootstrapperApplication>
+      <!-- The MSI keeps its own configuration wizard (DisplayInternalUI below), so this only needs to be the
+           thin shell in front of it: license acknowledgement and progress. SuppressOptionsUI because the one
+           option a standard BA would offer - the install folder - is resolved by the MSI itself, which
+           recovers the previous install's location; letting the bundle override it would undo that. -->
+      <bal:WixStandardBootstrapperApplication
+          Theme="hyperlinkLicense"
+          LicenseUrl="https://github.com/EliorMachlev/JenkinsAsService/blob/main/LICENSE"
+          SuppressOptionsUI="yes"
+          LogoFile="..\..\Resources\Logo.ico" />
+    </BootstrapperApplication>
+
+    <!-- ─── Settings forwarded to whichever MSI runs.
+         Overridable so a silent install can supply them on the bundle's command line exactly as it would to
+         msiexec, e.g.:
+             JenkinsAsService.exe -quiet JENKINS_URL=https://ci:8443 JENKINS_SECRET=...
+         Each defaults to empty and is passed through verbatim, so an unset one reaches the MSI as an empty
+         property and the MSI's own default applies - the bundle deliberately restates none of those defaults,
+         since two copies of a default value is exactly how they drift apart. ─── -->
+    <Variable Name="JENKINS_URL" bal:Overridable="yes" Value="" />
+    <!-- Hidden and Persisted="no": the secret must not be written into the bundle's registry-backed variable
+         store, where it would outlive the install, and must not be echoed into the bundle log. -->
+    <Variable Name="JENKINS_SECRET" bal:Overridable="yes" Value="" Hidden="yes" Persisted="no" />
+    <Variable Name="JENKINS_SECRET_MODE" bal:Overridable="yes" Value="" />
+    <Variable Name="JENKINS_AGENT_NAME" bal:Overridable="yes" Value="" />
+    <Variable Name="JENKINS_METHOD" bal:Overridable="yes" Value="" />
+    <Variable Name="JENKINS_THUMBPRINT" bal:Overridable="yes" Value="" />
+    <Variable Name="JENKINS_JAVA_PATH" bal:Overridable="yes" Value="" />
+    <Variable Name="DATAFOLDER" bal:Overridable="yes" Value="" />
+    <Variable Name="SERVICE_ACCOUNT" bal:Overridable="yes" Value="" />
+    <Variable Name="SERVICE_ACCOUNT_DOMAIN" bal:Overridable="yes" Value="" />
+    <Variable Name="SERVICE_ACCOUNT_NAME" bal:Overridable="yes" Value="" />
+    <Variable Name="SERVICE_PASSWORD" bal:Overridable="yes" Value="" Hidden="yes" Persisted="no" />
+
+    <Chain>
+      <!-- Exactly one of these installs, decided by VersionNT64. The conditions are complements of each
+           other, so the chain can neither install both nor install neither.
+
+           DisplayInternalUI so an interactive run still gets the MSI's configuration wizard - the bundle has
+           no UI of its own for collecting a controller URL and a secret, and building one would mean a custom
+           bootstrapper application to keep in sync with the MSI's pages.
+
+           FORCE_UPGRADE=1 is the architecture policy in one line: whichever package matches the machine is
+           allowed to replace an installed product of the other architecture. The MSI still preserves the
+           install folder, data folder, configuration and secret across that migration - see
+           InstallLocation.wxs - so this changes the binaries and nothing else. -->
+      <!-- Distinct payload Names: both source files are called JenkinsAsService.Installer.msi, and inside the
+           attached container that collides - `wix burn extract` would silently overwrite one with the other,
+           leaving an "extracted" bundle containing two copies of a single architecture. -->
+      <MsiPackage Id="JenkinsAgentServiceX64"
+                  SourceFile="$(var.X64Msi)"
+                  Name="JenkinsAsService_x64.msi"
+                  InstallCondition="VersionNT64"
+                  bal:DisplayInternalUICondition="1"
+                  Vital="yes"
+                  Compressed="yes">
+        <MsiProperty Name="FORCE_UPGRADE" Value="1" />
+        <MsiProperty Name="JENKINS_URL" Value="[JENKINS_URL]" />
+        <MsiProperty Name="JENKINS_SECRET" Value="[JENKINS_SECRET]" />
+        <MsiProperty Name="JENKINS_SECRET_MODE" Value="[JENKINS_SECRET_MODE]" />
+        <MsiProperty Name="JENKINS_AGENT_NAME" Value="[JENKINS_AGENT_NAME]" />
+        <MsiProperty Name="JENKINS_METHOD" Value="[JENKINS_METHOD]" />
+        <MsiProperty Name="JENKINS_THUMBPRINT" Value="[JENKINS_THUMBPRINT]" />
+        <MsiProperty Name="JENKINS_JAVA_PATH" Value="[JENKINS_JAVA_PATH]" />
+        <MsiProperty Name="DATAFOLDER" Value="[DATAFOLDER]" />
+        <MsiProperty Name="SERVICE_ACCOUNT" Value="[SERVICE_ACCOUNT]" />
+        <MsiProperty Name="SERVICE_ACCOUNT_DOMAIN" Value="[SERVICE_ACCOUNT_DOMAIN]" />
+        <MsiProperty Name="SERVICE_ACCOUNT_NAME" Value="[SERVICE_ACCOUNT_NAME]" />
+        <MsiProperty Name="SERVICE_PASSWORD" Value="[SERVICE_PASSWORD]" />
+      </MsiPackage>
+
+      <MsiPackage Id="JenkinsAgentServiceX86"
+                  SourceFile="$(var.X86Msi)"
+                  Name="JenkinsAsService_x86.msi"
+                  InstallCondition="NOT VersionNT64"
+                  bal:DisplayInternalUICondition="1"
+                  Vital="yes"
+                  Compressed="yes">
+        <MsiProperty Name="FORCE_UPGRADE" Value="1" />
+        <MsiProperty Name="JENKINS_URL" Value="[JENKINS_URL]" />
+        <MsiProperty Name="JENKINS_SECRET" Value="[JENKINS_SECRET]" />
+        <MsiProperty Name="JENKINS_SECRET_MODE" Value="[JENKINS_SECRET_MODE]" />
+        <MsiProperty Name="JENKINS_AGENT_NAME" Value="[JENKINS_AGENT_NAME]" />
+        <MsiProperty Name="JENKINS_METHOD" Value="[JENKINS_METHOD]" />
+        <MsiProperty Name="JENKINS_THUMBPRINT" Value="[JENKINS_THUMBPRINT]" />
+        <MsiProperty Name="JENKINS_JAVA_PATH" Value="[JENKINS_JAVA_PATH]" />
+        <MsiProperty Name="DATAFOLDER" Value="[DATAFOLDER]" />
+        <MsiProperty Name="SERVICE_ACCOUNT" Value="[SERVICE_ACCOUNT]" />
+        <MsiProperty Name="SERVICE_ACCOUNT_DOMAIN" Value="[SERVICE_ACCOUNT_DOMAIN]" />
+        <MsiProperty Name="SERVICE_ACCOUNT_NAME" Value="[SERVICE_ACCOUNT_NAME]" />
+        <MsiProperty Name="SERVICE_PASSWORD" Value="[SERVICE_PASSWORD]" />
+      </MsiPackage>
+    </Chain>
+
+  </Bundle>
+
+</Wix>

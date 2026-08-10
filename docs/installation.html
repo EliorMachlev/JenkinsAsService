@@ -222,11 +222,21 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
       <p>Passing <code>INSTALLFOLDER=</code> or <code>DATAFOLDER=</code> explicitly still wins &mdash; the recovery only fills in what you did not specify. For a product installed by a version that predates these keys, the install folder is instead recovered from Windows Installer's own component registration, and the data folder falls back to the default.</p>
     </div>
 
+    <div class="callout callout-note">
+      <div class="callout-title">Which download to use</div>
+      <p><strong><code>JenkinsAsService_&lt;version&gt;.exe</code> is the one to pick.</strong> It carries both architectures and installs the one matching the machine &mdash; and if the other architecture is already installed, it migrates it, keeping your install folder, data folder, configuration and secret. Silent installs take the same properties as the MSI:</p>
+      <pre><code>JenkinsAsService_1.16.0.exe -quiet JENKINS_URL=https://ci.example.com:8443 JENKINS_SECRET=...</code></pre>
+      <p>Or through winget:</p>
+      <pre><code>winget install EliorMachlev.JenkinsAsService</code></pre>
+      <p>The two <code>.msi</code> packages are still published for deployment tools that only speak MSI. They install exactly one architecture and do not select for you.</p>
+    </div>
+
     <div class="callout callout-warning">
       <div class="callout-title">Changing architecture (x64 &harr; x86)</div>
-      <p>The two packages share an <code>UpgradeCode</code>, so either will replace the other &mdash; which is almost never what someone who grabbed the wrong file intended, and there is no undo once the old product has been removed. Installing the other architecture is therefore refused unless you ask for it:</p>
-      <pre><code>msiexec /i JenkinsAsService.msi FORCE_UPGRADE=1</code></pre>
+      <p>The two MSI packages share an <code>UpgradeCode</code>, so either will replace the other &mdash; which is almost never what someone who grabbed the wrong file intended, and there is no undo once the old product has been removed. Installing the other architecture <em>from a bare MSI</em> is therefore refused unless you ask for it:</p>
+      <pre><code>msiexec /i JenkinsAsService_1.16.0_x86.msi FORCE_UPGRADE=1</code></pre>
       <p>The requirement is the same in the wizard and in a silent install. A refused run is inert &mdash; it aborts before the installed product is touched, so the service keeps running and the configuration is untouched. A forced migration keeps the existing install folder, data folder, configuration and secret; only the binaries change architecture.</p>
+      <p><strong>The <code>.exe</code> never asks.</strong> Installing the machine's native architecture is its policy rather than an option &mdash; there is no reason to run the 32-bit agent on a 64-bit machine &mdash; so it supplies the flag itself and migrates without prompting. The gate exists for the bare-MSI path, where a wrong-architecture install is a mistake rather than a decision.</p>
     </div>
 
     <div class="callout callout-note">

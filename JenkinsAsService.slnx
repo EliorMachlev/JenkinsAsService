@@ -5,6 +5,13 @@
       <Configuration Solution="Debug|*" Build="false" />
       <Configuration Solution="Release|*" Build="false" />
     </Project>
+    <!-- Build=false for the same reason as the installer, and one more: the bundle EMBEDS the two MSIs, so it
+         can only be built after both of them exist. A solution build would package whatever stale MSI it
+         found, or nothing at all. -->
+    <Project Path="src/JenkinsAsService.Bundle/JenkinsAsService.Bundle.wixproj">
+      <Configuration Solution="Debug|*" Build="false" />
+      <Configuration Solution="Release|*" Build="false" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/JenkinsAsService.Tests/JenkinsAsService.Tests.csproj" />

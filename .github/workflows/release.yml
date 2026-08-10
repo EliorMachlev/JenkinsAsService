@@ -105,11 +105,22 @@ jobs:
         shell: pwsh
         run: .github/scripts/Test-MsiPlatform.ps1 -X64Msi (Get-Item msi/x64/*.msi).FullName -X86Msi (Get-Item msi/x86/*.msi).FullName
 
-      - name: Rename MSI files
+      # The single self-selecting installer, built from the two packages just verified above. Built BEFORE the
+      # rename, because the bundle project takes the paths the build-msi action produced.
+      - name: Build bundle
+        uses: ./.github/actions/build-bundle
+        with:
+          x64-msi: ../../msi/x64/JenkinsAsService.Installer.msi
+          x86-msi: ../../msi/x86/JenkinsAsService.Installer.msi
+          version: ${{ steps.version.outputs.VERSION }}
+          output: bundle/
+
+      - name: Rename installer files
         run: |
           $v = "${{ steps.version.outputs.VERSION }}"
           Move-Item msi/x64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x64.msi"
           Move-Item msi/x86/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x86.msi"
+          Move-Item bundle/JenkinsAsService.Bundle.exe "JenkinsAsService_${v}.exe"
 
       - name: Generate SBOM (CycloneDX)
         run: |
@@ -135,6 +146,7 @@ jobs:
         run: |
           $v = "${{ steps.version.outputs.VERSION }}"
           $files = [ordered]@{
+            "JenkinsAsService_${v}.exe"      = "JenkinsAsService_${v}.exe"
             "JenkinsAsService_${v}_x64.msi"  = "JenkinsAsService_${v}_x64.msi"
             "JenkinsAsService_${v}_x86.msi"  = "JenkinsAsService_${v}_x86.msi"
             "JenkinsAsService_${v}_x64.7z"   = "JenkinsAsService_${v}_x64.7z"
@@ -154,12 +166,24 @@ jobs:
           }
           $checksums | ConvertTo-Json -Depth 3 | Set-Content "JenkinsAsService_${v}_checksums.json" -Encoding utf8
 
+      # Generated from the artifact itself, so the SHA256 in the manifest cannot disagree with the file that
+      # ships. Attached to the release rather than submitted: opening the winget-pkgs PR stays a deliberate act.
+      - name: Generate winget manifests
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.VERSION }}"
+          $url = "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.TAG }}/JenkinsAsService_${v}.exe"
+          .github/scripts/New-WingetManifest.ps1 -Version $v -BundlePath "JenkinsAsService_${v}.exe" -InstallerUrl $url -OutputDirectory winget/
+          Compress-Archive -Path winget/* -DestinationPath "JenkinsAsService_${v}_winget-manifests.zip"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           generate_release_notes: true
           files: |
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}.exe
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_winget-manifests.zip
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.msi
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.msi
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z

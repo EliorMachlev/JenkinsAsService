@@ -145,6 +145,43 @@ jobs:
           -FromMsi (Get-Item msi/v1/*.msi).FullName -FromPlatform x64
           -ToMsi (Get-Item msi/x86/*.msi).FullName -ToPlatform x86
 
+      # The bundle embeds BOTH architectures at the SAME version, and that version must be higher than the
+      # 1.0.2 x86 package the bundle test installs as its baseline. Reusing the earlier x64 1.0.1 here would
+      # make the migration a DOWNGRADE (1.0.2 x86 -> 1.0.1 x64), which MajorUpgrade correctly refuses - the
+      # test would fail on a version rule while appearing to say something about architecture.
+      - name: Build MSI x64 1.0.3
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x64/
+          platform: x64
+          version: 1.0.3
+          output: msi/bundle-x64/
+
+      - name: Build MSI x86 1.0.3
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x86/
+          platform: x86
+          version: 1.0.3
+          output: msi/bundle-x86/
+
+      - name: Build bundle 1.0.3
+        uses: ./.github/actions/build-bundle
+        with:
+          x64-msi: ../../msi/bundle-x64/JenkinsAsService.Installer.msi
+          x86-msi: ../../msi/bundle-x86/JenkinsAsService.Installer.msi
+          version: 1.0.3
+          output: bundle/
+
+      # Runs last: like the two suites above it installs the same product, so they must not overlap. This is
+      # the one that proves an architecture migration does not trip the MSI's purge and destroy the config.
+      - name: Bundle install / migrate / uninstall
+        shell: pwsh
+        run: >-
+          .github/scripts/Test-Bundle.ps1
+          -BaselineX86Msi (Get-Item msi/x86/*.msi).FullName
+          -BundleExe (Get-Item bundle/*.exe).FullName
+
       - name: Upload MSI logs on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

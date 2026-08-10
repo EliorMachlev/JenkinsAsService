@@ -129,6 +129,20 @@ sc.exe delete Jenkins
 ```
 
 > [!WARNING]
+### Install
+
+```powershell
+winget install EliorMachlev.JenkinsAsService
+```
+
+Or download `JenkinsAsService_<version>.exe` from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases) — one file, both architectures. It installs the one matching your machine, and migrates an existing install of the other architecture in place, keeping your install folder, data folder, configuration and secret. Silent installs take the same properties as the MSI:
+
+```powershell
+JenkinsAsService_1.16.0.exe -quiet JENKINS_URL=https://ci.example.com:8443 JENKINS_SECRET=...
+```
+
+The per-architecture `.msi` packages are still published for deployment tools that only speak MSI; they install exactly one architecture and refuse to replace the other unless given `FORCE_UPGRADE=1`.
+
 > **Uninstalling is destructive.** The MSI removes the install folder *and* `%ProgramData%\JenkinsAsService` — logs, the cached `agent.jar`, and the `work\` directory (build workspaces, `remoting/` state) all go with it, without prompting. Copy anything you need out first. An **upgrade** preserves the data folder in full; only a genuine uninstall clears it.
 >
 > It also removes the **secret from its store** — the TPM key, Credential Manager entry, or machine environment variable, per `Secret:Mode` — so nothing usable is left behind. A Credential Manager entry written with `--impersonate` belongs to that user's vault and must be removed while logged on as them (`cmdkey /delete:JenkinsAsService/AgentSecret`); the purge tells you if it hit this.
