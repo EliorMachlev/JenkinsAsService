@@ -52,6 +52,11 @@
          Each defaults to empty and is passed through verbatim, so an unset one reaches the MSI as an empty
          property and the MSI's own default applies - the bundle deliberately restates none of those defaults,
          since two copies of a default value is exactly how they drift apart. ─── -->
+    <!-- The forwarding list, stated once. MsiProperties.wxi turns it into the MsiProperty rows of both
+         packages, so a name added here reaches x64 and x86 alike or neither - it cannot reach just one.
+         FORCE_UPGRADE is not in it: it is the bundle's own policy, not a setting an operator supplies. -->
+    <?define JasForwardedSettings = JENKINS_URL;JENKINS_SECRET;JENKINS_SECRET_MODE;JENKINS_AGENT_NAME;JENKINS_METHOD;JENKINS_THUMBPRINT;JENKINS_JAVA_PATH;DATAFOLDER;SERVICE_ACCOUNT;SERVICE_ACCOUNT_DOMAIN;SERVICE_ACCOUNT_NAME;SERVICE_PASSWORD ?>
+
     <Variable Name="JENKINS_URL" bal:Overridable="yes" Value="" />
     <!-- Hidden and Persisted="no": the secret must not be written into the bundle's registry-backed variable
          store, where it would outlive the install, and must not be echoed into the bundle log. -->
@@ -89,19 +94,7 @@
                   bal:DisplayInternalUICondition="1"
                   Vital="yes"
                   Compressed="yes">
-        <MsiProperty Name="FORCE_UPGRADE" Value="1" />
-        <MsiProperty Name="JENKINS_URL" Value="[JENKINS_URL]" />
-        <MsiProperty Name="JENKINS_SECRET" Value="[JENKINS_SECRET]" />
-        <MsiProperty Name="JENKINS_SECRET_MODE" Value="[JENKINS_SECRET_MODE]" />
-        <MsiProperty Name="JENKINS_AGENT_NAME" Value="[JENKINS_AGENT_NAME]" />
-        <MsiProperty Name="JENKINS_METHOD" Value="[JENKINS_METHOD]" />
-        <MsiProperty Name="JENKINS_THUMBPRINT" Value="[JENKINS_THUMBPRINT]" />
-        <MsiProperty Name="JENKINS_JAVA_PATH" Value="[JENKINS_JAVA_PATH]" />
-        <MsiProperty Name="DATAFOLDER" Value="[DATAFOLDER]" />
-        <MsiProperty Name="SERVICE_ACCOUNT" Value="[SERVICE_ACCOUNT]" />
-        <MsiProperty Name="SERVICE_ACCOUNT_DOMAIN" Value="[SERVICE_ACCOUNT_DOMAIN]" />
-        <MsiProperty Name="SERVICE_ACCOUNT_NAME" Value="[SERVICE_ACCOUNT_NAME]" />
-        <MsiProperty Name="SERVICE_PASSWORD" Value="[SERVICE_PASSWORD]" />
+        <?include MsiProperties.wxi ?>
       </MsiPackage>
 
       <MsiPackage Id="JenkinsAgentServiceX86"
@@ -111,19 +104,7 @@
                   bal:DisplayInternalUICondition="1"
                   Vital="yes"
                   Compressed="yes">
-        <MsiProperty Name="FORCE_UPGRADE" Value="1" />
-        <MsiProperty Name="JENKINS_URL" Value="[JENKINS_URL]" />
-        <MsiProperty Name="JENKINS_SECRET" Value="[JENKINS_SECRET]" />
-        <MsiProperty Name="JENKINS_SECRET_MODE" Value="[JENKINS_SECRET_MODE]" />
-        <MsiProperty Name="JENKINS_AGENT_NAME" Value="[JENKINS_AGENT_NAME]" />
-        <MsiProperty Name="JENKINS_METHOD" Value="[JENKINS_METHOD]" />
-        <MsiProperty Name="JENKINS_THUMBPRINT" Value="[JENKINS_THUMBPRINT]" />
-        <MsiProperty Name="JENKINS_JAVA_PATH" Value="[JENKINS_JAVA_PATH]" />
-        <MsiProperty Name="DATAFOLDER" Value="[DATAFOLDER]" />
-        <MsiProperty Name="SERVICE_ACCOUNT" Value="[SERVICE_ACCOUNT]" />
-        <MsiProperty Name="SERVICE_ACCOUNT_DOMAIN" Value="[SERVICE_ACCOUNT_DOMAIN]" />
-        <MsiProperty Name="SERVICE_ACCOUNT_NAME" Value="[SERVICE_ACCOUNT_NAME]" />
-        <MsiProperty Name="SERVICE_PASSWORD" Value="[SERVICE_PASSWORD]" />
+        <?include MsiProperties.wxi ?>
       </MsiPackage>
     </Chain>
 

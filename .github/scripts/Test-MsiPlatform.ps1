@@ -29,11 +29,12 @@ Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
 
-# Platform token in the summary Template, by architecture. 32-bit packages say "Intel" for historical
-# reasons - it is not a vendor name here, it is the Windows Installer token for x86.
+# The expected platform token in each package's summary Template. Get-MsiPlatformToken owns the translation
+# (32-bit packages say "Intel" - the Windows Installer token for x86, not a vendor name), so this states only
+# which package is meant to be which architecture.
 $expectedPlatforms = [ordered]@{
-    $X64Msi = 'x64'
-    $X86Msi = 'Intel'
+    $X64Msi = Get-MsiPlatformToken -Platform 'x64'
+    $X86Msi = Get-MsiPlatformToken -Platform 'x86'
 }
 
 $failures = @()

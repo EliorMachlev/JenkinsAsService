@@ -1,5 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
+  <?include ComponentGuids.wxi ?>
+
   <!-- ════════════════════════════════════════════════════════════════════════════════════════════════
        Remembering WHERE the previous version was installed.
 
@@ -82,7 +84,7 @@
     </Property>
     <Property Id="JAS_INSTALLDIR_COMPONENT" Secure="yes">
       <ComponentSearch Id="SearchInstallByComponent"
-                       Guid="A3AFD0C7-0249-4230-8F74-1A229AF71C2C" Type="directory" />
+                       Guid="$(var.JasServiceComponentGuid)" Type="directory" />
     </Property>
 
     <Property Id="JAS_DATADIR_X64" Secure="yes">
@@ -95,11 +97,19 @@
     </Property>
     <Property Id="JAS_DATADIR_COMPONENT" Secure="yes">
       <ComponentSearch Id="SearchDataByComponent"
-                       Guid="9D1F73AD-383E-436A-8F1A-7C83CFC0A5A0" Type="directory" />
+                       Guid="$(var.JasDataFolderComponentGuid)" Type="directory" />
     </Property>
 
-    <!-- ─── 3. Apply. Plain type-51 property-setting custom actions rather than SetDirectory, so the
+    <!-- ─── 3. Apply. SetProperty (a type-51 property-setting custom action) rather than SetDirectory, so the
              scheduling and the precedence are visible in one place instead of being implied.
+
+             Sequence="both" is load-bearing, not shorthand: these have to run in the UI sequence (which
+             resolves the paths the wizard displays) AND the execute sequence (which resolves where the install
+             actually writes, and is all a silent install runs). Authored once here, WiX emits both rows, so
+             the two cannot drift - a condition fixed in only one of two hand-mirrored tables would give a
+             wizard install and a /quiet install different install folders, and nothing in CI compares them.
+             The explicit Action name is what lets several of these target one property: the generated custom
+             action is named after it, so without it the six below would collide on one id.
 
              Precedence is FIRST match wins, encoded by the `NOT <target>` clause every one of them carries:
              once a higher-priority action has set the property, every later action's condition is false.
@@ -117,19 +127,35 @@
              AppSearch at 50, these at 51-60, CostFinalize at 1000. Both sequences are authored: the UI
              sequence needs the recovered paths for what it displays, the execute sequence for where it
              actually writes. ─── -->
-    <CustomAction Id="RecoverInstallDirFromX64" Property="INSTALLFOLDER" Value="[JAS_INSTALLDIR_X64]" />
-    <CustomAction Id="RecoverInstallDirFromX86" Property="INSTALLFOLDER" Value="[JAS_INSTALLDIR_X86]" />
-    <CustomAction Id="RecoverInstallDirFromComponent" Property="INSTALLFOLDER" Value="[JAS_INSTALLDIR_COMPONENT]" />
-    <CustomAction Id="RecoverDataDirFromX64" Property="DATAFOLDER" Value="[JAS_DATADIR_X64]" />
-    <CustomAction Id="RecoverDataDirFromX86" Property="DATAFOLDER" Value="[JAS_DATADIR_X86]" />
-    <CustomAction Id="RecoverDataDirFromComponent" Property="DATAFOLDER" Value="[JAS_DATADIR_COMPONENT]" />
+    <SetProperty Id="INSTALLFOLDER" Action="RecoverInstallDirFromX64" Value="[JAS_INSTALLDIR_X64]"
+                 After="AppSearch" Sequence="both"
+                 Condition="JAS_INSTALLDIR_X64 AND NOT INSTALLFOLDER" />
+    <SetProperty Id="INSTALLFOLDER" Action="RecoverInstallDirFromX86" Value="[JAS_INSTALLDIR_X86]"
+                 After="RecoverInstallDirFromX64" Sequence="both"
+                 Condition="JAS_INSTALLDIR_X86 AND NOT INSTALLFOLDER" />
+    <SetProperty Id="INSTALLFOLDER" Action="RecoverInstallDirFromComponent" Value="[JAS_INSTALLDIR_COMPONENT]"
+                 After="RecoverInstallDirFromX86" Sequence="both"
+                 Condition="JAS_INSTALLDIR_COMPONENT AND NOT INSTALLFOLDER" />
+    <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromX64" Value="[JAS_DATADIR_X64]"
+                 After="RecoverInstallDirFromComponent" Sequence="both"
+                 Condition="JAS_DATADIR_X64 AND NOT DATAFOLDER" />
+    <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromX86" Value="[JAS_DATADIR_X86]"
+                 After="RecoverDataDirFromX64" Sequence="both"
+                 Condition="JAS_DATADIR_X86 AND NOT DATAFOLDER" />
+    <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromComponent" Value="[JAS_DATADIR_COMPONENT]"
+                 After="RecoverDataDirFromX86" Sequence="both"
+                 Condition="JAS_DATADIR_COMPONENT AND NOT DATAFOLDER" />
 
     <!-- The architecture of whatever is already installed - which is simply the name of the key that had a
          path in it. Left unset when only the component search found the product: an install from a version
          that predates these keys states no architecture, and guessing one would be worse than admitting it
          (so a migration away from such an install is not detected, and not blocked). -->
-    <CustomAction Id="RecordInstalledPlatformX64" Property="JAS_INSTALLED_PLATFORM" Value="x64" />
-    <CustomAction Id="RecordInstalledPlatformX86" Property="JAS_INSTALLED_PLATFORM" Value="x86" />
+    <SetProperty Id="JAS_INSTALLED_PLATFORM" Action="RecordInstalledPlatformX64" Value="x64"
+                 After="RecoverDataDirFromComponent" Sequence="both"
+                 Condition="JAS_INSTALLDIR_X64 AND NOT JAS_INSTALLED_PLATFORM" />
+    <SetProperty Id="JAS_INSTALLED_PLATFORM" Action="RecordInstalledPlatformX86" Value="x86"
+                 After="RecordInstalledPlatformX64" Sequence="both"
+                 Condition="JAS_INSTALLDIR_X86 AND NOT JAS_INSTALLED_PLATFORM" />
 
     <!-- ─── 4. The cross-architecture gate.
 
@@ -156,59 +182,25 @@
              installed product has been touched at all.
              NOT Installed keeps it off the uninstall and maintenance paths; during a major upgrade the
              incoming ProductCode is not installed yet, so the gate still applies there. ─── -->
-    <CustomAction Id="JasArchMismatch" Property="JAS_ARCH_MISMATCH" Value="1" />
     <!-- Kept under 255 characters: CustomAction.Target is capped there (ICE03), the same limit that forced
          WriteAdvanced1/2/3 apart. The full explanation lives in docs/installation.html; this has to fit. -->
     <CustomAction Id="BlockArchMigration"
                   Error="[ProductName] is installed as [JAS_INSTALLED_PLATFORM]; this is the $(var.InstallerPlatform) package. Switching architecture is not reversible. Re-run with FORCE_UPGRADE=1 to migrate (config, secret and data are kept), or use the [JAS_INSTALLED_PLATFORM] package." />
 
-    <!-- The two sequences are deliberate duplicates: the UI sequence resolves the paths for what the wizard
-         shows, the execute sequence for where the install actually writes, and a silent install runs only the
-         second. Keep them identical - a change to one is a change to both. -->
+    <!-- The whole precondition in one condition, rather than a separate action setting a JAS_ARCH_MISMATCH
+         flag for this one consumer to read: an architecture is recorded, it is not this package's, and the
+         migration was not asked for. Derivable state split across two sequenced actions made the gate's real
+         trigger readable only by joining them back together.
+         An error action cannot be scheduled with Sequence="both" the way the SetPropertys above are, so this
+         is the one thing still authored per sequence - two rows for one action, and no conditions to mirror. -->
     <InstallUISequence>
-      <Custom Action="RecoverInstallDirFromX64" After="AppSearch"
-              Condition="JAS_INSTALLDIR_X64 AND NOT INSTALLFOLDER" />
-      <Custom Action="RecoverInstallDirFromX86" After="RecoverInstallDirFromX64"
-              Condition="JAS_INSTALLDIR_X86 AND NOT INSTALLFOLDER" />
-      <Custom Action="RecoverInstallDirFromComponent" After="RecoverInstallDirFromX86"
-              Condition="JAS_INSTALLDIR_COMPONENT AND NOT INSTALLFOLDER" />
-      <Custom Action="RecoverDataDirFromX64" After="RecoverInstallDirFromComponent"
-              Condition="JAS_DATADIR_X64 AND NOT DATAFOLDER" />
-      <Custom Action="RecoverDataDirFromX86" After="RecoverDataDirFromX64"
-              Condition="JAS_DATADIR_X86 AND NOT DATAFOLDER" />
-      <Custom Action="RecoverDataDirFromComponent" After="RecoverDataDirFromX86"
-              Condition="JAS_DATADIR_COMPONENT AND NOT DATAFOLDER" />
-      <Custom Action="RecordInstalledPlatformX64" After="RecoverDataDirFromComponent"
-              Condition="JAS_INSTALLDIR_X64 AND NOT JAS_INSTALLED_PLATFORM" />
-      <Custom Action="RecordInstalledPlatformX86" After="RecordInstalledPlatformX64"
-              Condition="JAS_INSTALLDIR_X86 AND NOT JAS_INSTALLED_PLATFORM" />
-      <Custom Action="JasArchMismatch" After="RecordInstalledPlatformX86"
-              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot;" />
-      <Custom Action="BlockArchMigration" After="JasArchMismatch"
-              Condition="JAS_ARCH_MISMATCH AND NOT FORCE_UPGRADE AND NOT Installed" />
+      <Custom Action="BlockArchMigration" After="RecordInstalledPlatformX86"
+              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot; AND NOT FORCE_UPGRADE AND NOT Installed" />
     </InstallUISequence>
 
     <InstallExecuteSequence>
-      <Custom Action="RecoverInstallDirFromX64" After="AppSearch"
-              Condition="JAS_INSTALLDIR_X64 AND NOT INSTALLFOLDER" />
-      <Custom Action="RecoverInstallDirFromX86" After="RecoverInstallDirFromX64"
-              Condition="JAS_INSTALLDIR_X86 AND NOT INSTALLFOLDER" />
-      <Custom Action="RecoverInstallDirFromComponent" After="RecoverInstallDirFromX86"
-              Condition="JAS_INSTALLDIR_COMPONENT AND NOT INSTALLFOLDER" />
-      <Custom Action="RecoverDataDirFromX64" After="RecoverInstallDirFromComponent"
-              Condition="JAS_DATADIR_X64 AND NOT DATAFOLDER" />
-      <Custom Action="RecoverDataDirFromX86" After="RecoverDataDirFromX64"
-              Condition="JAS_DATADIR_X86 AND NOT DATAFOLDER" />
-      <Custom Action="RecoverDataDirFromComponent" After="RecoverDataDirFromX86"
-              Condition="JAS_DATADIR_COMPONENT AND NOT DATAFOLDER" />
-      <Custom Action="RecordInstalledPlatformX64" After="RecoverDataDirFromComponent"
-              Condition="JAS_INSTALLDIR_X64 AND NOT JAS_INSTALLED_PLATFORM" />
-      <Custom Action="RecordInstalledPlatformX86" After="RecordInstalledPlatformX64"
-              Condition="JAS_INSTALLDIR_X86 AND NOT JAS_INSTALLED_PLATFORM" />
-      <Custom Action="JasArchMismatch" After="RecordInstalledPlatformX86"
-              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot;" />
-      <Custom Action="BlockArchMigration" After="JasArchMismatch"
-              Condition="JAS_ARCH_MISMATCH AND NOT FORCE_UPGRADE AND NOT Installed" />
+      <Custom Action="BlockArchMigration" After="RecordInstalledPlatformX86"
+              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot; AND NOT FORCE_UPGRADE AND NOT Installed" />
     </InstallExecuteSequence>
 
   </Fragment>

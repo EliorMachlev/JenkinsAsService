@@ -8,7 +8,8 @@
     packages. It lives here once.
 
     Everything goes through WindowsInstaller.Installer late binding: the MSI object model has no usable
-    primary interop assembly on a GitHub runner, so InvokeMember is the practical way in.
+    primary interop assembly on a GitHub runner, so InvokeMember is the practical way in. That interop is
+    itself written once, in Invoke-MsiQuery - the public functions below are a query string plus a projection.
 #>
 
 Set-StrictMode -Version Latest
@@ -17,8 +18,17 @@ Set-StrictMode -Version Latest
 # and is the only authoritative statement of the architecture a package targets.
 $script:TemplateSummaryProperty = 7
 
+# The one piece of Windows Installer trivia nobody remembers: a 32-bit package's platform token is spelled
+# "Intel", not "x86". Held here, next to the function that reads the field, so no caller has to know it.
+$script:PlatformTokens = [ordered]@{
+    x64 = 'x64'
+    x86 = 'Intel'
+}
+
 # Named Get-, not New-: it opens a read-only handle and changes nothing. A New- verb would (correctly) draw
 # PSUseShouldProcessForStateChangingFunctions, since that verb promises a mutation this does not perform.
+# Every caller must pass the result to Close-MsiDatabase, or the package file stays open behind a live COM
+# reference until GC - which matters here because callers hand the same file to msiexec straight afterwards.
 function Get-MsiDatabase {
     param([Parameter(Mandatory)][string]$Path)
     $resolved = (Resolve-Path -LiteralPath $Path).ProviderPath
@@ -27,7 +37,60 @@ function Get-MsiDatabase {
         Installer = $installer
         Database  = $installer.GetType().InvokeMember(
             'OpenDatabase', 'InvokeMethod', $null, $installer, @($resolved, 0))
-        Path      = $resolved
+    }
+}
+
+function Close-MsiDatabase {
+    param([Parameter(Mandatory)][hashtable]$Msi)
+    foreach ($key in @('Database', 'Installer')) {
+        if ($Msi.ContainsKey($key) -and $null -ne $Msi[$key]) {
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($Msi[$key])
+        }
+    }
+}
+
+function Invoke-MsiQuery {
+    <#
+    .SYNOPSIS
+        Runs an MSI SQL query and returns each row as an object[] of its first $FieldCount string fields.
+    .DESCRIPTION
+        The whole late-bound OpenView/Execute/Fetch/StringData dance, in the only place it is written.
+        The view is closed and every record released as it goes, so a query does not leave the package open.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)]$Database,
+        [Parameter(Mandatory)][string]$Sql,
+        [Parameter(Mandatory)][int]$FieldCount
+    )
+
+    $view = $Database.GetType().InvokeMember(
+        'OpenView', 'InvokeMethod', $null, $Database, @($Sql))
+    try {
+        $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+
+        while ($true) {
+            $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+            if ($null -eq $record) { break }
+
+            try {
+                # A plain loop rather than a per-row scriptblock: the fields are read by index and nothing
+                # about the projection changes between rows.
+                $row = @()
+                foreach ($i in 1..$FieldCount) {
+                    $row += $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, $i)
+                }
+                # -NoEnumerate so each row reaches the caller as one object[] rather than being flattened
+                # into a single stream of fields.
+                Write-Output -NoEnumerate -InputObject $row
+            }
+            finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
+        }
+    }
+    finally {
+        $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) | Out-Null
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
     }
 }
 
@@ -45,9 +108,6 @@ function Get-MsiProperty {
         [Parameter(Mandatory)][string]$Name
     )
 
-    $msi = Get-MsiDatabase -Path $Path
-    $database = $msi.Database
-
     # Parameterised through a WHERE on a quoted literal: Name is caller-supplied, and string-building a
     # query around it is the SQL-injection shape even here. MSI SQL has no bound parameters for the SELECT
     # list, so the value is validated instead - property names are identifiers, nothing else.
@@ -55,13 +115,25 @@ function Get-MsiProperty {
         throw "Invalid MSI property name '$Name'."
     }
 
-    $view = $database.GetType().InvokeMember(
-        'OpenView', 'InvokeMethod', $null, $database, @("SELECT Value FROM Property WHERE Property='$Name'"))
-    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
-    $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-    if ($null -eq $record) { return $null }
+    $msi = Get-MsiDatabase -Path $Path
+    try {
+        $rows = @(Invoke-MsiQuery -Database $msi.Database -FieldCount 1 `
+                -Sql "SELECT Value FROM Property WHERE Property='$Name'")
+        if ($rows.Count -eq 0) { return $null }
+        return $rows[0][0]
+    }
+    finally { Close-MsiDatabase -Msi $msi }
+}
 
-    return $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1)
+function Get-MsiPlatformToken {
+    <#
+    .SYNOPSIS
+        The summary Template token an architecture is spelled with - x64 -> "x64", x86 -> "Intel".
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$Platform)
+    return $script:PlatformTokens[$Platform]
 }
 
 function Get-MsiPlatform {
@@ -75,13 +147,38 @@ function Get-MsiPlatform {
 
     $resolved = (Resolve-Path -LiteralPath $Path).ProviderPath
     $installer = New-Object -ComObject WindowsInstaller.Installer
-    $summary = $installer.GetType().InvokeMember(
-        'SummaryInformation', 'GetProperty', $null, $installer, @($resolved, 0))
-    $template = $summary.GetType().InvokeMember(
-        'Property', 'GetProperty', $null, $summary, @($script:TemplateSummaryProperty))
+    try {
+        $summary = $installer.GetType().InvokeMember(
+            'SummaryInformation', 'GetProperty', $null, $installer, @($resolved, 0))
+        try {
+            $template = $summary.GetType().InvokeMember(
+                'Property', 'GetProperty', $null, $summary, @($script:TemplateSummaryProperty))
+        }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($summary) }
+    }
+    finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
 
     # "x64;1033" -> "x64". An empty language suffix is legal, so split rather than assume.
     return ($template -split ';')[0]
+}
+
+function Get-MsiArchitecture {
+    <#
+    .SYNOPSIS
+        The architecture a package targets, normalised to x64/x86 - or the raw token if it is neither.
+    .DESCRIPTION
+        What callers actually want to compare against an x64/x86 parameter, without each of them having to
+        know how a 32-bit package spells itself.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $token = Get-MsiPlatform -Path $Path
+    foreach ($platform in $script:PlatformTokens.Keys) {
+        if ($script:PlatformTokens[$platform] -eq $token) { return $platform }
+    }
+    return $token
 }
 
 function Get-MsiControlEvent {
@@ -101,28 +198,23 @@ function Get-MsiControlEvent {
     param([Parameter(Mandatory)][string]$Path)
 
     $msi = Get-MsiDatabase -Path $Path
-    $database = $msi.Database
-
-    # No caller input reaches this query - the whole table is read and filtered in PowerShell.
-    $view = $database.GetType().InvokeMember(
-        'OpenView', 'InvokeMethod', $null, $database,
-        @('SELECT Dialog_, Control_, Event, Argument, Condition, Ordering FROM ControlEvent'))
-    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
-
-    while ($true) {
-        $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-        if ($null -eq $record) { break }
-
-        $field = { param($i) $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, $i) }
-        [pscustomobject]@{
-            Dialog    = & $field 1
-            Control   = & $field 2
-            Event     = & $field 3
-            Argument  = & $field 4
-            Condition = & $field 5
-            Ordering  = & $field 6
-        }
+    try {
+        # No caller input reaches this query - the whole table is read and filtered by the caller.
+        Invoke-MsiQuery -Database $msi.Database -FieldCount 6 `
+            -Sql 'SELECT Dialog_, Control_, Event, Argument, Condition, Ordering FROM ControlEvent' |
+            ForEach-Object {
+                [pscustomobject]@{
+                    Dialog    = $_[0]
+                    Control   = $_[1]
+                    Event     = $_[2]
+                    Argument  = $_[3]
+                    Condition = $_[4]
+                    Ordering  = $_[5]
+                }
+            }
     }
+    finally { Close-MsiDatabase -Msi $msi }
 }
 
-Export-ModuleMember -Function Get-MsiProperty, Get-MsiPlatform, Get-MsiControlEvent
+Export-ModuleMember -Function Get-MsiProperty, Get-MsiPlatform, Get-MsiPlatformToken,
+    Get-MsiArchitecture, Get-MsiControlEvent

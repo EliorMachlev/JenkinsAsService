@@ -26,7 +26,12 @@ param(
     # with the artifact.
     [Parameter(Mandatory)][string]$BundlePath,
     [Parameter(Mandatory)][string]$InstallerUrl,
-    [Parameter(Mandatory)][string]$OutputDirectory
+    [Parameter(Mandatory)][string]$OutputDirectory,
+    # The bundle's UpgradeCode, which is how winget matches an installed Burn bundle in ARP. Authored in
+    # Bundle.wxs; defaulted here rather than hardcoded inline so a rotation has one obvious place to land and
+    # a caller can pass the built bundle's own value. If the two ever disagree, winget stops recognising the
+    # installed package and every upgrade fails on a user's machine with nothing failing in CI.
+    [string]$BundleUpgradeCode = '{015B49BD-10B0-4FC7-802B-A248BD50A205}'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,7 +76,7 @@ InstallModes:
   - silent
   - silentWithProgress
 UpgradeBehavior: install
-ProductCode: '{015B49BD-10B0-4FC7-802B-A248BD50A205}'
+ProductCode: '$BundleUpgradeCode'
 ReleaseDate: $(Get-Date -Format 'yyyy-MM-dd')
 Installers:
   - Architecture: x64

@@ -41,6 +41,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 
 $installFolder = Join-Path $env:ProgramFiles 'Jenkins'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceBundleTest'
@@ -50,63 +51,9 @@ $serviceName = 'Jenkins'
 $logDir = Join-Path (Get-Location) 'msi-logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-$locationKeys = [ordered]@{
-    x64 = 'HKLM:\SOFTWARE\JenkinsAsService\x64'
-    x86 = 'HKLM:\SOFTWARE\WOW6432Node\JenkinsAsService\x86'
-}
-
-$script:Failures = @()
-
-function Assert-That {
-    param([Parameter(Mandatory)][bool]$Condition, [Parameter(Mandatory)][string]$Message)
-    if ($Condition) { Write-Host "  [PASS] $Message" }
-    else {
-        Write-Host "  [FAIL] $Message"
-        $script:Failures += $Message
-    }
-}
-
-function Get-RecordedLocation {
-    param([Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$Platform,
-          [Parameter(Mandatory)][string]$Name)
-    $key = Get-ItemProperty -Path $locationKeys[$Platform] -ErrorAction SilentlyContinue
-    if ($null -eq $key -or -not $key.PSObject.Properties[$Name]) { return $null }
-    return $key.$Name
-}
-
-function Get-InstalledPlatform {
-    $found = @($locationKeys.Keys | Where-Object { $null -ne (Get-RecordedLocation -Platform $_ -Name 'InstallPath') })
-    if ($found.Count -eq 0) { return $null }
-    if ($found.Count -gt 1) { return 'both' }
-    return $found[0]
-}
-
-# The architecture of the binary that actually landed on disk, read out of its PE header. The registry key
-# records what the package SAID it was; this is what it shipped. If those two ever disagree, every other
-# assertion in this suite is measuring the wrong thing.
-function Get-PeMachine {
-    param([Parameter(Mandatory)][string]$Path)
-    $stream = [System.IO.File]::OpenRead($Path)
-    try {
-        $reader = New-Object System.IO.BinaryReader($stream)
-        $stream.Position = 0x3C                      # e_lfanew: offset of the PE signature
-        $peOffset = $reader.ReadInt32()
-        $stream.Position = $peOffset + 4             # skip "PE\0\0" to the COFF Machine field
-        switch ($reader.ReadUInt16()) {
-            0x8664 { return 'x64' }
-            0x014C { return 'x86' }
-            default { return 'unknown' }
-        }
-    }
-    finally { $stream.Dispose() }
-}
-
-function Invoke-Process {
-    param([Parameter(Mandatory)][string]$FilePath, [Parameter(Mandatory)][string[]]$Arguments)
-    Write-Host "$FilePath $($Arguments -join ' ')"
-    $p = Start-Process $FilePath -ArgumentList $Arguments -Wait -PassThru
-    Write-Host "  exit code $($p.ExitCode)"
-    return $p.ExitCode
+function Get-BundleLogPath {
+    param([Parameter(Mandatory)][string]$Name)
+    return Join-Path $logDir "$Name.log"
 }
 
 # --------------------------------------------------------------------------------------------------
@@ -119,20 +66,20 @@ if (-not [Environment]::Is64BitOperatingSystem) {
 }
 $baselineVersion = Get-MsiProperty -Path $BaselineX86Msi -Name 'ProductVersion'
 Write-Host "  baseline x86 package: $baselineVersion"
-Assert-That ((Get-MsiPlatform -Path $BaselineX86Msi) -eq 'Intel') "the baseline package really targets x86"
+Assert-That ((Get-MsiArchitecture -Path $BaselineX86Msi) -eq 'x86') "the baseline package really targets x86"
 Assert-That (Test-Path $BundleExe) "the bundle exe exists at $BundleExe"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 1. Install the x86 MSI directly ==="
-$code = Invoke-Process -FilePath 'msiexec.exe' -Arguments @(
-    '/i', $BaselineX86Msi, '/quiet', '/norestart',
-    '/l*v', (Join-Path $logDir 'bundle-baseline.log'),
+$log = Get-BundleLogPath -Name 'bundle-baseline'
+$code = Invoke-Msiexec -LogPath $log -Arguments @(
+    '/i', $BaselineX86Msi,
     "DATAFOLDER=$dataFolder",
     'JENKINS_URL=https://127.0.0.1:59999',
     'JENKINS_SECRET=bundle-smoke-secret',
     'JENKINS_SECRET_MODE=Unprotected',
     'JENKINS_AGENT_NAME=bundle-node')
-if ($code -notin @(0, 3010)) { throw "baseline x86 install failed with $code" }
+Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'baseline x86 install'
 
 Assert-That ((Get-InstalledPlatform) -eq 'x86') "the baseline is recorded as x86"
 Assert-That ((Get-PeMachine -Path $agentExe) -eq 'x86') "the installed binary really is x86"
@@ -150,14 +97,9 @@ Write-Host "`n=== 2. Run the bundle - it must migrate x86 -> x64 unprompted ==="
 # No properties at all, and no force flag: the bundle supplies FORCE_UPGRADE=1 itself, because installing the
 # machine's native architecture is its policy rather than an option. Anything the install needs beyond that
 # has to come from what is already on disk.
-$code = Invoke-Process -FilePath $BundleExe -Arguments @(
-    '-quiet', '-norestart', '-log', (Join-Path $logDir 'bundle-migrate.log'))
-if ($code -notin @(0, 3010)) {
-    Write-Host "::error::bundle install failed with exit code $code - see artifact bundle-migrate.log"
-    $log = Join-Path $logDir 'bundle-migrate.log'
-    if (Test-Path $log) { Get-Content $log -Tail 60 | ForEach-Object { Write-Host "    $_" } }
-    throw "bundle exit code $code"
-}
+$log = Get-BundleLogPath -Name 'bundle-migrate'
+$code = Invoke-InstallerProcess -FilePath $BundleExe -Arguments @('-quiet', '-norestart', '-log', $log)
+Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'bundle install' -TailLines 60
 
 Assert-That ((Get-InstalledPlatform) -eq 'x64') "the bundle selected x64 for a 64-bit machine, and only x64"
 Assert-That ((Get-PeMachine -Path $agentExe) -eq 'x64') "the binary on disk really is x64 now"
@@ -165,7 +107,7 @@ Assert-That ((Get-PeMachine -Path $agentExe) -eq 'x64') "the binary on disk real
 # The purge check. If Burn planned the x86 product as a standalone uninstall instead of letting the x64 MSI's
 # MajorUpgrade replace it, PurgeInstallation would have run and taken all four of these with it.
 Assert-That (Test-Path $configPath) "appsettings.json survives the migration"
-$cfg = if (Test-Path $configPath) { Get-Content $configPath -Raw | ConvertFrom-Json } else { $null }
+$cfg = Get-InstalledConfig -Path $configPath
 Assert-That ($null -ne $cfg -and $cfg.Jenkins.Secret.Value -eq 'bundle-smoke-secret') `
     "the agent secret survives the migration"
 Assert-That ($null -ne $cfg -and $cfg.Jenkins.Logging.RetainedLogs -eq 5) `
@@ -182,29 +124,22 @@ Assert-That ($null -ne $service -and $service.Status -eq 'Running') "the service
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 3. Re-running the bundle on a matching architecture is a no-op, not a reinstall ==="
-$code = Invoke-Process -FilePath $BundleExe -Arguments @(
-    '-quiet', '-norestart', '-log', (Join-Path $logDir 'bundle-repeat.log'))
-Assert-That ($code -in @(0, 3010)) "re-running the bundle succeeds (exit code $code)"
-$cfg = if (Test-Path $configPath) { Get-Content $configPath -Raw | ConvertFrom-Json } else { $null }
+$code = Invoke-InstallerProcess -FilePath $BundleExe -Arguments @(
+    '-quiet', '-norestart', '-log', (Get-BundleLogPath -Name 'bundle-repeat'))
+Assert-That (Test-InstallerSuccess -ExitCode $code) "re-running the bundle succeeds (exit code $code)"
+$cfg = Get-InstalledConfig -Path $configPath
 Assert-That ($null -ne $cfg -and $cfg.Jenkins.Secret.Value -eq 'bundle-smoke-secret') `
     "the secret survives re-running the bundle over an identical install"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 4. Uninstall through the bundle ==="
-$code = Invoke-Process -FilePath $BundleExe -Arguments @(
-    '-uninstall', '-quiet', '-norestart', '-log', (Join-Path $logDir 'bundle-uninstall.log'))
-Assert-That ($code -in @(0, 3010)) "the bundle uninstalls cleanly (exit code $code)"
+$code = Invoke-InstallerProcess -FilePath $BundleExe -Arguments @(
+    '-uninstall', '-quiet', '-norestart', '-log', (Get-BundleLogPath -Name 'bundle-uninstall'))
+Assert-That (Test-InstallerSuccess -ExitCode $code) "the bundle uninstalls cleanly (exit code $code)"
 Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) "service is removed"
 Assert-That (-not (Test-Path $installFolder)) "the install folder is removed"
 Assert-That (-not (Test-Path $dataFolder)) "the data folder is removed"
 Assert-That ($null -eq (Get-InstalledPlatform)) "neither architecture key survives the uninstall"
 
 # --------------------------------------------------------------------------------------------------
-Write-Host ''
-if ($script:Failures.Count -gt 0) {
-    Write-Host "::error::$($script:Failures.Count) bundle assertion(s) failed"
-    $script:Failures | ForEach-Object { Write-Host "::error::  $_" }
-    exit 1
-}
-
-Write-Host "All bundle assertions passed."
+Complete-AssertionReport -Subject 'bundle'

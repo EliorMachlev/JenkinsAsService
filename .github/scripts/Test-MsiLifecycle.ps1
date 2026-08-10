@@ -35,6 +35,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 
 $installFolder = Join-Path $env:ProgramFiles 'Jenkins'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceTest'
@@ -54,49 +55,17 @@ $installProperties = @(
 
 # Where the package records the locations it installed to, so the NEXT package can find them instead of
 # resetting both to their defaults. Each architecture owns a named subkey, and which one exists IS the
-# statement of what is installed. This job installs x64, which writes the native 64-bit view.
-$locationKey = 'HKLM:\SOFTWARE\JenkinsAsService\x64'
-$otherArchKey = 'HKLM:\SOFTWARE\WOW6432Node\JenkinsAsService\x86'
+# statement of what is installed. This job installs x64, which writes the native 64-bit view. The paths
+# themselves live in MsiTestHelpers, which is what Get-RecordedLocation -Platform reads.
+$locationKey = Get-JasLocationKeyPath -Platform 'x64'
+$otherArchKey = Get-JasLocationKeyPath -Platform 'x86'
 
-$script:Failures = @()
-
-function Assert-That {
-    param([Parameter(Mandatory)][bool]$Condition, [Parameter(Mandatory)][string]$Message)
-    if ($Condition) {
-        Write-Host "  [PASS] $Message"
-    }
-    else {
-        Write-Host "  [FAIL] $Message"
-        $script:Failures += $Message
-    }
-}
-
+# Every install here must succeed, so the exit code is checked rather than returned.
 function Invoke-Msi {
     param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogName)
     $log = Join-Path $logDir "$LogName.log"
-    $all = $Arguments + @('/quiet', '/norestart', '/l*v', $log)
-    Write-Host "msiexec $($all -join ' ')"
-    $p = Start-Process msiexec.exe -ArgumentList $all -Wait -PassThru
-    # 3010 = success, reboot requested. Not an error for this package, but worth surfacing.
-    if ($p.ExitCode -notin @(0, 3010)) {
-        Write-Host "::error::msiexec failed with exit code $($p.ExitCode) - see artifact $LogName.log"
-        Get-Content $log -Tail 40 | ForEach-Object { Write-Host "    $_" }
-        throw "msiexec exit code $($p.ExitCode)"
-    }
-}
-
-# A single recorded location value, or $null. Guarded through PSObject.Properties for the same reason
-# Get-InstalledVersion is: Set-StrictMode makes reading an absent property a terminating error.
-function Get-RecordedLocation {
-    param([Parameter(Mandatory)][string]$Name)
-    $key = Get-ItemProperty -Path $locationKey -ErrorAction SilentlyContinue
-    if ($null -eq $key -or -not $key.PSObject.Properties[$Name]) { return $null }
-    return $key.$Name
-}
-
-function Get-Config {
-    if (-not (Test-Path $configPath)) { return $null }
-    return Get-Content $configPath -Raw | ConvertFrom-Json
+    $code = Invoke-Msiexec -Arguments $Arguments -LogPath $log
+    Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'msiexec'
 }
 
 # The installed product's version, from the uninstall registry keys.
@@ -177,7 +146,7 @@ Assert-That ($null -ne $service) "service '$serviceName' is registered"
 Assert-That (Test-Path $configPath) "appsettings.json written to the install folder"
 Assert-That (Test-Path $dataFolder) "data folder created at $dataFolder"
 
-$cfg = Get-Config
+$cfg = Get-InstalledConfig -Path $configPath
 Assert-That ($cfg.Jenkins.Connection.Url -eq 'https://127.0.0.1:59999') "Connection:Url persisted from the property"
 Assert-That ($cfg.Jenkins.Connection.AgentName -eq 'ci-node') "Connection:AgentName persisted from the property"
 Assert-That ($cfg.Jenkins.Secret.Value -eq 'ci-smoke-secret') "Secret:Value persisted"
@@ -195,9 +164,9 @@ Assert-That ($service.Status -eq 'Running') "service is Running after install (b
 # rather than installed as a tracked file, a relocated install folder would strand the only copy of the
 # secret at the old path. DATAFOLDER here is deliberately NOT the default, so a value that merely looks
 # plausible cannot pass.
-Assert-That ((Get-RecordedLocation -Name 'InstallPath') -eq "$installFolder\") `
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'InstallPath') -eq "$installFolder\") `
     "install location recorded at $locationKey\InstallPath"
-Assert-That ((Get-RecordedLocation -Name 'DataPath') -eq "$dataFolder\") `
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'DataPath') -eq "$dataFolder\") `
     "data location recorded at $locationKey\DataPath (the non-default DATAFOLDER, not the default)"
 # Which key holds the paths is how a later package tells a same-arch upgrade from a cross-arch migration, so
 # an x64 install writing anything under the x86 key would break that distinction in the quietest way possible.
@@ -230,7 +199,7 @@ Set-Content -Path $sentinel -Value 'operator data that must survive an upgrade a
 # UpgradeConfig really did reconcile the config that was already on disk.
 Invoke-Msi -LogName 'upgrade-v2' -Arguments @('/i', $V2Msi)
 
-$cfg = Get-Config
+$cfg = Get-InstalledConfig -Path $configPath
 Assert-That ($null -ne $cfg) "appsettings.json still exists after the upgrade"
 Assert-That ($cfg.Jenkins.Logging.RetainedLogs -eq 9) "an operator's edited value survives the upgrade"
 Assert-That ($cfg.Jenkins.Connection.AgentName -eq 'ci-node') "an unrelated value survives the upgrade"
@@ -254,9 +223,9 @@ Assert-That (Test-Path $sentinel) "the data folder SURVIVES an upgrade (the purg
 $strayDataFolder = Join-Path $env:ProgramData 'JenkinsAsService'
 Assert-That (-not (Test-Path $strayDataFolder)) `
     "no stray default data folder at $strayDataFolder - the recorded DATAFOLDER was recovered"
-Assert-That ((Get-RecordedLocation -Name 'InstallPath') -eq "$installFolder\") `
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'InstallPath') -eq "$installFolder\") `
     "the recorded install location survives the upgrade and still points at the real folder"
-Assert-That ((Get-RecordedLocation -Name 'DataPath') -eq "$dataFolder\") `
+Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'DataPath') -eq "$dataFolder\") `
     "the recorded data location survives the upgrade"
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -285,15 +254,8 @@ Assert-That (-not (Test-Path $dataFolder)) "the data folder is removed, with the
 
 # The location key is a tracked component, so a genuine uninstall takes it with everything else. Leaving it
 # would point the next fresh install at a folder that no longer exists.
-Assert-That ($null -eq (Get-RecordedLocation -Name 'InstallPath')) `
+Assert-That ($null -eq (Get-RecordedLocation -Platform 'x64' -Name 'InstallPath')) `
     "the recorded install location is removed - a later fresh install must not inherit a dead path"
 
 # --------------------------------------------------------------------------------------------------
-Write-Host ''
-if ($script:Failures.Count -gt 0) {
-    Write-Host "::error::$($script:Failures.Count) MSI lifecycle assertion(s) failed"
-    $script:Failures | ForEach-Object { Write-Host "::error::  $_" }
-    exit 1
-}
-
-Write-Host "All MSI lifecycle assertions passed."
+Complete-AssertionReport -Subject 'MSI lifecycle'

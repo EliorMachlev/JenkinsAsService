@@ -41,63 +41,18 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 
 $installFolder = Join-Path $env:ProgramFiles 'Jenkins'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceArchTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
 $serviceName = 'Jenkins'
-# Each architecture records itself under its own named subkey. An x86 install is additionally redirected into
-# WOW6432Node, since its component inherits the package's 32-bit-ness - so the arch is stated twice over.
-$locationKeys = [ordered]@{
-    x64 = 'HKLM:\SOFTWARE\JenkinsAsService\x64'
-    x86 = 'HKLM:\SOFTWARE\WOW6432Node\JenkinsAsService\x86'
-}
 $logDir = Join-Path (Get-Location) 'msi-logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-$script:Failures = @()
-
-function Assert-That {
-    param([Parameter(Mandatory)][bool]$Condition, [Parameter(Mandatory)][string]$Message)
-    if ($Condition) { Write-Host "  [PASS] $Message" }
-    else {
-        Write-Host "  [FAIL] $Message"
-        $script:Failures += $Message
-    }
-}
-
-# Returns the exit code instead of throwing on failure: this suite asserts on a NON-zero code as its main
-# result, so a failure here is data, not an error.
-function Invoke-MsiRaw {
-    param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogName)
-    $log = Join-Path $logDir "$LogName.log"
-    $all = $Arguments + @('/quiet', '/norestart', '/l*v', $log)
-    Write-Host "msiexec $($all -join ' ')"
-    return (Start-Process msiexec.exe -ArgumentList $all -Wait -PassThru).ExitCode
-}
-
-# A recorded value from one architecture's key, or $null when that architecture is not the installed one.
-function Get-RecordedLocation {
-    param([Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$Platform,
-          [Parameter(Mandatory)][string]$Name)
-    $key = Get-ItemProperty -Path $locationKeys[$Platform] -ErrorAction SilentlyContinue
-    if ($null -eq $key -or -not $key.PSObject.Properties[$Name]) { return $null }
-    return $key.$Name
-}
-
-# Which architecture the machine currently believes is installed - which is simply which key holds a path.
-# Returns $null if neither does, and 'both' if somehow both do, so a broken state fails loudly rather than
-# being silently reported as whichever one happened to be checked first.
-function Get-InstalledPlatform {
-    $found = @($locationKeys.Keys | Where-Object { $null -ne (Get-RecordedLocation -Platform $_ -Name 'InstallPath') })
-    if ($found.Count -eq 0) { return $null }
-    if ($found.Count -gt 1) { return 'both' }
-    return $found[0]
-}
-
-function Get-Config {
-    if (-not (Test-Path $configPath)) { return $null }
-    return Get-Content $configPath -Raw | ConvertFrom-Json
+function Get-ArchLogPath {
+    param([Parameter(Mandatory)][string]$Name)
+    return Join-Path $logDir "$Name.log"
 }
 
 # --------------------------------------------------------------------------------------------------
@@ -118,21 +73,22 @@ if ($FromPlatform -eq $ToPlatform) {
 
 # The packages must really be the architectures they are claimed to be, or the gate could be passing for the
 # wrong reason entirely.
-Assert-That ((Get-MsiPlatform -Path $FromMsi) -eq $(if ($FromPlatform -eq 'x64') { 'x64' } else { 'Intel' })) `
+Assert-That ((Get-MsiArchitecture -Path $FromMsi) -eq $FromPlatform) `
     "the 'from' package really targets $FromPlatform"
-Assert-That ((Get-MsiPlatform -Path $ToMsi) -eq $(if ($ToPlatform -eq 'x64') { 'x64' } else { 'Intel' })) `
+Assert-That ((Get-MsiArchitecture -Path $ToMsi) -eq $ToPlatform) `
     "the 'to' package really targets $ToPlatform"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 1. Install $FromPlatform $fromVersion ==="
-$code = Invoke-MsiRaw -LogName 'arch-install' -Arguments @(
+$log = Get-ArchLogPath -Name 'arch-install'
+$code = Invoke-Msiexec -LogPath $log -Arguments @(
     '/i', $FromMsi,
     "DATAFOLDER=$dataFolder",
     'JENKINS_URL=https://127.0.0.1:59999',
     'JENKINS_SECRET=arch-smoke-secret',
     'JENKINS_SECRET_MODE=Unprotected',
     'JENKINS_AGENT_NAME=arch-node')
-if ($code -notin @(0, 3010)) { throw "baseline install failed with $code" }
+Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'baseline install'
 
 Assert-That ((Get-InstalledPlatform) -eq $FromPlatform) `
     "installed architecture recorded as $FromPlatform, and under that key only"
@@ -146,8 +102,9 @@ $raw | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding utf8
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 2. $ToPlatform $toVersion WITHOUT FORCE_UPGRADE must be refused ==="
-$code = Invoke-MsiRaw -LogName 'arch-blocked' -Arguments @('/i', $ToMsi)
-Assert-That ($code -notin @(0, 3010)) "the cross-architecture install is refused (msiexec exit code $code)"
+$code = Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-blocked') -Arguments @('/i', $ToMsi)
+Assert-That (-not (Test-InstallerSuccess -ExitCode $code)) `
+    "the cross-architecture install is refused (msiexec exit code $code)"
 
 # The refusal has to be inert. BlockArchMigration is sequenced at 60, far ahead of InstallInitialize (1500)
 # and RemoveExistingProducts (1501), so nothing should have been removed, moved or reconfigured.
@@ -156,7 +113,7 @@ Assert-That ((Get-InstalledPlatform) -eq $FromPlatform) `
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service -and $service.Status -eq 'Running') `
     "the service is still Running after the refusal - a blocked install must not disturb the installed one"
-$cfg = Get-Config
+$cfg = Get-InstalledConfig -Path $configPath
 Assert-That ($null -ne $cfg -and $cfg.Jenkins.Secret.Value -eq 'arch-smoke-secret') `
     "the config and secret are untouched by the refusal"
 
@@ -164,12 +121,9 @@ Assert-That ($null -ne $cfg -and $cfg.Jenkins.Secret.Value -eq 'arch-smoke-secre
 Write-Host "`n=== 3. $ToPlatform $toVersion WITH FORCE_UPGRADE=1 must succeed ==="
 # No DATAFOLDER, no URL, no secret: a migration must recover all of that from what is already recorded on the
 # machine. Supplying any of it would hide a recovery that never happened.
-$code = Invoke-MsiRaw -LogName 'arch-forced' -Arguments @('/i', $ToMsi, 'FORCE_UPGRADE=1')
-if ($code -notin @(0, 3010)) {
-    Write-Host "::error::forced migration failed with exit code $code - see artifact arch-forced.log"
-    Get-Content (Join-Path $logDir 'arch-forced.log') -Tail 40 | ForEach-Object { Write-Host "    $_" }
-    throw "forced migration exit code $code"
-}
+$log = Get-ArchLogPath -Name 'arch-forced'
+$code = Invoke-Msiexec -LogPath $log -Arguments @('/i', $ToMsi, 'FORCE_UPGRADE=1')
+Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'forced migration'
 
 # Not just "the new key exists" - the OLD one has to be gone, or the next package sees two architectures
 # installed at once and the gate starts firing against a product that no longer exists.
@@ -182,7 +136,7 @@ Assert-That ((Get-RecordedLocation -Platform $ToPlatform -Name 'DataPath') -eq "
 Assert-That (-not (Test-Path (Join-Path $env:ProgramData 'JenkinsAsService'))) `
     "no stray default data folder was created by the migration"
 
-$cfg = Get-Config
+$cfg = Get-InstalledConfig -Path $configPath
 Assert-That ($null -ne $cfg) "appsettings.json still exists after the migration"
 Assert-That ($cfg.Jenkins.Secret.Value -eq 'arch-smoke-secret') `
     "the secret survives a migration that was never given JENKINS_SECRET"
@@ -194,17 +148,10 @@ Assert-That ($null -ne $service -and $service.Status -eq 'Running') "the service
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 4. Clean up ==="
-Invoke-MsiRaw -LogName 'arch-uninstall' -Arguments @('/x', $ToMsi) | Out-Null
+Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-uninstall') -Arguments @('/x', $ToMsi) | Out-Null
 Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) "service is removed"
 Assert-That (-not (Test-Path $dataFolder)) "the data folder is removed"
 Assert-That ($null -eq (Get-InstalledPlatform)) "neither architecture key survives the uninstall"
 
 # --------------------------------------------------------------------------------------------------
-Write-Host ''
-if ($script:Failures.Count -gt 0) {
-    Write-Host "::error::$($script:Failures.Count) architecture-migration assertion(s) failed"
-    $script:Failures | ForEach-Object { Write-Host "::error::  $_" }
-    exit 1
-}
-
-Write-Host "All architecture-migration assertions passed."
+Complete-AssertionReport -Subject 'architecture-migration'
