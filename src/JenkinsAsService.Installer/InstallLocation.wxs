@@ -1,0 +1,216 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- ════════════════════════════════════════════════════════════════════════════════════════════════
+       Remembering WHERE the previous version was installed.
+
+       The service itself never needs this: at runtime the install folder is AppContext.BaseDirectory (the
+       exe's own folder) and the data folder is Jenkins:Agent:DataDirectory read from the appsettings.json
+       sitting beside it. That chain only works once you already hold the exe.
+
+       An upgrade is upstream of it. Windows Installer has to decide where to PUT the exe before anything can
+       be read back, and the package recorded nothing to decide with - so INSTALLFOLDER and DATAFOLDER both
+       reset to their defaults on every upgrade. Two consequences, neither cosmetic:
+
+         * A non-default install folder was silently relocated to Program Files. appsettings.json is written
+           by a custom action and is NOT a tracked MSI file, so it stays behind at the old path - the new
+           install has no config, UpgradeConfig has nothing to reconcile, and the service comes up with no
+           URL and no secret.
+         * A non-default DATAFOLDER meant the DataFolderAcl component created and ACL'd a stray
+           %ProgramData%\JenkinsAsService, granting the service account write on a folder nothing uses. The
+           real data folder kept working (the config still pointed at it), so nothing failed loudly; and
+           uninstall's purge reads DataDirectory out of the config, so the stray outlived the product.
+
+       Both locations are therefore recorded at install time and searched for at the start of the next one.
+       ════════════════════════════════════════════════════════════════════════════════════════════════ -->
+  <Fragment>
+
+    <!-- ─── 1. Record. Written on every install, including the new product of a major upgrade, so the values
+             track the package rather than going stale. Tracked as a normal component, so a genuine uninstall
+             removes the key and a reinstall does not inherit a dead path.
+
+             HKLM, never HKCU: the product is perMachine and its custom actions run as SYSTEM, so a per-user
+             hive would be both wrong and unreadable from the account that needs it.
+
+             Each architecture owns a named subkey - SOFTWARE\JenkinsAsService\x64 and ...\x86 - so WHICH key
+             holds a path is itself the statement of which architecture is installed. That is the only way a
+             later package can tell a same-arch upgrade from a cross-arch migration: the two share an
+             UpgradeCode, and FindRelatedProducts cannot distinguish them. It needs no separate value to go
+             stale, and it is legible to anyone poking at the machine with regedit.
+
+             No Bitness attribute - the component inherits the package's, so the x64 package writes the native
+             64-bit view and the x86 package writes WOW6432Node. The searches below therefore read each key in
+             the matching view, and read both, which is what makes the cross-architecture case detectable. ─── -->
+    <!-- A GUID PER ARCHITECTURE, unlike ServiceComponent, and the difference matters. Component GUIDs are
+         what Windows Installer reference-counts, and a GUID must always name the same resource - but these
+         two components write different keys in different registry views. Sharing one GUID would make a forced
+         cross-arch migration install the new component (refcount 2) and then remove the old product's
+         reference (back to 1), so the OLD architecture's key would never be deleted. Both keys would then
+         exist, and the next package would see two architectures installed at once and block against a product
+         that is no longer there. ServiceComponent can share a GUID precisely because both packages install
+         the same file to the same path. -->
+    <?if $(var.InstallerPlatform) = "x64" ?>
+      <?define LocationComponentGuid = "F06D514A-43FA-4FAE-B1F8-4B7A050B19E3" ?>
+    <?else?>
+      <?define LocationComponentGuid = "F49566AD-A619-40DF-BE18-CA39E6ABA61D" ?>
+    <?endif?>
+    <Component Id="InstallLocationRegistry" Directory="INSTALLFOLDER"
+               Guid="$(var.LocationComponentGuid)">
+      <RegistryKey Root="HKLM" Key="SOFTWARE\JenkinsAsService\$(var.InstallerPlatform)">
+        <RegistryValue Name="InstallPath" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <RegistryValue Name="DataPath" Type="string" Value="[DATAFOLDER]" />
+      </RegistryKey>
+    </Component>
+
+    <!-- ─── 2. Search. Three sources per location, deliberately overlapping.
+
+             The registry values are the primary source and are read in BOTH views, so an x64 package sees an
+             x86 install and vice versa.
+
+             ComponentSearch is the fallback: it resolves the directory of a component by GUID out of
+             Windows Installer's own component registration, which is architecture-neutral and needs nothing
+             this package wrote. It covers the case the registry cannot - a product installed by a version
+             that predates this key, which has no InstallPath to find. Those installs also carry no recorded
+             Platform, so a cross-architecture migration away from one cannot be detected; see the gate below.
+             ─── -->
+    <Property Id="JAS_INSTALLDIR_X64" Secure="yes">
+      <RegistrySearch Id="SearchInstallPathX64" Root="HKLM" Key="SOFTWARE\JenkinsAsService\x64"
+                      Name="InstallPath" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="JAS_INSTALLDIR_X86" Secure="yes">
+      <RegistrySearch Id="SearchInstallPathX86" Root="HKLM" Key="SOFTWARE\JenkinsAsService\x86"
+                      Name="InstallPath" Type="raw" Bitness="always32" />
+    </Property>
+    <Property Id="JAS_INSTALLDIR_COMPONENT" Secure="yes">
+      <ComponentSearch Id="SearchInstallByComponent"
+                       Guid="A3AFD0C7-0249-4230-8F74-1A229AF71C2C" Type="directory" />
+    </Property>
+
+    <Property Id="JAS_DATADIR_X64" Secure="yes">
+      <RegistrySearch Id="SearchDataPathX64" Root="HKLM" Key="SOFTWARE\JenkinsAsService\x64"
+                      Name="DataPath" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="JAS_DATADIR_X86" Secure="yes">
+      <RegistrySearch Id="SearchDataPathX86" Root="HKLM" Key="SOFTWARE\JenkinsAsService\x86"
+                      Name="DataPath" Type="raw" Bitness="always32" />
+    </Property>
+    <Property Id="JAS_DATADIR_COMPONENT" Secure="yes">
+      <ComponentSearch Id="SearchDataByComponent"
+                       Guid="9D1F73AD-383E-436A-8F1A-7C83CFC0A5A0" Type="directory" />
+    </Property>
+
+    <!-- ─── 3. Apply. Plain type-51 property-setting custom actions rather than SetDirectory, so the
+             scheduling and the precedence are visible in one place instead of being implied.
+
+             Precedence is FIRST match wins, encoded by the `NOT <target>` clause every one of them carries:
+             once a higher-priority action has set the property, every later action's condition is false.
+             Order: the x64 key, then the x86 key, then the component registration. Only one of the two keys
+             can exist at a time - the packages share an UpgradeCode and cannot coexist - so the order between
+             them settles nothing in practice; it is fixed so the behaviour is stated rather than incidental.
+
+             That same clause is what protects an explicit override. Before CostFinalize a directory property
+             holds a value ONLY if it was passed on the command line - the Directory table has not been
+             costed yet - so `NOT INSTALLFOLDER` reads exactly as "the operator did not pass INSTALLFOLDER=".
+             An operator who names a path still gets it; the recovery only fills a vacuum.
+
+             Everything here must run after AppSearch (where the values above are found) and before
+             CostFinalize (where directory properties are resolved into real paths). In this package that is
+             AppSearch at 50, these at 51-60, CostFinalize at 1000. Both sequences are authored: the UI
+             sequence needs the recovered paths for what it displays, the execute sequence for where it
+             actually writes. ─── -->
+    <CustomAction Id="RecoverInstallDirFromX64" Property="INSTALLFOLDER" Value="[JAS_INSTALLDIR_X64]" />
+    <CustomAction Id="RecoverInstallDirFromX86" Property="INSTALLFOLDER" Value="[JAS_INSTALLDIR_X86]" />
+    <CustomAction Id="RecoverInstallDirFromComponent" Property="INSTALLFOLDER" Value="[JAS_INSTALLDIR_COMPONENT]" />
+    <CustomAction Id="RecoverDataDirFromX64" Property="DATAFOLDER" Value="[JAS_DATADIR_X64]" />
+    <CustomAction Id="RecoverDataDirFromX86" Property="DATAFOLDER" Value="[JAS_DATADIR_X86]" />
+    <CustomAction Id="RecoverDataDirFromComponent" Property="DATAFOLDER" Value="[JAS_DATADIR_COMPONENT]" />
+
+    <!-- The architecture of whatever is already installed - which is simply the name of the key that had a
+         path in it. Left unset when only the component search found the product: an install from a version
+         that predates these keys states no architecture, and guessing one would be worse than admitting it
+         (so a migration away from such an install is not detected, and not blocked). -->
+    <CustomAction Id="RecordInstalledPlatformX64" Property="JAS_INSTALLED_PLATFORM" Value="x64" />
+    <CustomAction Id="RecordInstalledPlatformX86" Property="JAS_INSTALLED_PLATFORM" Value="x86" />
+
+    <!-- ─── 4. The cross-architecture gate.
+
+             x64 and x86 share an UpgradeCode, so MajorUpgrade will happily replace one with the other and
+             FindRelatedProducts cannot tell the difference. That migration is supported - but only when it is
+             asked for, because it is not what an operator who typed the wrong filename meant to do, and there
+             is no undo: the old product is removed at InstallInitialize, before anything can be reconsidered.
+
+             So it is opt-in. FORCE_UPGRADE=1 on the command line, and nothing else. Windows Installer takes
+             PROPERTIES rather than command-line switches, so the force-upgrade opt-in is spelled
+             FORCE_UPGRADE=1 here rather than as a dashed flag. The requirement is the same in the wizard and
+             in a silent install: a silent run has nobody to prompt, and a run that would prompt has no
+             business being easier to get wrong.
+
+             When it IS forced, the recovery above has already pointed INSTALLFOLDER and DATAFOLDER at the
+             existing locations, so the migrated install lands on top of the config and data it inherits.
+             That is required, not merely tidy - appsettings.json is not a tracked MSI file, and an install
+             that moved would leave the only copy of the secret behind at the old path.
+
+             A type-19 error action rather than a LaunchCondition: LaunchConditions is sequenced at 100, after
+             AppSearch (50) but the gate has to sit next to the searches it depends on, and authoring it as an
+             error action keeps the two adjacent instead of split across files. It lands at 60 - far ahead of
+             InstallInitialize (1500) and RemoveExistingProducts (1501) - so a blocked run aborts before the
+             installed product has been touched at all.
+             NOT Installed keeps it off the uninstall and maintenance paths; during a major upgrade the
+             incoming ProductCode is not installed yet, so the gate still applies there. ─── -->
+    <CustomAction Id="JasArchMismatch" Property="JAS_ARCH_MISMATCH" Value="1" />
+    <!-- Kept under 255 characters: CustomAction.Target is capped there (ICE03), the same limit that forced
+         WriteAdvanced1/2/3 apart. The full explanation lives in docs/installation.html; this has to fit. -->
+    <CustomAction Id="BlockArchMigration"
+                  Error="[ProductName] is installed as [JAS_INSTALLED_PLATFORM]; this is the $(var.InstallerPlatform) package. Switching architecture is not reversible. Re-run with FORCE_UPGRADE=1 to migrate (config, secret and data are kept), or use the [JAS_INSTALLED_PLATFORM] package." />
+
+    <!-- The two sequences are deliberate duplicates: the UI sequence resolves the paths for what the wizard
+         shows, the execute sequence for where the install actually writes, and a silent install runs only the
+         second. Keep them identical - a change to one is a change to both. -->
+    <InstallUISequence>
+      <Custom Action="RecoverInstallDirFromX64" After="AppSearch"
+              Condition="JAS_INSTALLDIR_X64 AND NOT INSTALLFOLDER" />
+      <Custom Action="RecoverInstallDirFromX86" After="RecoverInstallDirFromX64"
+              Condition="JAS_INSTALLDIR_X86 AND NOT INSTALLFOLDER" />
+      <Custom Action="RecoverInstallDirFromComponent" After="RecoverInstallDirFromX86"
+              Condition="JAS_INSTALLDIR_COMPONENT AND NOT INSTALLFOLDER" />
+      <Custom Action="RecoverDataDirFromX64" After="RecoverInstallDirFromComponent"
+              Condition="JAS_DATADIR_X64 AND NOT DATAFOLDER" />
+      <Custom Action="RecoverDataDirFromX86" After="RecoverDataDirFromX64"
+              Condition="JAS_DATADIR_X86 AND NOT DATAFOLDER" />
+      <Custom Action="RecoverDataDirFromComponent" After="RecoverDataDirFromX86"
+              Condition="JAS_DATADIR_COMPONENT AND NOT DATAFOLDER" />
+      <Custom Action="RecordInstalledPlatformX64" After="RecoverDataDirFromComponent"
+              Condition="JAS_INSTALLDIR_X64 AND NOT JAS_INSTALLED_PLATFORM" />
+      <Custom Action="RecordInstalledPlatformX86" After="RecordInstalledPlatformX64"
+              Condition="JAS_INSTALLDIR_X86 AND NOT JAS_INSTALLED_PLATFORM" />
+      <Custom Action="JasArchMismatch" After="RecordInstalledPlatformX86"
+              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot;" />
+      <Custom Action="BlockArchMigration" After="JasArchMismatch"
+              Condition="JAS_ARCH_MISMATCH AND NOT FORCE_UPGRADE AND NOT Installed" />
+    </InstallUISequence>
+
+    <InstallExecuteSequence>
+      <Custom Action="RecoverInstallDirFromX64" After="AppSearch"
+              Condition="JAS_INSTALLDIR_X64 AND NOT INSTALLFOLDER" />
+      <Custom Action="RecoverInstallDirFromX86" After="RecoverInstallDirFromX64"
+              Condition="JAS_INSTALLDIR_X86 AND NOT INSTALLFOLDER" />
+      <Custom Action="RecoverInstallDirFromComponent" After="RecoverInstallDirFromX86"
+              Condition="JAS_INSTALLDIR_COMPONENT AND NOT INSTALLFOLDER" />
+      <Custom Action="RecoverDataDirFromX64" After="RecoverInstallDirFromComponent"
+              Condition="JAS_DATADIR_X64 AND NOT DATAFOLDER" />
+      <Custom Action="RecoverDataDirFromX86" After="RecoverDataDirFromX64"
+              Condition="JAS_DATADIR_X86 AND NOT DATAFOLDER" />
+      <Custom Action="RecoverDataDirFromComponent" After="RecoverDataDirFromX86"
+              Condition="JAS_DATADIR_COMPONENT AND NOT DATAFOLDER" />
+      <Custom Action="RecordInstalledPlatformX64" After="RecoverDataDirFromComponent"
+              Condition="JAS_INSTALLDIR_X64 AND NOT JAS_INSTALLED_PLATFORM" />
+      <Custom Action="RecordInstalledPlatformX86" After="RecordInstalledPlatformX64"
+              Condition="JAS_INSTALLDIR_X86 AND NOT JAS_INSTALLED_PLATFORM" />
+      <Custom Action="JasArchMismatch" After="RecordInstalledPlatformX86"
+              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot;" />
+      <Custom Action="BlockArchMigration" After="JasArchMismatch"
+              Condition="JAS_ARCH_MISMATCH AND NOT FORCE_UPGRADE AND NOT Installed" />
+    </InstallExecuteSequence>
+
+  </Fragment>
+
+</Wix>

@@ -8,10 +8,24 @@
     <InstallerPlatform>x64</InstallerPlatform>
     <!-- Set via -p:PublishDir=... from the build script after dotnet publish -->
     <PublishDir Condition="'$(PublishDir)' == ''">..\..\publish\x64\</PublishDir>
+
+    <!-- ICE80 fires when a 32-bit package uses a 64-bit registry locator, and the x86 package does exactly
+         that on purpose: InstallLocation.wxs reads BOTH registry views so an x86 install can detect - and be
+         blocked from silently replacing - an existing x64 install. The alternative is not reading the 64-bit
+         view, which is precisely the bug the search exists to prevent.
+         Scoped to the x86 build only, so the x64 package keeps the full ICE suite, and narrowed to ICE80 so
+         the genuine failure this rule also covers (a 32-bit package installing 64-bit COMPONENTS - all
+         components here are at the package's own bitness) still fails the x64 build if it is ever
+         introduced there. -->
+    <SuppressIces Condition="'$(InstallerPlatform)' == 'x86'">ICE80</SuppressIces>
   </PropertyGroup>
 
   <PropertyGroup>
     <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <!-- InstallerPlatform is NOT listed here: the WiX SDK already declares it as a preprocessor variable, and
+         re-declaring it is a hard error (WIX0288). InstallLocation.wxs consumes $(var.InstallerPlatform) to
+         record which architecture installed the product - x64 and x86 share an UpgradeCode, so that recorded
+         value is the only thing that distinguishes a same-arch upgrade from a cross-arch migration. -->
     <DefineConstants>PublishDir=$(PublishDir);Version=$(Version)</DefineConstants>
   </PropertyGroup>
 

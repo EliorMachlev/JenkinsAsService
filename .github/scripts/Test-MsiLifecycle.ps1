@@ -52,6 +52,12 @@ $installProperties = @(
     'JENKINS_SECRET_MODE=Unprotected'
 )
 
+# Where the package records the locations it installed to, so the NEXT package can find them instead of
+# resetting both to their defaults. Each architecture owns a named subkey, and which one exists IS the
+# statement of what is installed. This job installs x64, which writes the native 64-bit view.
+$locationKey = 'HKLM:\SOFTWARE\JenkinsAsService\x64'
+$otherArchKey = 'HKLM:\SOFTWARE\WOW6432Node\JenkinsAsService\x86'
+
 $script:Failures = @()
 
 function Assert-That {
@@ -77,6 +83,15 @@ function Invoke-Msi {
         Get-Content $log -Tail 40 | ForEach-Object { Write-Host "    $_" }
         throw "msiexec exit code $($p.ExitCode)"
     }
+}
+
+# A single recorded location value, or $null. Guarded through PSObject.Properties for the same reason
+# Get-InstalledVersion is: Set-StrictMode makes reading an absent property a terminating error.
+function Get-RecordedLocation {
+    param([Parameter(Mandatory)][string]$Name)
+    $key = Get-ItemProperty -Path $locationKey -ErrorAction SilentlyContinue
+    if ($null -eq $key -or -not $key.PSObject.Properties[$Name]) { return $null }
+    return $key.$Name
 }
 
 function Get-Config {
@@ -175,6 +190,20 @@ Assert-That ($cfg.Jenkins.Agent.DataDirectory -eq $dataFolder) "Agent:DataDirect
 $service.Refresh()
 Assert-That ($service.Status -eq 'Running') "service is Running after install (bring-up retries, it must not exit)"
 
+# The locations are recorded so the next package can recover them. Without this the upgrade below would reset
+# INSTALLFOLDER and DATAFOLDER to their defaults - and since appsettings.json is written by a custom action
+# rather than installed as a tracked file, a relocated install folder would strand the only copy of the
+# secret at the old path. DATAFOLDER here is deliberately NOT the default, so a value that merely looks
+# plausible cannot pass.
+Assert-That ((Get-RecordedLocation -Name 'InstallPath') -eq "$installFolder\") `
+    "install location recorded at $locationKey\InstallPath"
+Assert-That ((Get-RecordedLocation -Name 'DataPath') -eq "$dataFolder\") `
+    "data location recorded at $locationKey\DataPath (the non-default DATAFOLDER, not the default)"
+# Which key holds the paths is how a later package tells a same-arch upgrade from a cross-arch migration, so
+# an x64 install writing anything under the x86 key would break that distinction in the quietest way possible.
+Assert-That (-not (Test-Path $otherArchKey)) `
+    "the x64 install recorded itself under the x64 key only - nothing under $otherArchKey"
+
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 2. Operator edits the config, then upgrades to $v2Version ==="
 
@@ -218,6 +247,18 @@ Assert-That ($null -eq $cfg.Jenkins.Logging.PSObject.Properties['NoSuchSetting']
 
 Assert-That (Test-Path $sentinel) "the data folder SURVIVES an upgrade (the purge must be gated on NOT UPGRADINGPRODUCTCODE)"
 
+# The upgrade was given no DATAFOLDER, so it had to recover the recorded one. If it fell back to the default
+# instead, the DataFolderAcl component would create and ACL a stray %ProgramData%\JenkinsAsService - granting
+# the service account write on a folder nothing uses, which uninstall's purge (it reads DataDirectory out of
+# the config) would then leave behind for good. Nothing here should ever create the default path.
+$strayDataFolder = Join-Path $env:ProgramData 'JenkinsAsService'
+Assert-That (-not (Test-Path $strayDataFolder)) `
+    "no stray default data folder at $strayDataFolder - the recorded DATAFOLDER was recovered"
+Assert-That ((Get-RecordedLocation -Name 'InstallPath') -eq "$installFolder\") `
+    "the recorded install location survives the upgrade and still points at the real folder"
+Assert-That ((Get-RecordedLocation -Name 'DataPath') -eq "$dataFolder\") `
+    "the recorded data location survives the upgrade"
+
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service -and $service.Status -eq 'Running') "service is Running after the upgrade"
 
@@ -241,6 +282,11 @@ Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyCont
 Assert-That (-not (Test-Path $configPath)) "appsettings.json is removed from the install folder"
 Assert-That (-not (Test-Path $installFolder)) "the install folder is removed"
 Assert-That (-not (Test-Path $dataFolder)) "the data folder is removed, with the logs, agent.jar and work tree"
+
+# The location key is a tracked component, so a genuine uninstall takes it with everything else. Leaving it
+# would point the next fresh install at a folder that no longer exists.
+Assert-That ($null -eq (Get-RecordedLocation -Name 'InstallPath')) `
+    "the recorded install location is removed - a later fresh install must not inherit a dead path"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host ''

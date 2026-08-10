@@ -76,7 +76,7 @@ jobs:
   # WIX_UPGRADE_DETECTED only happens during an actual in-place upgrade — previously a manual-verify step,
   # which is why the upgrade path stayed on the "not verified" list release after release.
   msi-lifecycle:
-    name: MSI Install / Upgrade / Uninstall
+    name: MSI Install / Upgrade / Uninstall / Arch Migration
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -113,9 +113,37 @@ jobs:
           version: 1.0.1
           output: msi/v2/
 
+      # The x64 <-> x86 migration gate needs a real package of the OTHER architecture: the two share an
+      # UpgradeCode, so nothing short of actually installing one over the other exercises it.
+      - name: Publish x86
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-x86
+          output: publish/x86/
+
+      # 1.0.2, so it is an upgrade of the 1.0.0 baseline the migration test installs (matching versions would
+      # make msiexec reconfigure instead, and every assertion would pass without a migration happening).
+      - name: Build MSI x86 1.0.2
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x86/
+          platform: x86
+          version: 1.0.2
+          output: msi/x86/
+
       - name: Install, upgrade, uninstall
         shell: pwsh
         run: .github/scripts/Test-MsiLifecycle.ps1 -V1Msi (Get-Item msi/v1/*.msi).FullName -V2Msi (Get-Item msi/v2/*.msi).FullName
+
+      # Runs after the lifecycle suite, which ends with an uninstall - both suites install the same product,
+      # so they must not overlap. This one installs x64, proves the x86 package is refused without
+      # FORCE_UPGRADE=1 and accepted with it, then uninstalls.
+      - name: Cross-architecture migration gate
+        shell: pwsh
+        run: >-
+          .github/scripts/Test-MsiArchMigration.ps1
+          -FromMsi (Get-Item msi/v1/*.msi).FullName -FromPlatform x64
+          -ToMsi (Get-Item msi/x86/*.msi).FullName -ToPlatform x86
 
       - name: Upload MSI logs on failure
         if: failure()

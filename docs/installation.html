@@ -217,6 +217,19 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     </div>
 
     <div class="callout callout-note">
+      <div class="callout-title">Where the previous version was installed</div>
+      <p>Each install records its own locations under <code>HKLM\SOFTWARE\JenkinsAsService\x64</code> or <code>HKLM\SOFTWARE\JenkinsAsService\x86</code> (values <code>InstallPath</code> and <code>DataPath</code>), and the next package reads both keys back. An upgrade therefore keeps a non-default install folder and a non-default <code>DATAFOLDER</code> instead of resetting them to the defaults. That matters more than it sounds: <code>appsettings.json</code> is written by a custom action rather than installed as a tracked file, so an upgrade that relocated the install folder would leave the only copy of your secret behind at the old path.</p>
+      <p>Passing <code>INSTALLFOLDER=</code> or <code>DATAFOLDER=</code> explicitly still wins &mdash; the recovery only fills in what you did not specify. For a product installed by a version that predates these keys, the install folder is instead recovered from Windows Installer's own component registration, and the data folder falls back to the default.</p>
+    </div>
+
+    <div class="callout callout-warning">
+      <div class="callout-title">Changing architecture (x64 &harr; x86)</div>
+      <p>The two packages share an <code>UpgradeCode</code>, so either will replace the other &mdash; which is almost never what someone who grabbed the wrong file intended, and there is no undo once the old product has been removed. Installing the other architecture is therefore refused unless you ask for it:</p>
+      <pre><code>msiexec /i JenkinsAsService.msi FORCE_UPGRADE=1</code></pre>
+      <p>The requirement is the same in the wizard and in a silent install. A refused run is inert &mdash; it aborts before the installed product is touched, so the service keeps running and the configuration is untouched. A forced migration keeps the existing install folder, data folder, configuration and secret; only the binaries change architecture.</p>
+    </div>
+
+    <div class="callout callout-note">
       <div class="callout-title">Service account</div>
       <p>The default <code>NT SERVICE\Jenkins</code> virtual account needs no password and no Active Directory. For a domain <strong>gMSA</strong> or a dedicated password-based account, override <code>SERVICE_ACCOUNT</code> (plus <code>SERVICE_ACCOUNT_DOMAIN</code> / <code>SERVICE_ACCOUNT_NAME</code> for the folder ACL, and <code>SERVICE_PASSWORD</code> &mdash; leave empty for gMSA).</p>
     </div>

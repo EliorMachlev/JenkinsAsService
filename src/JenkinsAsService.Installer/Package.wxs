@@ -52,6 +52,10 @@
     <Property Id="SERVICE_ACCOUNT_NAME" Value="Jenkins" Secure="yes" />
     <Property Id="SERVICE_PASSWORD" Secure="yes" Hidden="yes" />
 
+    <!-- Opt-in for replacing an installed product with the OTHER architecture's package. Off by default and
+         required in both the wizard and a silent install; see the gate in InstallLocation.wxs for why. -->
+    <Property Id="FORCE_UPGRADE" Secure="yes" />
+
     <!-- Prefill the Java Path field from JAVA_HOME so the wizard shows the detected JDK and how it was found.
          UI sequence only and gated on an empty value, so a silent install that sets no explicit java path
          still defers to the runtime resolver instead of pinning JAVA_HOME. The user can clear or override it. -->
@@ -62,6 +66,7 @@
       <ComponentGroupRef Id="PublishOutput" />
       <ComponentRef Id="ServiceComponent" />
       <ComponentRef Id="DataFolderAcl" />
+      <ComponentRef Id="InstallLocationRegistry" />
     </Feature>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
