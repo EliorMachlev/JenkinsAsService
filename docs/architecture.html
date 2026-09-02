@@ -77,6 +77,11 @@
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; AgentProcessLauncher.cs                       # IAgentProcessLauncher/IAgentProcess seam
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ProcessMitigations.cs, EnvironmentSanitizer.cs, ConfigAclHardener.cs,
 &#x2502;   &#x2502;   &#x2502;   EventLogSourceInstaller.cs                    # Hardening
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; DataDirectoryAcl.cs, GrantDataAccessCommand.cs,   # data-folder ACL grant, and
+&#x2502;   &#x2502;   &#x2502;   ServiceRecoveryConfigurator.cs,               # the SCM failure actions - both
+&#x2502;   &#x2502;   &#x2502;   ConfigureRecoveryCommand.cs                   # EXE custom actions, not WiX util:
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; CliCommands.cs                                # the verb table (tested by reflection)
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; InstalledConfig.cs                            # defensive read of an installed config
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; UninstallCleanup.cs, SecretPurger.cs,         # the 'purge' verb (uninstall CA):
 &#x2502;   &#x2502;   &#x2502;   SecretStoreNames.cs,                      # env-var / credential names, shared with the writer
 &#x2502;   &#x2502;   &#x2502;   PurgeCommand.cs                           # data dir, config, and the secret's store

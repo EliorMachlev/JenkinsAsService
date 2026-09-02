@@ -527,6 +527,29 @@
       <p>In silent mode with <code>--impersonate</code>, provide the password via the <code>JAS_IMPERSONATE_PASSWORD</code> environment variable to avoid command-line exposure.</p>
     </div>
 
+    <h3 id="cli-grant-data-access">CLI: <code>grant-data-access</code></h3>
+    <pre data-lang="text"><code>JenkinsAsService.exe grant-data-access --path &lt;directory&gt; --account &lt;account&gt;
+
+  --path &lt;directory&gt;     Directory to grant (default: the configured data directory)
+  --account &lt;account&gt;    Account to grant, e.g. "NT SERVICE\Jenkins"
+  --help                 Show usage</code></pre>
+    <p>Grants the account <strong>Modify</strong> on the runtime data directory, inheritable by its files and subfolders. That directory is the writable half of the install &mdash; <code>agent.jar</code> and its sidecars, the logs, the secret file and the agent <code>-workDir</code> &mdash; while the install folder stays read-only, so a pipeline running as the agent cannot overwrite the service binary.</p>
+    <p>Existing entries and the folder's inheritance are preserved, so it keeps the SYSTEM and Administrators full control it inherits from its parent. Re-running is safe: the account's own entry is replaced rather than duplicated. There is no default account, deliberately &mdash; falling back to a built-in name would grant the wrong identity on any install that chose its own.</p>
+    <p>The MSI runs this for you on install, upgrade and repair. Run it by hand after a manual (non-MSI) install, or after changing the service identity.</p>
+
+    <h3 id="cli-configure-recovery">CLI: <code>configure-recovery</code></h3>
+    <pre data-lang="text"><code>JenkinsAsService.exe configure-recovery [--service &lt;name&gt;]
+
+  --service &lt;name&gt;       Service to configure (default: Jenkins)
+  --help                 Show usage</code></pre>
+    <p>Tells the Windows Service Control Manager to restart the service on each of its first three consecutive failures, 10&nbsp;seconds apart, resetting the failure count after a day without one. This is the <em>outer</em> half of the recovery story: the built-in watchdog restarts a crashed Jenkins agent, while these actions cover the service process itself dying &mdash; including the case where the watchdog gives up after <code>Recovery:MaxRetries</code> and stops the service deliberately so SCM can take over.</p>
+    <p>The MSI applies it on install, upgrade and repair. Run it by hand after a manual install, or to restore the actions if they have been cleared. See <a href="troubleshooting.html#service-recovery-windows-level">Troubleshooting &rarr; Service Recovery</a>.</p>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Why these are commands rather than installer authoring</div>
+      <p>Both settings used to be WiX <code>util:</code> elements. Those compile to <em>architecture-suffixed native custom-action DLLs</em>, and Windows Installer reuses a single custom-action server process per transaction &mdash; so during an x64 &rarr; ARM64 migration the outgoing package's actions start an emulated x64 server that the incoming ARM64 DLL cannot load into, and the install fails and rolls back. An EXE custom action runs as its own process at the package's own architecture, so it has no such conflict. A side benefit is that both are now runnable by hand.</p>
+    </div>
+
     <h3 id="config-migration-on-upgrade">Config migration on MSI upgrade</h3>
     <p>On an in-place MSI upgrade the wizard shows <em>no</em> configuration pages &mdash; it goes from the install-folder page straight to the confirm screen. Nothing those pages collect is used on an upgrade, so being asked for the controller URL and the agent secret again (and being blocked until both were filled in) only wasted the operator's time and put a credential on a command line that would never read it. A scripted upgrade likewise needs no properties at all: <code>msiexec /i JenkinsAsService.msi /quiet</code> is the whole command.</p>
     <p>On an in-place MSI upgrade, the installer runs <code>update-secret --upgrade</code> as SYSTEM. It first reconciles <code>appsettings.json</code> to the current schema: settings the new version adds are written at their POCO defaults, settings the schema no longer defines are removed, and every value still in the schema &mdash; including the secret &mdash; is preserved as-is.</p>

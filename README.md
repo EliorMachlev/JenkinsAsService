@@ -108,7 +108,12 @@ For environments where MSI installation isn't possible, download the `.7z` archi
 ```powershell
 # Least-privilege virtual service account (matches the MSI default). Use obj= LocalSystem only if required.
 sc.exe create Jenkins binPath= "D:\Jenkins\JenkinsAsService.exe" start= auto obj= "NT SERVICE\Jenkins"
-sc.exe failure Jenkins reset= 86400 actions= restart/10000/restart/10000/restart/10000
+
+# The two steps the MSI does for you. Both are idempotent, and both need the service to exist first:
+# the virtual account's SID is created by sc.exe create, so an earlier ACL grant cannot resolve it.
+.\JenkinsAsService.exe configure-recovery                                  # restart on the first 3 failures
+.\JenkinsAsService.exe grant-data-access --account "NT SERVICE\Jenkins"    # make the data folder writable
+
 sc.exe start Jenkins
 ```
 
@@ -119,6 +124,8 @@ To configure secret protection, run the CLI before starting:
 ```powershell
 .\JenkinsAsService.exe update-secret --secret "your-secret" --url "https://jenkins:8443" --mode Dpapi --silent
 ```
+
+Re-run either command at any time — after changing the service identity, or to restore recovery actions that have been cleared. `grant-data-access` takes `--path` if `Agent:DataDirectory` is not where it defaults to; without it, the configured directory is used.
 
 To uninstall:
 

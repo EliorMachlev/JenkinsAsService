@@ -73,6 +73,21 @@
         "keywords": ["update-secret", "cli", "command line", "silent", "merge", "set-data-dir", "impersonate", "flags", "options"]
       },
       {
+        "title": "CLI: purge",
+        "url": "configuration.html#cli-purge",
+        "keywords": ["purge", "uninstall", "delete", "data directory", "secret store", "destructive", "cli"]
+      },
+      {
+        "title": "CLI: grant-data-access",
+        "url": "configuration.html#cli-grant-data-access",
+        "keywords": ["grant-data-access", "acl", "permissions", "data folder", "modify", "service account", "inheritance", "cli"]
+      },
+      {
+        "title": "CLI: configure-recovery",
+        "url": "configuration.html#cli-configure-recovery",
+        "keywords": ["configure-recovery", "failure actions", "sc failure", "restart", "scm", "recovery", "cli"]
+      },
+      {
         "title": "Config migration on MSI upgrade",
         "url": "configuration.html#config-migration-on-upgrade",
         "keywords": ["upgrade", "migration", "schema", "reconcile", "normalize", "prune", "preserve secret", "in-place upgrade"]
@@ -221,6 +236,11 @@
         "title": "Service recovery",
         "url": "troubleshooting.html#service-recovery-windows-level",
         "keywords": ["service recovery", "auto-recovery", "restart", "failure actions", "watchdog", "resilience", "sc failure"]
+      },
+      {
+        "title": "Service is running as LocalSystem",
+        "url": "troubleshooting.html#service-runs-as-localsystem",
+        "keywords": ["localsystem", "startname", "service account", "identity", "least privilege", "nt service", "virtual account", "bundle"]
       },
       {
         "title": "Jar download problems (incl. proxy)",
