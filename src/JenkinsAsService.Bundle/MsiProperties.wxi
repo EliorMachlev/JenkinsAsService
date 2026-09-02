@@ -18,14 +18,22 @@
        product of another architecture. The MSI's own gate stays strict for a bare .msi run by hand. -->
   <MsiProperty Name="FORCE_UPGRADE" Value="1" />
 
-  <!-- Each setting is forwarded verbatim from the like-named bundle variable. All default to empty, so an
-       unset one reaches the MSI as an empty property and the MSI's own default applies - the bundle restates
-       none of those defaults, since two copies of a default value is how they drift apart. -->
+  <!-- Each setting is forwarded verbatim from the like-named bundle variable, and ONLY when that variable is
+       non-empty. The Condition is load-bearing, not tidiness: an empty public property on the msiexec command
+       line does not mean "unset", it means "set to empty", and it OVERRIDES the Property table default. This
+       file previously passed every setting unconditionally, on the belief that an empty one would let the
+       MSI's own default apply. It does the opposite. SERVICE_ACCOUNT= wiped 'NT SERVICE\Jenkins', so every
+       bundle install registered the service with an empty StartName - LocalSystem - instead of the
+       least-privilege virtual account the whole security posture is built on, and the data-folder ACL grant
+       was aimed at an empty account name. util:PermissionEx accepted that silently; the EXE custom action
+       that replaced it fails loudly, which is the only reason this was ever noticed.
+       Nothing here restates an MSI default - that is still the point, and the Condition is what actually
+       achieves it. -->
   <?foreach JasSetting in $(JasForwardedSettings) ?>
-    <MsiProperty Name="$(JasSetting)" Value="[$(JasSetting)]" />
+    <MsiProperty Name="$(JasSetting)" Value="[$(JasSetting)]" Condition="$(JasSetting) &lt;&gt; &quot;&quot;" />
   <?endforeach?>
   <?foreach JasSecret in $(JasForwardedSecrets) ?>
-    <MsiProperty Name="$(JasSecret)" Value="[$(JasSecret)]" />
+    <MsiProperty Name="$(JasSecret)" Value="[$(JasSecret)]" Condition="$(JasSecret) &lt;&gt; &quot;&quot;" />
   <?endforeach?>
 
 </Include>

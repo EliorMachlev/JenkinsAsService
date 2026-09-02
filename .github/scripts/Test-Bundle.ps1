@@ -194,6 +194,16 @@ Assert-That (-not (Test-Path (Join-Path $env:ProgramData 'JenkinsAsService'))) `
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service -and $service.Status -eq 'Running') "the service is Running after the migration"
 
+# The identity, asserted through the BUNDLE rather than only through a bare msiexec run. This is the whole
+# security posture - a least-privilege virtual account that cannot write the install folder - and the bundle
+# is the primary installer, so testing it only via the MSI tested the path almost nobody uses.
+# It was silently broken: the bundle forwarded every setting unconditionally, and SERVICE_ACCOUNT= on the
+# msiexec command line does not mean "unset", it OVERRIDES the Property table default. Every bundle install
+# registered the service with an empty StartName, which SCM resolves to LocalSystem.
+$startName = (Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction SilentlyContinue).StartName
+Assert-That ($startName -eq "NT SERVICE\$serviceName") `
+    "the bundle install runs as the least-privilege virtual account, not LocalSystem (StartName='$startName')"
+
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 3. Re-running the bundle on a matching architecture is a no-op, not a reinstall ==="
 $code = Invoke-InstallerProcess -FilePath $BundleExe -Arguments @(
