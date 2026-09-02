@@ -120,6 +120,18 @@ public sealed class HardeningSettings
     /// specific host variables (e.g. <c>GRADLE_USER_HOME;MAVEN_OPTS</c>). Names are case-insensitive.
     /// </summary>
     public string AllowedEnvironmentVariables { get; set; } = "";
+
+    /// <summary>
+    /// How much of the Win32 process-mitigation subset the service applies to itself: <c>Full</c>
+    /// (default), <c>AllowNetworkImages</c>, or <c>Off</c>.
+    /// <para>
+    /// These policies are <strong>inherited by child processes</strong>, so they reach <c>java.exe</c> and
+    /// every compiler, test runner and script the agent spawns beneath it. Windows offers no way to undo
+    /// that per-child, which is why this is a dial on the service rather than a property of the launch —
+    /// see <see cref="MitigationLevel"/>.
+    /// </para>
+    /// </summary>
+    public MitigationLevel ProcessMitigations { get; set; } = MitigationLevel.Full;
 }
 
 /// <summary>Logging output options (<c>Jenkins:Logging</c>).</summary>
