@@ -211,4 +211,48 @@ function Get-MsiControlEvent {
     finally { Close-MsiDatabase -Msi $msi }
 }
 
-Export-ModuleMember -Function Get-MsiProperty, Get-MsiArchitecture, Get-MsiControlEvent
+function Get-MsiExecuteSequence {
+    <#
+    .SYNOPSIS
+        The package's InstallExecuteSequence as Action/Sequence pairs.
+    .DESCRIPTION
+        Custom-action ORDER carries real constraints that nothing in the authoring enforces and no build
+        catches - a CA scheduled a few hundred sequence numbers too early still links, still installs on a
+        machine where the accident is harmless, and fails only against a real install. Reading the table
+        back turns that into a static check. Sequence is an integer column, so it is read with IntegerData;
+        StringData returns the formatted text and would sort lexically.
+    .OUTPUTS
+        Objects with Action and Sequence, ascending.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $msi = Get-MsiDatabase -Path $Path
+    try {
+        $view = $msi.Database.GetType().InvokeMember(
+            'OpenView', 'InvokeMethod', $null, $msi.Database,
+            @('SELECT Action, Sequence FROM InstallExecuteSequence'))
+        try {
+            $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+            while ($true) {
+                $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+                if ($null -eq $record) { break }
+                try {
+                    [pscustomobject]@{
+                        Action   = $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1)
+                        Sequence = [int]$record.GetType().InvokeMember('IntegerData', 'GetProperty', $null, $record, 2)
+                    }
+                }
+                finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
+            }
+        }
+        finally {
+            $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) | Out-Null
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
+        }
+    }
+    finally { Close-MsiDatabase -Msi $msi }
+}
+
+Export-ModuleMember -Function Get-MsiProperty, Get-MsiArchitecture, Get-MsiControlEvent, Get-MsiExecuteSequence

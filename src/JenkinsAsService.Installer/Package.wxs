@@ -174,11 +174,15 @@
            component-based and so re-ran whenever their component was (re)installed; the condition reproduces
            that rather than narrowing it, since a repair exists precisely to put back an ACL or a recovery
            setting somebody has cleared. Both are idempotent.
-           GrantDataAccess before StartServices, so the folder is writable when SCM launches the service.
-           ConfigureRecovery after InstallServices - the service must exist before SCM can be told how to
-           restart it. -->
-      <Custom Action="GrantDataAccess" After="UpgradeConfig" Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="ConfigureRecovery" After="InstallServices" Condition="NOT REMOVE=&quot;ALL&quot;" />
+           BOTH must sit strictly between InstallServices and StartServices, and for the SAME reason, not two:
+           the default identity is the VIRTUAL account NT SERVICE\Jenkins, whose SID does not exist until
+           ServiceInstall creates the service. Grant the ACL before that and LookupAccountName cannot resolve
+           it - 1722 from the custom action, 1603, rollback. (util:PermissionEx scheduled its deferred apply
+           after ServiceInstall for exactly this reason.) They must equally run BEFORE StartServices: the
+           service is registered Start="install", so SCM launches it there, into a folder it must already be
+           able to write. Test-MsiPlatform.ps1 asserts the window statically, on every package. -->
+      <Custom Action="GrantDataAccess" After="InstallServices" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="ConfigureRecovery" After="GrantDataAccess" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <!-- Uninstall cleanup. Two parts of the condition, each load-bearing:
              REMOVE="ALL"             - a full uninstall, not a feature-level or partial removal.
              NOT UPGRADINGPRODUCTCODE - the old product's removal during a MAJOR UPGRADE must not purge.

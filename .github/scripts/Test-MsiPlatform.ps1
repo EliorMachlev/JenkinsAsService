@@ -61,6 +61,7 @@ $packages = @(
         # the same file, would name the same string twice.
         Name         = '{0}/{1}' -f (Split-Path (Split-Path $_.Path -Parent) -Leaf), (Split-Path $_.Path -Leaf)
         Architecture = $_.Architecture
+        Path         = $_.Path
         Actual       = Get-MsiArchitecture -Path $_.Path
         Hash         = (Get-FileHash $_.Path).Hash
     }
@@ -81,5 +82,29 @@ $detail = ($collisions | ForEach-Object { ($_.Group.Name) -join ' == ' }) -join 
 
 Assert-That ($collisions.Count -eq 0) `
     "all $($packages.Count) packages differ in content - none was copied rather than built$(if ($detail) { " (identical: $detail)" })"
+
+# Custom-action ORDER, asserted statically because nothing else catches it cheaply. Both of these CAs must
+# land strictly between InstallServices and StartServices, and both for the same reason: the default identity
+# is the VIRTUAL account NT SERVICE\Jenkins, whose SID does not exist until ServiceInstall creates the
+# service - so an ACL grant or a recovery-config call scheduled earlier cannot resolve the account and dies
+# 1722 -> 1603. They must also precede StartServices, which is where SCM actually launches the service into
+# the folder they have just made writable. Both bounds shipped wrong once: GrantDataAccess sat after
+# InstallFiles, which links, packages and passes every static check that existed - and fails only against a
+# real install, ten minutes into CI.
+foreach ($package in $packages) {
+    $sequence = @{}
+    Get-MsiExecuteSequence -Path $package.Path | ForEach-Object { $sequence[$_.Action] = $_.Sequence }
+
+    foreach ($action in 'GrantDataAccess', 'ConfigureRecovery') {
+        Assert-That ($sequence.ContainsKey($action)) "$($package.Name) schedules $action at all"
+
+        if ($sequence.ContainsKey($action)) {
+            Assert-That ($sequence[$action] -gt $sequence['InstallServices']) `
+                ("$($package.Name): $action ({0}) runs AFTER InstallServices ({1}) - the virtual service account does not exist before it" -f $sequence[$action], $sequence['InstallServices'])
+            Assert-That ($sequence[$action] -lt $sequence['StartServices']) `
+                ("$($package.Name): $action ({0}) runs BEFORE StartServices ({1}) - SCM launches the service there" -f $sequence[$action], $sequence['StartServices'])
+        }
+    }
+}
 
 Complete-AssertionReport -Subject 'MSI architecture'
