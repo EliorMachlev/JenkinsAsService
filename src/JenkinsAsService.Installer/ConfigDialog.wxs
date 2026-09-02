@@ -202,24 +202,52 @@
         <Control Id="EnvEdit" Type="Edit" X="150" Y="106" Width="205" Height="16" Property="JENKINS_ALLOWED_ENV"
                  DisableCondition="NOT JENKINS_SANITIZE_ENV" EnableCondition="JENKINS_SANITIZE_ENV" />
 
+        <!-- Process mitigations. THREE levels, not a checkbox, and laid out horizontally so all three are
+             visible without opening anything: the middle one is the setting an operator whose build just
+             broke should reach for, and behind a drop-down they would never learn it exists and would turn
+             hardening off wholesale instead. The policies are inherited by java.exe and everything the build
+             spawns, and Windows offers no way to drop one for a child that the service holds - so this is a
+             dial on the service itself, and every level below Full really does lower its own protection.
+             Ordered strongest-first, matching the Security Options page. -->
+        <Control Id="MitigationLabel" Type="Text" X="15" Y="134" Width="118" Height="13" NoPrefix="yes"
+                 Text="Process Hardening:" />
+        <Control Id="MitigationGroup" Type="RadioButtonGroup" X="136" Y="132" Width="219" Height="16"
+                 Property="JENKINS_MITIGATIONS">
+          <RadioButtonGroup Property="JENKINS_MITIGATIONS">
+            <RadioButton Value="Full" X="0" Y="0" Width="40" Height="16" Text="Full" />
+            <RadioButton Value="AllowNetworkImages" X="42" Y="0" Width="135" Height="16"
+                         Text="Allow network DLLs" />
+            <RadioButton Value="Off" X="179" Y="0" Width="40" Height="16" Text="Off" />
+          </RadioButtonGroup>
+        </Control>
+
         <!-- Checkboxes -->
-        <Control Id="SanitizeCheck" Type="CheckBox" X="15" Y="132" Width="340" Height="16"
+        <Control Id="SanitizeCheck" Type="CheckBox" X="15" Y="156" Width="340" Height="16"
                  Property="JENKINS_SANITIZE_ENV" CheckBoxValue="1"
                  Text="Sanitize the agent child environment (recommended)" />
-        <Control Id="DebugCheck" Type="CheckBox" X="15" Y="152" Width="340" Height="16"
+        <Control Id="DebugCheck" Type="CheckBox" X="15" Y="174" Width="340" Height="16"
                  Property="JENKINS_DEBUG" CheckBoxValue="1"
                  Text="Enable verbose (debug) Java agent logging" />
-        <Control Id="CompactCheck" Type="CheckBox" X="15" Y="172" Width="340" Height="16"
+        <Control Id="CompactCheck" Type="CheckBox" X="15" Y="192" Width="340" Height="16"
                  Property="JENKINS_COMPACT_LOG" CheckBoxValue="1"
                  Text="Use compact JSON log format" />
 
-        <!-- Numeric fields on one row -->
-        <Control Id="RetainLabel" Type="Text" X="15" Y="198" Width="120" Height="13" NoPrefix="yes"
+        <!-- Numeric fields on one row. Integer="yes" is load-bearing: these are the only free-text inputs
+             parsed as a number, so they were the only way the wizard could reach update-secret's
+             "supplied but unusable" path - which is a hard error, and these CAs use the default
+             Return="check", so a typo would surface as a 1603 rollback at the END of the wizard instead
+             of a field that refuses the keystroke. Safe because both properties always carry a value
+             (Property-table default plus a SetProperty restore before CostFinalize), so neither renders
+             empty. It does not replace the parser check: msiexec JENKINS_MAX_RETRIES=fifty never touches
+             this dialog. -->
+        <Control Id="RetainLabel" Type="Text" X="15" Y="214" Width="120" Height="13" NoPrefix="yes"
                  Text="Retained log files:" />
-        <Control Id="RetainEdit" Type="Edit" X="138" Y="196" Width="40" Height="16" Property="JENKINS_RETAINED_LOGS" />
-        <Control Id="RetryLabel" Type="Text" X="195" Y="198" Width="120" Height="13" NoPrefix="yes"
+        <Control Id="RetainEdit" Type="Edit" X="138" Y="212" Width="40" Height="16" Integer="yes"
+                 Property="JENKINS_RETAINED_LOGS" />
+        <Control Id="RetryLabel" Type="Text" X="195" Y="214" Width="120" Height="13" NoPrefix="yes"
                  Text="Max retries (0=&#x221E;):" />
-        <Control Id="RetryEdit" Type="Edit" X="315" Y="196" Width="40" Height="16" Property="JENKINS_MAX_RETRIES" />
+        <Control Id="RetryEdit" Type="Edit" X="315" Y="212" Width="40" Height="16" Integer="yes"
+                 Property="JENKINS_MAX_RETRIES" />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 

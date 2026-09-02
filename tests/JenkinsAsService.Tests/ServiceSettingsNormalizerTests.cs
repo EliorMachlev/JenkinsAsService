@@ -123,4 +123,35 @@ public class ServiceSettingsNormalizerTests
         }
         throw new FileNotFoundException("shipped appsettings.json not found from test base dir");
     }
+
+    // Issue #82 acceptance: an install predating the setting must gain it at Full on upgrade, and an
+    // operator who already chose a level must keep it. The normalizer is schema-driven so both fall out of
+    // the POCO, but that is exactly why they are asserted - the day the key is renamed on one side only,
+    // an upgrade silently resets every agent to Full and nothing else would notice.
+    [Fact]
+    public void Upgrade_adds_the_mitigation_level_at_its_default_when_absent()
+    {
+        const string existing = """
+            { "Jenkins": { "Hardening": { "SanitizeEnvironment": true } } }
+            """;
+
+        var (_, added, _) = ServiceSettingsNormalizer.NormalizeJson(existing);
+
+        added.Should().Contain("Jenkins:Hardening:ProcessMitigations");
+        Merged(existing)["Jenkins"]!["Hardening"]!["ProcessMitigations"]!.GetValue<string>().Should().Be("Full");
+    }
+
+    [Fact]
+    public void Upgrade_preserves_an_explicitly_chosen_mitigation_level()
+    {
+        const string existing = """
+            { "Jenkins": { "Hardening": { "ProcessMitigations": "AllowNetworkImages" } } }
+            """;
+
+        var (_, added, _) = ServiceSettingsNormalizer.NormalizeJson(existing);
+
+        added.Should().NotContain("Jenkins:Hardening:ProcessMitigations");
+        Merged(existing)["Jenkins"]!["Hardening"]!["ProcessMitigations"]!.GetValue<string>()
+            .Should().Be("AllowNetworkImages");
+    }
 }

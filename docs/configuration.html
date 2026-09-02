@@ -157,6 +157,12 @@
             <td>Extra environment variable names (semicolon/comma-separated, case-insensitive) to pass through to the agent when <code>Hardening:SanitizeEnvironment</code> is on. Example: <code>GRADLE_USER_HOME;MAVEN_OPTS</code>.</td>
           </tr>
           <tr>
+            <td><code>Hardening:ProcessMitigations</code></td>
+            <td>No</td>
+            <td><code>Full</code></td>
+            <td>How much of the Win32 process-mitigation subset the service applies to itself: <code>Full</code>, <code>AllowNetworkImages</code>, or <code>Off</code>. <strong>These policies are inherited by the build tree</strong> &mdash; see <a href="#process-mitigations">Process mitigations</a>.</td>
+          </tr>
+          <tr>
             <td><code>Logging:DebugMode</code></td>
             <td>No</td>
             <td><code>false</code></td>
@@ -208,7 +214,8 @@
     },
     "Hardening": {
       "SanitizeEnvironment": true,
-      "AllowedEnvironmentVariables": ""
+      "AllowedEnvironmentVariables": "",
+      "ProcessMitigations": "Full"
     },
     "Logging": {
       "DebugMode": false,
@@ -445,6 +452,34 @@
     <h3 id="env-sanitization">Environment sanitization</h3>
     <p>With <code>Hardening:SanitizeEnvironment: true</code> (default) the Java agent is launched with a <strong>deny-by-default</strong> environment: only a curated allow-list of variables the JVM and common Windows build tooling need (<code>SystemRoot</code>, <code>PATH</code>, <code>TEMP</code>, <code>JAVA_HOME</code>, <code>ProgramFiles</code>, &hellip;) is passed through. This stops the service's own environment block &mdash; which may carry host secrets or tokens &mdash; from being inherited by untrusted pipeline scripts that run inside the agent. If a build needs an extra host variable, add it to <code>Hardening:AllowedEnvironmentVariables</code> (semicolon/comma-separated, case-insensitive) rather than disabling the feature.</p>
 
+    <h3 id="process-mitigations">Process mitigations</h3>
+    <p>At startup the service applies a narrow subset of Win32 process-mitigation policies to itself: block DLL loads from UNC/network paths, block DLLs written by low-integrity processes, prefer <code>%WinDir%\System32</code> for known system DLLs, and disable legacy extension-point injection.</p>
+    <p><strong>Process mitigation policies are inherited by child processes.</strong> They therefore reach <code>java.exe</code> and every compiler, test runner and script the agent spawns beneath it &mdash; this is not confined to the service. Windows offers no way to undo the inheritance for a particular child: a child can be given <em>additional</em> mitigations at creation time through <code>PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY</code>, but its <code>ALWAYS_OFF</code> bits override only the system default, not a policy inherited from the parent (measured on Windows&nbsp;11&nbsp;26200: with the parent at <code>image-load&nbsp;=&nbsp;7</code>, a child created with every <code>ALWAYS_OFF</code> bit still reads back 7). Sparing the build tree a mitigation therefore means not applying it in the service either, which is why this is one dial rather than a separate service and child setting.</p>
+    <p>Of the mitigations applied, only the network-image block has build-visible consequences: a build step that runs tooling, or loads a native DLL, from a UNC path or a mapped drive fails under the service in a way it does not fail when run by hand, and the failure surfaces as a loader error inside the build that names nothing to do with this service. That is the one <code>AllowNetworkImages</code> drops.</p>
+    <table>
+      <thead>
+        <tr><th>Level</th><th>Applies</th><th>When to use</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>Full</code></td>
+          <td>All of the above</td>
+          <td>Default. Keep it unless a build actually breaks.</td>
+        </tr>
+        <tr>
+          <td><code>AllowNetworkImages</code></td>
+          <td>Everything except the network-image block</td>
+          <td>A build loads tools or native DLLs from a UNC path or mapped drive. Preferred over <code>Off</code> &mdash; it gives up one protection, not all of them.</td>
+        </tr>
+        <tr>
+          <td><code>Off</code></td>
+          <td>Nothing</td>
+          <td>Last resort, for a pipeline broken by a mitigation <code>AllowNetworkImages</code> does not cover. The service logs a warning at every start while this is set.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>The level is also offered on the installer's <strong>Advanced Options</strong> page.</p>
+
     <h3 id="data-dir-split">Data directory split (binaries vs. runtime data)</h3>
     <p>The service keeps its <strong>read-only binary</strong> and its <strong>writable runtime data</strong> in two separate locations:</p>
     <div class="table-wrap">
@@ -473,6 +508,7 @@
 
     <h3 id="cli-update-secret">CLI: update-secret</h3>
     <p>The <code>JenkinsAsService.exe update-secret</code> subcommand writes (or re-writes) <code>appsettings.json</code> with the secret processed for the chosen mode. Used by the MSI installer and manually.</p>
+    <p>An option given a value it cannot use &mdash; a misspelled level, a non-numeric count &mdash; is a <strong>hard error</strong>: the command reports every bad option, writes nothing, and exits 1. An option given an <em>empty</em> value is &quot;unset&quot; and is simply not applied, which is what an untouched installer field sends. The distinction matters because these run as MSI custom actions: a typo fails the install instead of quietly producing a service configured differently from what was asked for.</p>
     <pre data-lang="text"><code>JenkinsAsService.exe update-secret [options]
 
   Secret input (pick one)
@@ -495,6 +531,7 @@
   --custom-args &lt;value&gt;  Agent:CustomArguments
   --sanitize-env &lt;bool&gt;  Hardening:SanitizeEnvironment (default: true)
   --allowed-env &lt;names&gt;  Hardening:AllowedEnvironmentVariables (; or , separated)
+  --mitigations &lt;level&gt;  Hardening:ProcessMitigations (Full | AllowNetworkImages | Off)
   --debug &lt;bool&gt;         Logging:DebugMode
   --compact-log &lt;bool&gt;   Logging:CompactLog — CLEF JSON output
   --retained-logs &lt;n&gt;    Logging:RetainedLogs (default: 3)

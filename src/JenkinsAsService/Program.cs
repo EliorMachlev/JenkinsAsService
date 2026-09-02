@@ -17,6 +17,7 @@ const string DebugModeKey = ConfigKeys.Logging.DebugModePath;
 const string CompactLogKey = ConfigKeys.Logging.CompactLogPath;
 const string RetainedLogsKey = ConfigKeys.Logging.RetainedLogsPath;
 const string DataDirectoryKey = ConfigKeys.Agent.DataDirectoryPath;
+const string MitigationsKey = ConfigKeys.Hardening.ProcessMitigationsPath;
 const string ControllerCertThumbprintKey = ConfigKeys.Connection.ControllerCertThumbprintPath;
 const string ProxyKey = ConfigKeys.Connection.ProxyPath;
 const string ProxyBypassKey = ConfigKeys.Connection.ProxyBypassPath;
@@ -62,9 +63,24 @@ var dataDir = DataPaths.ResolveDataDirectory(jenkinsSection[DataDirectoryKey]);
 Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, dataDir);
 
 // Harden the service process: block remote/low-integrity/non-System32 DLL loads and legacy
-// extension-point injection. Affects future LoadLibrary calls in this process only (not the Java
-// child). Best-effort — never blocks startup. See ProcessMitigations for the rationale on the subset.
-ProcessMitigations.Apply(msg => Log.Warning("{Warning}", msg));
+// extension-point injection. Best-effort - never blocks startup. These policies are INHERITED by the
+// Java child and everything the build spawns beneath it, which is why the level is configurable at all;
+// see ProcessMitigations for the measurement and MitigationLevel for what each level costs.
+var mitigationLevel = jenkinsSection.GetValue<MitigationLevel?>(MitigationsKey) ?? MitigationLevel.Full;
+if (!ProcessMitigations.Apply(mitigationLevel, msg => Log.Warning("{Warning}", msg)))
+{
+    // A reduced security posture is an operator decision, but it must be visible in the log of the
+    // machine it applies to - not only in a config file somebody has to think to go and read. Worded as
+    // "were not applied" because Apply also returns false off-Windows, where naming the level would read
+    // as though the level were the reason.
+    Log.Warning("Process mitigations were not applied ({Key} = {Level}); the service is unhardened.",
+        MitigationsKey, mitigationLevel);
+}
+else if (mitigationLevel != MitigationLevel.Full)
+{
+    Log.Warning("Process mitigations reduced ({Key} = {Level}); DLL loads from network paths are allowed.",
+        MitigationsKey, mitigationLevel);
+}
 
 try
 {

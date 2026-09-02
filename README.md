@@ -297,7 +297,7 @@ dotnet build src/JenkinsAsService.Installer -c Release `
 
 - TLS 1.2+ enforced by default (.NET 10), with optional controller certificate pinning (`ControllerCertThumbprint`)
 - Secrets encrypted at rest (TPM 2.0 hardware-backed key, DPAPI machine/user scope, or CredMgr), redacted from all logs, and passed to the agent off the command line via `-secret @<file>` so they never appear in the process table
-- Least-privilege virtual service account, deny-by-default environment block for the agent child, and Win32 process-mitigation policies (no remote/low-IL/non-System32 DLL loads, extension-point injection disabled)
+- Least-privilege virtual service account, deny-by-default environment block for the agent child, and Win32 process-mitigation policies (no remote/low-IL/non-System32 DLL loads, extension-point injection disabled). Mitigation policies are **inherited by the build tree**; `Hardening:ProcessMitigations` selects how much is applied
 - Binary/data separation: read-only binaries in `Program Files`, writable runtime data in `ProgramData` — a malicious pipeline can't overwrite the service `.exe`. The cached `agent.jar` (+ SHA-256) lives in an `agent\` subfolder isolated from the build `work\` dir and is integrity-checked before each launch, so a build step can't swap the binary the watchdog runs
 - Deterministic builds with locked NuGet restore and embedded PDB symbols
 - CycloneDX **SBOM** generated in CI and attached to every release (with SHA-256 checksum)
