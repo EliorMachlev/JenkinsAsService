@@ -25,8 +25,9 @@
     SCOPE. The gate's rule is 64-bit vs 32-bit rather than x64 vs x86, so arm64 sits on the supported side
     alongside x64 and takes the same code path through InstallLocation.wxs - one condition, one error string,
     one recovery chain, differing only in which property names they name. This suite exercises the x64/x86
-    pair because it must really INSTALL each package, and the runner is x64. What it therefore proves about
-    arm64 is that the shared authoring works, not that an ARM64 machine behaves; that half is manual.
+    pair, because the REFUSED direction is the half worth paying an install for and only x86 can be refused.
+    The arm64 half of the same authoring is covered on real ARM64 silicon by the msi-lifecycle-arm64 job,
+    which runs Test-Bundle with the x64 -> arm64 pair.
 
     Asserting only one half would be worthless. Asserting only the forced half would let a gate that never
     blocks anything pass; asserting only the blocked half would let a gate that blocks everything - including

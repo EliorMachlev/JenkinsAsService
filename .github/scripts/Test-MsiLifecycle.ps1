@@ -28,7 +28,11 @@
     'PSAvoidUsingWriteHost', '', Justification = 'Intentional CI transcript output')]
 param(
     [Parameter(Mandatory)][string]$V1Msi,
-    [Parameter(Mandatory)][string]$V2Msi
+    [Parameter(Mandatory)][string]$V2Msi,
+    # The architecture BOTH packages target. Everything arch-dependent here - the default install folder and
+    # which location key is expected to hold the paths - follows from it, so the suite runs unchanged against
+    # the arm64 packages on an ARM64 runner. Defaults to x64, which is what the x64 job relies on.
+    [ValidateSet('x64', 'x86', 'arm64')][string]$Platform = 'x64'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,7 +41,7 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 
-$installFolder = Get-JasDefaultInstallFolder -Platform 'x64'
+$installFolder = Get-JasDefaultInstallFolder -Platform $Platform
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
 $serviceName = Get-JasServiceName
@@ -52,10 +56,9 @@ $installProperties = @(
 
 # Where the package records the locations it installed to, so the NEXT package can find them instead of
 # resetting both to their defaults. Each architecture owns a named subkey, and which one exists IS the
-# statement of what is installed. This job installs x64, which writes the native 64-bit view. The paths
-# themselves live in MsiTestHelpers, which is what Get-RecordedLocation -Platform reads.
-$locationKey = Get-JasLocationKeyPath -Platform 'x64'
-$otherArchKey = Get-JasLocationKeyPath -Platform 'x86'
+# statement of what is installed. The paths themselves live in MsiTestHelpers, which is what
+# Get-RecordedLocation -Platform reads; this is only used to name the key in the assertion messages.
+$locationKey = Get-JasLocationKeyPath -Platform $Platform
 
 # Every install here must succeed, so the exit code is checked rather than returned.
 function Invoke-Msi {
@@ -128,7 +131,7 @@ foreach ($edge in $intoConfigFlow) {
 }
 
 # --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 1. Fresh install ($v1Version) ==="
+Write-Host "`n=== 1. Fresh install ($Platform $v1Version) ==="
 Invoke-Msi -LogName 'install-v1' -Arguments (@('/i', $V1Msi) + $installProperties + 'JENKINS_AGENT_NAME=ci-node')
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -154,14 +157,17 @@ Assert-That ($service.Status -eq 'Running') "service is Running after install (b
 # rather than installed as a tracked file, a relocated install folder would strand the only copy of the
 # secret at the old path. DATAFOLDER here is deliberately NOT the default, so a value that merely looks
 # plausible cannot pass.
-Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'InstallPath') -eq "$installFolder\") `
+Assert-That ((Get-RecordedLocation -Platform $Platform -Name 'InstallPath') -eq "$installFolder\") `
     "install location recorded at $locationKey\InstallPath"
-Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'DataPath') -eq "$dataFolder\") `
+Assert-That ((Get-RecordedLocation -Platform $Platform -Name 'DataPath') -eq "$dataFolder\") `
     "data location recorded at $locationKey\DataPath (the non-default DATAFOLDER, not the default)"
 # Which key holds the paths is how a later package tells a same-arch upgrade from a cross-arch migration, so
-# an x64 install writing anything under the x86 key would break that distinction in the quietest way possible.
-Assert-That (-not (Test-Path $otherArchKey)) `
-    "the x64 install recorded itself under the x64 key only - nothing under $otherArchKey"
+# an install writing under any OTHER architecture's key would break that distinction in the quietest way
+# possible. Asked through Get-InstalledPlatform rather than by naming one other key: it enumerates every
+# architecture's key and answers 'multiple' when more than one holds a path, so this covers both of the
+# others at once - and keeps covering them if a fourth is ever added.
+Assert-That ((Get-InstalledPlatform) -eq $Platform) `
+    "the install recorded itself under the $Platform key ($locationKey) and no other architecture's"
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 2. Operator edits the config, then upgrades to $v2Version ==="
@@ -213,9 +219,9 @@ Assert-That (Test-Path $sentinel) "the data folder SURVIVES an upgrade (the purg
 $strayDataFolder = Join-Path $env:ProgramData 'JenkinsAsService'
 Assert-That (-not (Test-Path $strayDataFolder)) `
     "no stray default data folder at $strayDataFolder - the recorded DATAFOLDER was recovered"
-Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'InstallPath') -eq "$installFolder\") `
+Assert-That ((Get-RecordedLocation -Platform $Platform -Name 'InstallPath') -eq "$installFolder\") `
     "the recorded install location survives the upgrade and still points at the real folder"
-Assert-That ((Get-RecordedLocation -Platform 'x64' -Name 'DataPath') -eq "$dataFolder\") `
+Assert-That ((Get-RecordedLocation -Platform $Platform -Name 'DataPath') -eq "$dataFolder\") `
     "the recorded data location survives the upgrade"
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -244,7 +250,7 @@ Assert-That (-not (Test-Path $dataFolder)) "the data folder is removed, with the
 
 # The location key is a tracked component, so a genuine uninstall takes it with everything else. Leaving it
 # would point the next fresh install at a folder that no longer exists.
-Assert-That ($null -eq (Get-RecordedLocation -Platform 'x64' -Name 'InstallPath')) `
+Assert-That ($null -eq (Get-RecordedLocation -Platform $Platform -Name 'InstallPath')) `
     "the recorded install location is removed - a later fresh install must not inherit a dead path"
 
 # --------------------------------------------------------------------------------------------------

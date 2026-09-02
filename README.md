@@ -34,7 +34,7 @@ JenkinsAsService replaces all of that with a proper Windows Service built on .NE
 - **Unit-tested** — xUnit + NSubstitute + FluentAssertions (incl. an end-to-end watchdog harness driven by a fake process), CI on every push
 - **6 security scans** — CodeQL (C# + Actions YAML), Semgrep, Gitleaks, PSScriptAnalyzer, Dependency Review, Trivy; all actions SHA-pinned
 - **Single-file deploy** — self-contained `.exe` with R2R, compression, and embedded PDB symbols
-- **Dual-arch releases** — x64 + x86 MSI installers, 7z archives, SHA256 checksums
+- **Tri-arch releases** — x64, x86 and native ARM64 MSI installers behind one self-selecting `.exe`, plus 7z archives and SHA256 checksums
 
 ## How It Works
 
@@ -67,7 +67,7 @@ flowchart TD
 
 ### Install
 
-1. Download the `.msi` for your architecture from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases)
+1. Download `JenkinsAsService_<version>.exe` from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases) — it installs the architecture matching your machine. (The individual `.msi` packages are published too, if you need to hand one to a deployment tool that only speaks MSI.)
 2. Run the installer — it walks you through install path, Jenkins URL, agent secret, and secret protection mode
 3. Done — the service registers and starts automatically
 
@@ -135,13 +135,15 @@ sc.exe delete Jenkins
 winget install EliorMachlev.JenkinsAsService
 ```
 
-Or download `JenkinsAsService_<version>.exe` from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases) — one file, both architectures. It installs the one matching your machine, and migrates an existing install of the other architecture in place, keeping your install folder, data folder, configuration and secret. Silent installs take the same properties as the MSI:
+Or download `JenkinsAsService_<version>.exe` from [Releases](https://github.com/EliorMachlev/JenkinsAsService/releases) — one file, all three architectures. It installs the one **natively** matching your machine (x64, x86, or ARM64), and migrates an existing install of a different architecture in place, keeping your install folder, data folder, configuration and secret. Silent installs take the same properties as the MSI:
 
 ```powershell
 JenkinsAsService_1.16.0.exe -quiet JENKINS_URL=https://ci.example.com:8443 JENKINS_SECRET=...
 ```
 
-The per-architecture `.msi` packages are still published for deployment tools that only speak MSI; they install exactly one architecture. Replacing an x86 install with x64 needs `FORCE_UPGRADE=1`; the reverse is refused outright, because a 32-bit package cannot recover a 64-bit install folder and would strand your config and secret.
+**Windows on ARM:** the bundle installs the **native ARM64** build. If you installed before ARM64 support existed, you have the x64 build running under emulation — the next run of the `.exe` migrates it to native in place, keeping everything. The choice is made from the machine's real architecture rather than from `VersionNT64`, which Windows on ARM also sets.
+
+The per-architecture `.msi` packages are still published for deployment tools that only speak MSI; they install exactly one architecture. Moving an install *to* a 64-bit package (x64 or ARM64) from another architecture needs `FORCE_UPGRADE=1`. Moving *to* the x86 package from either 64-bit one is refused outright, because a 32-bit package cannot recover a 64-bit install folder and would strand your config and secret.
 
 > **Uninstalling is destructive.** The MSI removes the install folder *and* `%ProgramData%\JenkinsAsService` — logs, the cached `agent.jar`, and the `work\` directory (build workspaces, `remoting/` state) all go with it, without prompting. Copy anything you need out first. An **upgrade** preserves the data folder in full; only a genuine uninstall clears it.
 >
@@ -175,7 +177,7 @@ All settings live in the `Jenkins` section of `appsettings.json`, grouped into t
 | `Logging:RetainedLogs` | No | `3` | Number of rolled log files to keep. Oldest are permanently deleted. |
 | `Recovery:MaxRetries` | No | `0` | Max consecutive agent *crashes* before the service stops itself for SCM recovery. Unreachable-controller retries don't count. `0` = infinite |
 
-> **Upgrades:** An upgrade prompts for nothing — the wizard skips the configuration pages and **never asks for the agent secret**, and `msiexec /i JenkinsAsService.msi /quiet` needs no properties. It also keeps a non-default install or data folder, recovered from `HKLM\SOFTWARE\JenkinsAsService\<arch>`. Switching architecture is asymmetric: x86 → x64 needs `FORCE_UPGRADE=1` (the two packages share an `UpgradeCode`, so either would otherwise silently replace the other), while x64 → x86 is refused outright and the flag does not override it — a 32-bit package cannot read back a 64-bit install folder, so it would install beside the existing one and strand `appsettings.json` with the only copy of the secret. An in-place MSI upgrade reconciles `appsettings.json` to the new version's schema — settings introduced in the release appear at their defaults, settings the schema no longer defines are pruned, and your existing values and secret are preserved. The secret is detected without decryption, so User-scope DPAPI / TPM / Credential Manager secrets (bound to the service account) survive untouched. Because unknown keys are removed, configure only documented settings.
+> **Upgrades:** An upgrade prompts for nothing — the wizard skips the configuration pages and **never asks for the agent secret**, and `msiexec /i JenkinsAsService.msi /quiet` needs no properties. It also keeps a non-default install or data folder, recovered from `HKLM\SOFTWARE\JenkinsAsService\<arch>`. Switching architecture is asymmetric, on a 64-bit/32-bit line rather than a per-pair one: moving **to** x64 or ARM64 from any other architecture needs `FORCE_UPGRADE=1` (all three packages share an `UpgradeCode`, so any would otherwise silently replace another), while moving **to** x86 from either 64-bit architecture is refused outright and the flag does not override it — a 32-bit package cannot read back a 64-bit install folder, so it would install beside the existing one and strand `appsettings.json` with the only copy of the secret. An in-place MSI upgrade reconciles `appsettings.json` to the new version's schema — settings introduced in the release appear at their defaults, settings the schema no longer defines are pruned, and your existing values and secret are preserved. The secret is detected without decryption, so User-scope DPAPI / TPM / Credential Manager secrets (bound to the service account) survive untouched. Because unknown keys are removed, configure only documented settings.
 
 ### Secret Protection
 
