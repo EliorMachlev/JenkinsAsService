@@ -18,22 +18,20 @@
        product of another architecture. The MSI's own gate stays strict for a bare .msi run by hand. -->
   <MsiProperty Name="FORCE_UPGRADE" Value="1" />
 
-  <!-- Each setting is forwarded verbatim from the like-named bundle variable, and ONLY when that variable is
-       non-empty. The Condition is load-bearing, not tidiness: an empty public property on the msiexec command
-       line does not mean "unset", it means "set to empty", and it OVERRIDES the Property table default. This
-       file previously passed every setting unconditionally, on the belief that an empty one would let the
-       MSI's own default apply. It does the opposite. SERVICE_ACCOUNT= wiped 'NT SERVICE\Jenkins', so every
-       bundle install registered the service with an empty StartName - LocalSystem - instead of the
-       least-privilege virtual account the whole security posture is built on, and the data-folder ACL grant
-       was aimed at an empty account name. util:PermissionEx accepted that silently; the EXE custom action
-       that replaced it fails loudly, which is the only reason this was ever noticed.
-       Nothing here restates an MSI default - that is still the point, and the Condition is what actually
-       achieves it. -->
+  <!-- Each setting is forwarded verbatim from the like-named bundle variable. An unset one therefore
+       reaches the MSI as an EMPTY property, and an empty public property does not mean "unset" to Windows
+       Installer - it means "set to empty", and it overrides the Property table default.
+       That is handled in the MSI, by the SetProperty rows in Package.wxs that restore each default when the
+       property arrives empty. It is handled there rather than here for two reasons: a hand-run
+       msiexec SERVICE_ACCOUNT= has the same effect and nothing on this side can cover it, and the obvious
+       fix here does not work: a Condition on each MsiProperty testing the variable against an empty string
+       compiles, and appears correctly in the Burn manifest, and the properties were STILL passed empty at
+       runtime - so do not re-add it and assume it filters anything. Whatever forwarding happens here, the MSI's defaults survive it. -->
   <?foreach JasSetting in $(JasForwardedSettings) ?>
-    <MsiProperty Name="$(JasSetting)" Value="[$(JasSetting)]" Condition="$(JasSetting) &lt;&gt; &quot;&quot;" />
+    <MsiProperty Name="$(JasSetting)" Value="[$(JasSetting)]" />
   <?endforeach?>
   <?foreach JasSecret in $(JasForwardedSecrets) ?>
-    <MsiProperty Name="$(JasSecret)" Value="[$(JasSecret)]" Condition="$(JasSecret) &lt;&gt; &quot;&quot;" />
+    <MsiProperty Name="$(JasSecret)" Value="[$(JasSecret)]" />
   <?endforeach?>
 
 </Include>
