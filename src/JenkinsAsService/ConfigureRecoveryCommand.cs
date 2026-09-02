@@ -35,7 +35,7 @@ internal static class ConfigureRecoveryCommand
     /// <summary>Runs the command. Returns a process exit code.</summary>
     internal static int Run(string[] args)
     {
-        if (Array.Exists(args, a => a is "--help" or "-h"))
+        if (CliCommands.WantsHelp(args))
         {
             Console.WriteLine(UsageText);
             return 0;
@@ -63,7 +63,7 @@ internal static class ConfigureRecoveryCommand
                 case Name:
                     break;
                 case "--service" when i + 1 < args.Length:
-                    serviceName = args[++i].Trim().Trim('"').Trim();
+                    serviceName = CliCommands.TrimQuoted(args[++i]);
                     break;
                 case "--service":
                     return (null, $"Error: {args[i]} requires a value.");

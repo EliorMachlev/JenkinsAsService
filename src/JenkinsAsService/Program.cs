@@ -11,9 +11,6 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 
-const string UpdateSecretCommandName = "update-secret";
-const string PurgeCommandName = PurgeCommand.Name;
-const string GrantDataAccessCommandName = GrantDataAccessCommand.Name;
 const string ConfigFileName = ConfigKeys.FileName;
 const string ConfigSectionName = ConfigKeys.Section;
 const string DebugModeKey = ConfigKeys.Logging.DebugModePath;
@@ -39,14 +36,7 @@ const string LogOutputTemplate =
 // CLI mode — if args[0] is a known command, handle it and exit; otherwise fall through to service mode.
 // IMPORTANT: this dispatch must stay before Serilog init — Environment.Exit skips the
 // finally { Log.CloseAndFlushAsync() } block below, which is correct (no logger to flush).
-var commands = new Dictionary<string, Func<string[], int>>(StringComparer.Ordinal)
-{
-    [UpdateSecretCommandName] = UpdateSecretCommand.Run,
-    [PurgeCommandName] = args => PurgeCommand.Run(args),
-    [GrantDataAccessCommandName] = args => GrantDataAccessCommand.Run(args),
-};
-
-if (args.Length > 0 && commands.TryGetValue(args[0], out var command))
+if (CliCommands.TryResolve(args, out var command))
 {
     Environment.Exit(command(args));
 }

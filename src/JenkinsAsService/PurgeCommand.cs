@@ -42,7 +42,7 @@ internal static class PurgeCommand
     /// <summary>Runs the command. Returns a process exit code.</summary>
     internal static int Run(string[] args, string? basePath = null)
     {
-        if (Array.Exists(args, a => a is "--help" or "-h"))
+        if (CliCommands.WantsHelp(args))
         {
             Console.WriteLine(UsageText);
             return 0;
@@ -87,27 +87,21 @@ internal static class PurgeCommand
     /// </summary>
     private static PurgeSettings ReadSettings(string basePath)
     {
-        try
-        {
-            var jenkins = new ConfigurationBuilder()
-                .SetBasePath(basePath)
-                .AddJsonFile(ConfigKeys.FileName, optional: true)
-                .Build()
-                .GetSection(ConfigKeys.Section);
+        var jenkins = InstalledConfig.TryReadJenkinsSection(
+            basePath,
+            error => Console.WriteLine(
+                $"{error} Using defaults. A secret held outside the config may need removing by hand."));
 
-            _ = Enum.TryParse<SecretMode>(jenkins[ConfigKeys.Secret.ModePath], ignoreCase: true, out var mode);
-
-            return new PurgeSettings(
-                mode,
-                jenkins[ConfigKeys.Secret.ValuePath],
-                jenkins[ConfigKeys.Agent.DataDirectoryPath]);
-        }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        if (jenkins is null)
         {
-            Console.WriteLine(
-                $"Could not read {ConfigKeys.FileName} ({ex.Message}); using defaults. " +
-                "A secret held outside the config may need removing by hand.");
             return default;
         }
+
+        _ = Enum.TryParse<SecretMode>(jenkins[ConfigKeys.Secret.ModePath], ignoreCase: true, out var mode);
+
+        return new PurgeSettings(
+            mode,
+            jenkins[ConfigKeys.Secret.ValuePath],
+            jenkins[ConfigKeys.Agent.DataDirectoryPath]);
     }
 }

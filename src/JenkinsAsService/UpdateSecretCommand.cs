@@ -4,6 +4,8 @@ namespace JenkinsAsService;
 
 public static class UpdateSecretCommand
 {
+    internal const string Name = "update-secret";
+
     private const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
 
@@ -94,7 +96,7 @@ public static class UpdateSecretCommand
     {
         basePath ??= AppContext.BaseDirectory;
 
-        if (Array.Exists(args, a => a is "--help" or "-h"))
+        if (CliCommands.WantsHelp(args))
         {
             Console.WriteLine(UsageText);
             return 0;

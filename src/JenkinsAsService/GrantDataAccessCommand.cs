@@ -33,7 +33,7 @@ internal static class GrantDataAccessCommand
     /// <summary>Runs the command. Returns a process exit code.</summary>
     internal static int Run(string[] args, string? basePath = null)
     {
-        if (Array.Exists(args, a => a is "--help" or "-h"))
+        if (CliCommands.WantsHelp(args))
         {
             Console.WriteLine(UsageText);
             return 0;
@@ -71,7 +71,7 @@ internal static class GrantDataAccessCommand
                     path = UpdateSecretCommand.SanitizePathArgument(args[++i]);
                     break;
                 case "--account" when i + 1 < args.Length:
-                    account = args[++i].Trim().Trim('"').Trim();
+                    account = CliCommands.TrimQuoted(args[++i]);
                     break;
                 case "--path":
                 case "--account":
@@ -86,20 +86,9 @@ internal static class GrantDataAccessCommand
             : (path, account, null);
     }
 
-    private static string? ReadConfiguredDataDirectory(string basePath)
-    {
-        try
-        {
-            return new ConfigurationBuilder()
-                .SetBasePath(basePath)
-                .AddJsonFile(ConfigKeys.FileName, optional: true)
-                .Build()
-                .GetSection(ConfigKeys.Section)[ConfigKeys.Agent.DataDirectoryPath];
-        }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
-        {
-            Console.WriteLine($"Could not read {ConfigKeys.FileName} ({ex.Message}); using the default data directory.");
-            return null;
-        }
-    }
+    private static string? ReadConfiguredDataDirectory(string basePath) =>
+        InstalledConfig.TryReadJenkinsSection(
+            basePath,
+            error => Console.WriteLine($"{error} Using the default data directory."))
+            ?[ConfigKeys.Agent.DataDirectoryPath];
 }
