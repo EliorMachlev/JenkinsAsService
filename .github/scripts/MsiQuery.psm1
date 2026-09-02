@@ -255,4 +255,31 @@ function Get-MsiExecuteSequence {
     finally { Close-MsiDatabase -Msi $msi }
 }
 
-Export-ModuleMember -Function Get-MsiProperty, Get-MsiArchitecture, Get-MsiControlEvent, Get-MsiExecuteSequence
+function Get-MsiCustomAction {
+    <#
+    .SYNOPSIS
+        The package's CustomAction table as Action/Type/Target triples.
+    .DESCRIPTION
+        Read back so the authored command lines can be checked, since the MSI's own validation has nothing to
+        say about their CONTENT - ICE03 caps Target at 255 characters and stops there.
+    .OUTPUTS
+        Objects with Action, Type and Target.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $msi = Get-MsiDatabase -Path $Path
+    try {
+        # No caller input reaches this query - the whole table is read and filtered by the caller.
+        Invoke-MsiQuery -Database $msi.Database -FieldCount 3 `
+            -Sql 'SELECT Action, Type, Target FROM CustomAction' |
+            ForEach-Object {
+                [pscustomobject]@{ Action = $_[0]; Type = $_[1]; Target = $_[2] }
+            }
+    }
+    finally { Close-MsiDatabase -Msi $msi }
+}
+
+Export-ModuleMember -Function Get-MsiProperty, Get-MsiArchitecture, Get-MsiControlEvent, `
+    Get-MsiExecuteSequence, Get-MsiCustomAction

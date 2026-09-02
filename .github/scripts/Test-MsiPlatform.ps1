@@ -107,4 +107,34 @@ foreach ($package in $packages) {
     }
 }
 
+# Every [PROPERTY] in a custom-action command line must be quoted. An empty property expands to nothing, so
+# an unquoted one lets its flag swallow the NEXT flag as a value and the rest of the command line is re-read
+# wrongly - one blank optional setting silently corrupting several. Quoted, an empty value arrives as "" and
+# parses to null, meaning "not set", which is what it is.
+# Checked on the built package rather than the source: the .wxs is preprocessed per architecture, and this is
+# the string msiexec actually runs. Nothing else validates it - ICE03 caps Target at 255 characters and has
+# no opinion on its content.
+# Only the custom actions whose Target IS a command line. The low 6 bits of Type are the base type: 2 and 18
+# are EXE from the Binary table / from an installed file, 34 and 50 the directory- and property-anchored EXE
+# forms. Everything else stores something that is not a command line in the same column - type 51 sets a
+# property (INSTALLFOLDER is recovered that way, and quoting there would put quotes IN the path), 19 is an
+# error message, 35 sets a directory, 37/38 are script bodies.
+$commandLineTypes = 2, 18, 34, 50
+
+foreach ($package in $packages) {
+    $bare = @(
+        Get-MsiCustomAction -Path $package.Path |
+            Where-Object { (([int]$_.Type) -band 0x3F) -in $commandLineTypes } |
+            Where-Object { $_.Target -match '\[[A-Z_]+\]' } |
+            ForEach-Object {
+                # A property expansion counts as quoted when a double quote sits immediately either side.
+                $unquoted = [regex]::Matches($_.Target, '(?<!")\[[A-Z_]+\](?!")')
+                if ($unquoted.Count -gt 0) { '{0}: {1}' -f $_.Action, (($unquoted.Value) -join ', ') }
+            }
+    )
+
+    Assert-That ($bare.Count -eq 0) `
+        "$($package.Name): every custom-action property expansion is quoted$(if ($bare) { " (bare: $($bare -join '; '))" })"
+}
+
 Complete-AssertionReport -Subject 'MSI architecture'

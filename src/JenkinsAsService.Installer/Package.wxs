@@ -84,7 +84,7 @@
          options (which take the secret from an env var or a self-deleting file instead of the command line). -->
     <CustomAction Id="WriteConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE] --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
+                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]" --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Second CA: persist the data directory. Kept separate because folding the data-dir flag into the
@@ -100,15 +100,22 @@
                   Execute="deferred" Impersonate="no" />
 
     <!-- Advanced optional fields, applied via the update-secret merge flag. Split across three CAs purely to
-         keep each authored command under the MSI 255-char Target limit. Possibly-empty values are quoted
-         so an empty property does not swallow the following flag. -->
+         keep each authored command under the MSI 255-char Target limit.
+         EVERY [PROPERTY] expansion in every ExeCommand on this page is quoted, without exception. An empty
+         one otherwise collapses to nothing and its flag swallows the NEXT flag as a value, so one blank
+         setting silently re-reads the rest of the command line: with mode empty, the thumbprint flag becomes
+         the mode's value and the thumbprint's own value is then an unknown argument. Quoted, an empty value
+         arrives as a literal empty string, parses to null, and is simply not applied, which is exactly what
+         an unset optional setting means.
+         Test-MsiPlatform.ps1 asserts this on the built packages - the rule only works if it is total, and it
+         is one easy character to leave out. -->
     <CustomAction Id="WriteAdvanced1"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --merge --method [JENKINS_METHOD] --dpapi-scope [JENKINS_DPAPI_SCOPE] --via-file "[JENKINS_VIA_FILE]" --max-retries [JENKINS_MAX_RETRIES]'
+                  ExeCommand='update-secret --silent --merge --method "[JENKINS_METHOD]" --dpapi-scope "[JENKINS_DPAPI_SCOPE]" --via-file "[JENKINS_VIA_FILE]" --max-retries "[JENKINS_MAX_RETRIES]"'
                   Execute="deferred" Impersonate="no" />
     <CustomAction Id="WriteAdvanced2"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --merge --debug "[JENKINS_DEBUG]" --compact-log "[JENKINS_COMPACT_LOG]" --retained-logs [JENKINS_RETAINED_LOGS] --sanitize-env "[JENKINS_SANITIZE_ENV]"'
+                  ExeCommand='update-secret --silent --merge --debug "[JENKINS_DEBUG]" --compact-log "[JENKINS_COMPACT_LOG]" --retained-logs "[JENKINS_RETAINED_LOGS]" --sanitize-env "[JENKINS_SANITIZE_ENV]"'
                   Execute="deferred" Impersonate="no" />
     <CustomAction Id="WriteAdvanced3"
                   FileRef="JenkinsAsService.exe"
@@ -123,7 +130,7 @@
          the MSI 255-char CA Target limit; they are used only if no secret is present (repair path). -->
     <CustomAction Id="UpgradeConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE]'
+                  ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Replace util:PermissionEx and util:ServiceConfig, which are unusable across architectures - see
