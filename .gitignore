@@ -59,3 +59,7 @@ package-lock.json
 # Superpowers process artifacts (design specs, implementation plans, SDD ledger)
 docs/superpowers/
 .superpowers/
+
+# PSScriptAnalyzer output from .github/scripts/Invoke-ScriptAnalyzerScan.ps1. The scan is a script rather
+# than an inline CI step so it can be run locally; running it locally drops this in the repo root.
+results.sarif
