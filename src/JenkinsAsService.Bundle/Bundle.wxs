@@ -73,7 +73,7 @@
          like it works and does nothing.
          Split by secrecy rather than by purpose, because that is the only attribute that differs.
          FORCE_UPGRADE is in neither: it is the bundle's own policy, not a setting an operator supplies. -->
-    <?define JasForwardedSettings = JENKINS_URL;JENKINS_SECRET_MODE;JENKINS_AGENT_NAME;JENKINS_METHOD;JENKINS_THUMBPRINT;JENKINS_JAVA_PATH;DATAFOLDER;SERVICE_ACCOUNT;SERVICE_ACCOUNT_DOMAIN;SERVICE_ACCOUNT_NAME ?>
+    <?define JasForwardedSettings = JENKINS_URL;JENKINS_SECRET_MODE;JENKINS_AGENT_NAME;JENKINS_METHOD;JENKINS_THUMBPRINT;JENKINS_JAVA_PATH;DATAFOLDER;SERVICE_ACCOUNT ?>
     <!-- Hidden and Persisted="no": these must not be written into the bundle's registry-backed variable
          store, where they would outlive the install, and must not be echoed into the bundle log. -->
     <?define JasForwardedSecrets = JENKINS_SECRET;SERVICE_PASSWORD ?>

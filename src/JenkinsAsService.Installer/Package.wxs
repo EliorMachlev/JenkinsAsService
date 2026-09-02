@@ -44,12 +44,11 @@
     <Property Id="JENKINS_MAX_RETRIES" Value="0" Secure="yes" />
 
     <!-- ─── Service identity (least privilege). Default: virtual service account 'NT SERVICE\Jenkins'.
-         For a password-based or gMSA account, override all three: SERVICE_ACCOUNT='DOMAIN\svc' (+ '$'
-         for gMSA), SERVICE_ACCOUNT_DOMAIN/SERVICE_ACCOUNT_NAME (for the folder ACL), and
-         SERVICE_PASSWORD (empty for gMSA/virtual). ─── -->
+         For a password-based or gMSA account override SERVICE_ACCOUNT='DOMAIN\svc' (+ '$' for gMSA) and
+         SERVICE_PASSWORD (empty for gMSA/virtual). The data-folder ACL is derived from SERVICE_ACCOUNT, so
+         there is one identity to get right; the separate SERVICE_ACCOUNT_DOMAIN/SERVICE_ACCOUNT_NAME pair
+         the old util:PermissionEx authoring needed is gone. ─── -->
     <Property Id="SERVICE_ACCOUNT" Value="NT SERVICE\Jenkins" Secure="yes" />
-    <Property Id="SERVICE_ACCOUNT_DOMAIN" Value="NT SERVICE" Secure="yes" />
-    <Property Id="SERVICE_ACCOUNT_NAME" Value="Jenkins" Secure="yes" />
     <Property Id="SERVICE_PASSWORD" Secure="yes" Hidden="yes" />
 
     <!-- Opt-in for replacing an installed product with the OTHER architecture's package. Off by default and
@@ -127,6 +126,20 @@
                   ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE]'
                   Execute="deferred" Impersonate="no" />
 
+    <!-- Replace util:PermissionEx and util:ServiceConfig, which are unusable across architectures - see
+         the .wixproj. Return is left at the default (check) for both: the ACL is what lets the service
+         write its logs, cache agent.jar and create the workdir, and the failure actions are the SCM half of
+         the product's auto-recovery. Neither is cosmetic. -->
+    <CustomAction Id="GrantDataAccess"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='grant-data-access --path "[DATAFOLDER]\" --account "[SERVICE_ACCOUNT]"'
+                  Execute="deferred" Impersonate="no" />
+
+    <CustomAction Id="ConfigureRecovery"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='configure-recovery'
+                  Execute="deferred" Impersonate="no" />
+
     <!-- Uninstall-only CA: delete the runtime data directory and appsettings.json. Windows Installer removes
          only what it installed, and neither of those was installed - the config is written by WriteConfig and
          the data tree is created at runtime - so without this an uninstall left both behind, including a file
@@ -157,6 +170,15 @@
       <!-- Upgrade path: run only the non-destructive reconcile. Still After InstallFiles (the exe must be on
            disk) and Before StartServices (so the full config exists before SCM launches the service). -->
       <Custom Action="UpgradeConfig" After="SetDataDir" Condition="WIX_UPGRADE_DETECTED" />
+      <!-- Every non-uninstall path: fresh install, upgrade AND repair. The util: elements these replace were
+           component-based and so re-ran whenever their component was (re)installed; the condition reproduces
+           that rather than narrowing it, since a repair exists precisely to put back an ACL or a recovery
+           setting somebody has cleared. Both are idempotent.
+           GrantDataAccess before StartServices, so the folder is writable when SCM launches the service.
+           ConfigureRecovery after InstallServices - the service must exist before SCM can be told how to
+           restart it. -->
+      <Custom Action="GrantDataAccess" After="UpgradeConfig" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="ConfigureRecovery" After="InstallServices" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <!-- Uninstall cleanup. Two parts of the condition, each load-bearing:
              REMOVE="ALL"             - a full uninstall, not a feature-level or partial removal.
              NOT UPGRADINGPRODUCTCODE - the old product's removal during a MAJOR UPGRADE must not purge.

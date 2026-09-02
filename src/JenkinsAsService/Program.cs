@@ -13,6 +13,7 @@ using Serilog.Formatting.Compact;
 
 const string UpdateSecretCommandName = "update-secret";
 const string PurgeCommandName = PurgeCommand.Name;
+const string GrantDataAccessCommandName = GrantDataAccessCommand.Name;
 const string ConfigFileName = ConfigKeys.FileName;
 const string ConfigSectionName = ConfigKeys.Section;
 const string DebugModeKey = ConfigKeys.Logging.DebugModePath;
@@ -42,6 +43,7 @@ var commands = new Dictionary<string, Func<string[], int>>(StringComparer.Ordina
 {
     [UpdateSecretCommandName] = UpdateSecretCommand.Run,
     [PurgeCommandName] = args => PurgeCommand.Run(args),
+    [GrantDataAccessCommandName] = args => GrantDataAccessCommand.Run(args),
 };
 
 if (args.Length > 0 && commands.TryGetValue(args[0], out var command))

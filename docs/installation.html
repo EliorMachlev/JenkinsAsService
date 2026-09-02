@@ -245,7 +245,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
 
     <div class="callout callout-note">
       <div class="callout-title">Service account</div>
-      <p>The default <code>NT SERVICE\Jenkins</code> virtual account needs no password and no Active Directory. For a domain <strong>gMSA</strong> or a dedicated password-based account, override <code>SERVICE_ACCOUNT</code> (plus <code>SERVICE_ACCOUNT_DOMAIN</code> / <code>SERVICE_ACCOUNT_NAME</code> for the folder ACL, and <code>SERVICE_PASSWORD</code> &mdash; leave empty for gMSA).</p>
+      <p>The default <code>NT SERVICE\Jenkins</code> virtual account needs no password and no Active Directory. For a domain <strong>gMSA</strong> or a dedicated password-based account, override <code>SERVICE_ACCOUNT</code> and <code>SERVICE_PASSWORD</code> (leave the password empty for gMSA). The data-folder ACL is derived from <code>SERVICE_ACCOUNT</code>, so that is the only identity to set.</p>
     </div>
 
     <h3 id="msi-dialog-flow">MSI Dialog Flow</h3>
@@ -318,8 +318,6 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
     JENKINS_URL="https://jenkins.example.com:8443" `
     JENKINS_SECRET="your-secret" `
     SERVICE_ACCOUNT="CONTOSO\svc-jenkins$" `
-    SERVICE_ACCOUNT_DOMAIN="CONTOSO" `
-    SERVICE_ACCOUNT_NAME="svc-jenkins$" `
     SERVICE_PASSWORD=""</code></pre>
 
     <div class="table-wrap">
@@ -374,12 +372,6 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td>No</td>
             <td><code>NT SERVICE\Jenkins</code></td>
             <td>Service identity. Use a gMSA (<code>DOMAIN\svc$</code>) or dedicated account for domain scenarios</td>
-          </tr>
-          <tr>
-            <td><code>SERVICE_ACCOUNT_DOMAIN</code> / <code>SERVICE_ACCOUNT_NAME</code></td>
-            <td>No</td>
-            <td><code>NT SERVICE</code> / <code>Jenkins</code></td>
-            <td>Domain and name halves of <code>SERVICE_ACCOUNT</code>, used for the data-folder ACL grant. Override when changing <code>SERVICE_ACCOUNT</code></td>
           </tr>
           <tr>
             <td><code>SERVICE_PASSWORD</code></td>

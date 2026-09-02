@@ -169,6 +169,33 @@ Assert-That ((Get-RecordedLocation -Platform $Platform -Name 'DataPath') -eq "$d
 Assert-That ((Get-InstalledPlatform) -eq $Platform) `
     "the install recorded itself under the $Platform key ($locationKey) and no other architecture's"
 
+# The two settings that moved out of the WiX Util extension and into EXE custom actions, because its
+# arch-suffixed native CA DLLs cannot be mixed across architectures inside one transaction (that is what
+# broke the x64 -> arm64 migration with 1157 -> 1723 -> 1603). Asserted from the SCM and the filesystem
+# rather than from the MSI tables: the point is that the BEHAVIOUR survived the move, and a package can
+# schedule a custom action perfectly while the action itself does nothing.
+$failure = & "$env:SystemRoot\System32\sc.exe" qfailure $serviceName 2>&1 | Out-String
+Assert-That ($failure -match 'RESTART') `
+    "SCM failure actions are set to RESTART (ConfigureRecovery replaced util:ServiceConfig)"
+Assert-That ($failure -match 'RESET_PERIOD.*86400') `
+    "SCM failure count resets after a day"
+
+# The low-privilege service account must be able to WRITE here: this is where agent.jar is cached, the
+# logs are written, the secret file lives and the agent -workDir is created. Inheritance must stay on, or
+# the folder loses the SYSTEM/Administrators full control it inherits - which is why the config file's
+# hardener and this grant are deliberately opposite in shape.
+$dataAcl = Get-Acl -Path $dataFolder
+$serviceAccount = "NT SERVICE\$serviceName"   # the installer's default identity; the suite overrides nothing
+$serviceAce = @($dataAcl.Access | Where-Object {
+        $_.IdentityReference.Value -eq $serviceAccount -and $_.AccessControlType -eq 'Allow'
+    })
+Assert-That ($serviceAce.Count -gt 0) `
+    "the service account is granted access to the data folder (GrantDataAccess replaced util:PermissionEx)"
+Assert-That ([bool]($serviceAce.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::Write)) `
+    "that grant includes Write - the service must be able to cache agent.jar and write its logs"
+Assert-That (-not $dataAcl.AreAccessRulesProtected) `
+    "the data folder still inherits, so SYSTEM/Administrators keep full control"
+
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 2. Operator edits the config, then upgrades to $v2Version ==="
 

@@ -31,7 +31,17 @@
 
   <ItemGroup>
     <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
-    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <!-- WixToolset.Util.wixext is deliberately ABSENT; do not add it back for one element.
+         Its ServiceConfig and PermissionEx elements compile to architecture-suffixed native custom-action
+         DLLs (Wix4ExecServiceConfig_A64, Wix4SchedSecureObjects_A64, ...), and Windows Installer reuses ONE
+         custom-action server process per transaction. On an x64 -> arm64 migration the outgoing x64
+         product's CAs start an emulated x64 server, the incoming ARM64 DLL cannot load into it, and the
+         install dies 1157 -> 1723 -> 1603 - the migration every existing Windows-on-ARM install performs on
+         its first upgrade. Caught by the msi-lifecycle-arm64 CI job.
+         Both usages moved into the installed exe, invoked as EXE custom actions (own process, package's own
+         architecture): GrantDataAccess for the data-folder ACL, ConfigureRecovery for the SCM failure
+         actions. The core ServiceConfigFailureActions element is NOT an option for the latter - WiX rejects
+         it with WIX1149, the Windows Installer SDK documenting that table as not working as expected. -->
   </ItemGroup>
 
 </Project>
