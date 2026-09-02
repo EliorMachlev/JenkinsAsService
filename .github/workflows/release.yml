@@ -17,6 +17,12 @@ jobs:
   release:
     name: Build & Publish
     runs-on: windows-latest
+    # The architectures a release ships, in one place. The publish and build-msi steps below are still
+    # written out per architecture - a `uses:` step cannot be looped - but everything that only manipulates
+    # the RESULTING FILES is driven from this list, so an architecture cannot ship with no 7z archive or go
+    # missing from the checksum file. Those are the omissions nothing downstream would notice.
+    env:
+      ARCHITECTURES: x64 x86 arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -83,6 +89,15 @@ jobs:
           output: publish/x86/
           version: ${{ steps.version.outputs.VERSION }}
 
+      # Cross-compiled from the x64 runner - crossgen2 targets win-arm64 from an x64 host, so the native
+      # ARM64 build needs no ARM64 runner.
+      - name: Publish arm64
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-arm64
+          output: publish/arm64/
+          version: ${{ steps.version.outputs.VERSION }}
+
       - name: Build MSI x64
         uses: ./.github/actions/build-msi
         with:
@@ -99,17 +114,42 @@ jobs:
           version: ${{ steps.version.outputs.VERSION }}
           output: msi/x86/
 
+      - name: Build MSI arm64
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/arm64/
+          platform: arm64
+          version: ${{ steps.version.outputs.VERSION }}
+          output: msi/arm64/
+
       # Every release to date shipped an x86 package that was really the x64 one, because nothing ever
       # checked. Verified before the packages are renamed and published.
       - name: Verify each MSI targets its own architecture
         shell: pwsh
-        run: .github/scripts/Test-MsiPlatform.ps1 -X64Msi (Get-Item msi/x64/*.msi).FullName -X86Msi (Get-Item msi/x86/*.msi).FullName
+        run: >-
+          .github/scripts/Test-MsiPlatform.ps1
+          -X64Msi (Get-Item msi/x64/*.msi).FullName
+          -X86Msi (Get-Item msi/x86/*.msi).FullName
+          -Arm64Msi (Get-Item msi/arm64/*.msi).FullName
 
-      - name: Rename MSI files
+      # The single self-selecting installer, built from the three packages just verified above. Built BEFORE
+      # the rename, because the bundle project takes the paths the build-msi action produced.
+      - name: Build bundle
+        uses: ./.github/actions/build-bundle
+        with:
+          x64-msi: ../../msi/x64/JenkinsAsService.Installer.msi
+          x86-msi: ../../msi/x86/JenkinsAsService.Installer.msi
+          arm64-msi: ../../msi/arm64/JenkinsAsService.Installer.msi
+          version: ${{ steps.version.outputs.VERSION }}
+          output: bundle/
+
+      - name: Rename installer files
         run: |
           $v = "${{ steps.version.outputs.VERSION }}"
           Move-Item msi/x64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x64.msi"
           Move-Item msi/x86/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x86.msi"
+          Move-Item msi/arm64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_arm64.msi"
+          Move-Item bundle/JenkinsAsService.Bundle.exe "JenkinsAsService_${v}.exe"
 
       - name: Generate SBOM (CycloneDX)
         run: |
@@ -117,35 +157,39 @@ jobs:
           dotnet tool install --global CycloneDX --version 6.2.0
           dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output . --output-format Json --filename "JenkinsAsService_${v}_sbom.json" --set-version $v
 
+      # 7z only. RAR was dropped deliberately: WinRAR is proprietary trialware with no redistributable
+      # command-line licence for unattended public CI, so producing release archives with it in this repo was
+      # a licensing problem rather than a packaging choice. 7-Zip is free software, already on the runner, and
+      # LZMA2 at -mx=9 is the better compressor anyway. The one thing genuinely lost is RAR's recovery record;
+      # the published SHA256 checksums already cover integrity, which is what that was standing in for.
       - name: Create 7z archives
         run: |
-          7z a -t7z -mx=9 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z" ./publish/x64/JenkinsAsService.exe ./publish/x64/appsettings.json
-          7z a -t7z -mx=9 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.7z" ./publish/x86/JenkinsAsService.exe ./publish/x86/appsettings.json
-
-      - name: Install WinRAR
-        run: choco install winrar -y --no-progress
-
-      - name: Create RAR5 archives with recovery record
-        run: |
-          $rar = "C:\Program Files\WinRAR\rar.exe"
-          & $rar a -ma5 -rr5p -ep1 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.rar" ./publish/x64/JenkinsAsService.exe ./publish/x64/appsettings.json
-          & $rar a -ma5 -rr5p -ep1 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.rar" ./publish/x86/JenkinsAsService.exe ./publish/x86/appsettings.json
+          $v = "${{ steps.version.outputs.VERSION }}"
+          foreach ($arch in $env:ARCHITECTURES.Split(' ')) {
+            7z a -t7z -mx=9 "JenkinsAsService_${v}_${arch}.7z" ./publish/$arch/JenkinsAsService.exe ./publish/$arch/appsettings.json
+            if ($LASTEXITCODE -ne 0) { throw "7z failed for $arch" }
+          }
 
       - name: Generate checksums
         run: |
           $v = "${{ steps.version.outputs.VERSION }}"
-          $files = [ordered]@{
-            "JenkinsAsService_${v}_x64.msi"  = "JenkinsAsService_${v}_x64.msi"
-            "JenkinsAsService_${v}_x86.msi"  = "JenkinsAsService_${v}_x86.msi"
-            "JenkinsAsService_${v}_x64.7z"   = "JenkinsAsService_${v}_x64.7z"
-            "JenkinsAsService_${v}_x64.rar"  = "JenkinsAsService_${v}_x64.rar"
-            "JenkinsAsService_${v}_x86.7z"   = "JenkinsAsService_${v}_x86.7z"
-            "JenkinsAsService_${v}_x86.rar"  = "JenkinsAsService_${v}_x86.rar"
-            "x64/JenkinsAsService.exe"       = "publish/x64/JenkinsAsService.exe"
-            "x64/appsettings.json"           = "publish/x64/appsettings.json"
-            "x86/JenkinsAsService.exe"       = "publish/x86/JenkinsAsService.exe"
-            "x86/appsettings.json"           = "publish/x86/appsettings.json"
-            "JenkinsAsService_${v}_sbom.json" = "JenkinsAsService_${v}_sbom.json"
+          # Published name -> path on disk, covering EVERY release asset. The per-architecture rows are
+          # GENERATED from the architecture list rather than written out: at three architectures the literal
+          # table was fourteen rows of which twelve differed only in an arch token, and the failure mode of
+          # missing one is a release whose checksum file quietly does not cover an artifact that shipped.
+          $files = [ordered]@{}
+          foreach ($name in "JenkinsAsService_${v}.exe", "JenkinsAsService_${v}_sbom.json") {
+            $files[$name] = $name          # released from the repo root; name and path are the same
+          }
+          foreach ($arch in $env:ARCHITECTURES.Split(' ')) {
+            foreach ($ext in 'msi', '7z') {
+              $name = "JenkinsAsService_${v}_${arch}.${ext}"
+              $files[$name] = $name
+            }
+            # The loose published payload, named by architecture so the entries stay unambiguous.
+            foreach ($payload in 'JenkinsAsService.exe', 'appsettings.json') {
+              $files["$arch/$payload"] = "publish/$arch/$payload"
+            }
           }
           $checksums = [ordered]@{ version = $v; algorithm = "SHA256"; files = [ordered]@{} }
           foreach ($entry in $files.GetEnumerator()) {
@@ -154,17 +198,29 @@ jobs:
           }
           $checksums | ConvertTo-Json -Depth 3 | Set-Content "JenkinsAsService_${v}_checksums.json" -Encoding utf8
 
+      # Generated from the artifact itself, so the SHA256 in the manifest cannot disagree with the file that
+      # ships. Attached to the release rather than submitted: opening the winget-pkgs PR stays a deliberate act.
+      - name: Generate winget manifests
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.VERSION }}"
+          $url = "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.TAG }}/JenkinsAsService_${v}.exe"
+          .github/scripts/New-WingetManifest.ps1 -Version $v -BundlePath "JenkinsAsService_${v}.exe" -InstallerUrl $url -OutputDirectory winget/
+          Compress-Archive -Path winget/* -DestinationPath "JenkinsAsService_${v}_winget-manifests.zip"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           generate_release_notes: true
           files: |
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}.exe
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_winget-manifests.zip
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.msi
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.msi
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_arm64.msi
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z
-            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.rar
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.7z
-            JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.rar
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_arm64.7z
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_sbom.json
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_checksums.json

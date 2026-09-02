@@ -14,6 +14,17 @@
 
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Each default value, written ONCE. Every one is named twice below - in the Property table, where
+         ICE34 requires a RadioButtonGroup's property to have a value, and in the SetProperty that restores it
+         when a caller passes the property empty - and two literals that must agree is how they stop
+         agreeing. -->
+    <?define JasDefaultSecretMode = "Dpapi" ?>
+    <?define JasDefaultMethod = "Auto" ?>
+    <?define JasDefaultDpapiScope = "Machine" ?>
+    <?define JasDefaultRetainedLogs = "3" ?>
+    <?define JasDefaultMaxRetries = "0" ?>
+    <?define JasDefaultServiceAccount = "NT SERVICE\Jenkins" ?>
+
     <Icon Id="Logo.ico" SourceFile="$(var.ProjectDir)..\..\Resources\Logo.ico" />
     <Property Id="ARPPRODUCTICON" Value="Logo.ico" />
     <Property Id="ARPHELPLINK" Value="https://github.com/EliorMachlev/JenkinsAsService" />
@@ -27,30 +38,60 @@
     <!-- Default to DPAPI (encrypted at rest, machine-scoped): universally available and does not expose the
          secret to every local user the way a machine-scoped env var (readable by BUILTIN\Users) would. TPM is
          stronger where hardware allows; both are offered on the Security Options page. -->
-    <Property Id="JENKINS_SECRET_MODE" Value="Dpapi" Secure="yes" />
+    <Property Id="JENKINS_SECRET_MODE" Value="$(var.JasDefaultSecretMode)" Secure="yes" />
     <Property Id="JENKINS_THUMBPRINT" Secure="yes" />
 
     <!-- Optional-field properties. Each carries its ServiceSettings default so an untouched field
          reproduces current behaviour. Bool fields use "1" (checked) / "" (unchecked) from checkboxes. -->
-    <Property Id="JENKINS_METHOD" Value="Auto" Secure="yes" />
-    <Property Id="JENKINS_DPAPI_SCOPE" Value="Machine" Secure="yes" />
+    <Property Id="JENKINS_METHOD" Value="$(var.JasDefaultMethod)" Secure="yes" />
+    <Property Id="JENKINS_DPAPI_SCOPE" Value="$(var.JasDefaultDpapiScope)" Secure="yes" />
     <Property Id="JENKINS_VIA_FILE" Value="1" Secure="yes" />
     <Property Id="JENKINS_CUSTOM_ARGS" Secure="yes" />
     <Property Id="JENKINS_ALLOWED_ENV" Secure="yes" />
     <Property Id="JENKINS_SANITIZE_ENV" Value="1" Secure="yes" />
     <Property Id="JENKINS_DEBUG" Secure="yes" />
     <Property Id="JENKINS_COMPACT_LOG" Secure="yes" />
-    <Property Id="JENKINS_RETAINED_LOGS" Value="3" Secure="yes" />
-    <Property Id="JENKINS_MAX_RETRIES" Value="0" Secure="yes" />
+    <Property Id="JENKINS_RETAINED_LOGS" Value="$(var.JasDefaultRetainedLogs)" Secure="yes" />
+    <Property Id="JENKINS_MAX_RETRIES" Value="$(var.JasDefaultMaxRetries)" Secure="yes" />
 
     <!-- ─── Service identity (least privilege). Default: virtual service account 'NT SERVICE\Jenkins'.
-         For a password-based or gMSA account, override all three: SERVICE_ACCOUNT='DOMAIN\svc' (+ '$'
-         for gMSA), SERVICE_ACCOUNT_DOMAIN/SERVICE_ACCOUNT_NAME (for the folder ACL), and
-         SERVICE_PASSWORD (empty for gMSA/virtual). ─── -->
-    <Property Id="SERVICE_ACCOUNT" Value="NT SERVICE\Jenkins" Secure="yes" />
-    <Property Id="SERVICE_ACCOUNT_DOMAIN" Value="NT SERVICE" Secure="yes" />
-    <Property Id="SERVICE_ACCOUNT_NAME" Value="Jenkins" Secure="yes" />
+         For a password-based or gMSA account override SERVICE_ACCOUNT='DOMAIN\svc' (+ '$' for gMSA) and
+         SERVICE_PASSWORD (empty for gMSA/virtual). The data-folder ACL is derived from SERVICE_ACCOUNT, so
+         there is one identity to get right; the separate SERVICE_ACCOUNT_DOMAIN/SERVICE_ACCOUNT_NAME pair
+         the old util:PermissionEx authoring needed is gone. ─── -->
+    <Property Id="SERVICE_ACCOUNT" Value="$(var.JasDefaultServiceAccount)" Secure="yes" />
     <Property Id="SERVICE_PASSWORD" Secure="yes" Hidden="yes" />
+
+    <!-- Opt-in for replacing an installed product with the OTHER architecture's package. Off by default and
+         required in both the wizard and a silent install; see the gate in InstallLocation.wxs for why. -->
+    <Property Id="FORCE_UPGRADE" Secure="yes" />
+
+    <!-- ─── Re-apply the defaults above when the property arrives EMPTY ───
+         A public property set to empty on the msiexec command line does not mean "unset" to Windows
+         Installer - it means "set to empty", and it OVERRIDES the Property table. So a caller that forwards a
+         setting it has no value for wipes the default instead of deferring to it. The bundle did exactly that: SERVICE_ACCOUNT= erased the virtual service account and
+         every bundle install registered the service with an empty StartName, i.e. LocalSystem. Conditioning
+         the forwarding on the bundle side is the obvious fix and does not work - authored, present in the
+         Burn manifest, and the properties still arrived. Doing it here also covers a hand-run msiexec, which
+         nothing on the bundle side ever could.
+         Restored before CostFinalize, so both the wizard and the custom actions see the real value, and with
+         Sequence="both" because a silent install executes only the execute table.
+         DELIBERATELY NOT DONE FOR THE CHECKBOX PROPERTIES (JENKINS_VIA_FILE, JENKINS_SANITIZE_ENV,
+         JENKINS_DEBUG, JENKINS_COMPACT_LOG): there empty is a real value, "unchecked", and restoring a
+         default would make a cleared checkbox impossible to express. Nor for DATAFOLDER, a directory whose
+         empty case is what lets InstallLocation.wxs recover the previous install's path. -->
+    <SetProperty Id="JENKINS_SECRET_MODE" Value="$(var.JasDefaultSecretMode)" Before="CostFinalize"
+                 Sequence="both" Condition="NOT JENKINS_SECRET_MODE" />
+    <SetProperty Id="JENKINS_METHOD" Value="$(var.JasDefaultMethod)" Before="CostFinalize"
+                 Sequence="both" Condition="NOT JENKINS_METHOD" />
+    <SetProperty Id="JENKINS_DPAPI_SCOPE" Value="$(var.JasDefaultDpapiScope)" Before="CostFinalize"
+                 Sequence="both" Condition="NOT JENKINS_DPAPI_SCOPE" />
+    <SetProperty Id="JENKINS_RETAINED_LOGS" Value="$(var.JasDefaultRetainedLogs)" Before="CostFinalize"
+                 Sequence="both" Condition="NOT JENKINS_RETAINED_LOGS" />
+    <SetProperty Id="JENKINS_MAX_RETRIES" Value="$(var.JasDefaultMaxRetries)" Before="CostFinalize"
+                 Sequence="both" Condition="NOT JENKINS_MAX_RETRIES" />
+    <SetProperty Id="SERVICE_ACCOUNT" Value="$(var.JasDefaultServiceAccount)" Before="CostFinalize"
+                 Sequence="both" Condition="NOT SERVICE_ACCOUNT" />
 
     <!-- Prefill the Java Path field from JAVA_HOME so the wizard shows the detected JDK and how it was found.
          UI sequence only and gated on an empty value, so a silent install that sets no explicit java path
@@ -62,6 +103,7 @@
       <ComponentGroupRef Id="PublishOutput" />
       <ComponentRef Id="ServiceComponent" />
       <ComponentRef Id="DataFolderAcl" />
+      <ComponentRef Id="InstallLocationRegistry" />
     </Feature>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -80,7 +122,7 @@
          options (which take the secret from an env var or a self-deleting file instead of the command line). -->
     <CustomAction Id="WriteConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE] --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
+                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]" --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Second CA: persist the data directory. Kept separate because folding the data-dir flag into the
@@ -96,15 +138,22 @@
                   Execute="deferred" Impersonate="no" />
 
     <!-- Advanced optional fields, applied via the update-secret merge flag. Split across three CAs purely to
-         keep each authored command under the MSI 255-char Target limit. Possibly-empty values are quoted
-         so an empty property does not swallow the following flag. -->
+         keep each authored command under the MSI 255-char Target limit.
+         EVERY [PROPERTY] expansion in every ExeCommand on this page is quoted, without exception. An empty
+         one otherwise collapses to nothing and its flag swallows the NEXT flag as a value, so one blank
+         setting silently re-reads the rest of the command line: with mode empty, the thumbprint flag becomes
+         the mode's value and the thumbprint's own value is then an unknown argument. Quoted, an empty value
+         arrives as a literal empty string, parses to null, and is simply not applied, which is exactly what
+         an unset optional setting means.
+         Test-MsiPlatform.ps1 asserts this on the built packages - the rule only works if it is total, and it
+         is one easy character to leave out. -->
     <CustomAction Id="WriteAdvanced1"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --merge --method [JENKINS_METHOD] --dpapi-scope [JENKINS_DPAPI_SCOPE] --via-file "[JENKINS_VIA_FILE]" --max-retries [JENKINS_MAX_RETRIES]'
+                  ExeCommand='update-secret --silent --merge --method "[JENKINS_METHOD]" --dpapi-scope "[JENKINS_DPAPI_SCOPE]" --via-file "[JENKINS_VIA_FILE]" --max-retries "[JENKINS_MAX_RETRIES]"'
                   Execute="deferred" Impersonate="no" />
     <CustomAction Id="WriteAdvanced2"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --merge --debug "[JENKINS_DEBUG]" --compact-log "[JENKINS_COMPACT_LOG]" --retained-logs [JENKINS_RETAINED_LOGS] --sanitize-env "[JENKINS_SANITIZE_ENV]"'
+                  ExeCommand='update-secret --silent --merge --debug "[JENKINS_DEBUG]" --compact-log "[JENKINS_COMPACT_LOG]" --retained-logs "[JENKINS_RETAINED_LOGS]" --sanitize-env "[JENKINS_SANITIZE_ENV]"'
                   Execute="deferred" Impersonate="no" />
     <CustomAction Id="WriteAdvanced3"
                   FileRef="JenkinsAsService.exe"
@@ -119,7 +168,21 @@
          the MSI 255-char CA Target limit; they are used only if no secret is present (repair path). -->
     <CustomAction Id="UpgradeConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode [JENKINS_SECRET_MODE]'
+                  ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]"'
+                  Execute="deferred" Impersonate="no" />
+
+    <!-- Replace util:PermissionEx and util:ServiceConfig, which are unusable across architectures - see
+         the .wixproj. Return is left at the default (check) for both: the ACL is what lets the service
+         write its logs, cache agent.jar and create the workdir, and the failure actions are the SCM half of
+         the product's auto-recovery. Neither is cosmetic. -->
+    <CustomAction Id="GrantDataAccess"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='grant-data-access --path "[DATAFOLDER]\" --account "[SERVICE_ACCOUNT]"'
+                  Execute="deferred" Impersonate="no" />
+
+    <CustomAction Id="ConfigureRecovery"
+                  FileRef="JenkinsAsService.exe"
+                  ExeCommand='configure-recovery'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Uninstall-only CA: delete the runtime data directory and appsettings.json. Windows Installer removes
@@ -152,6 +215,19 @@
       <!-- Upgrade path: run only the non-destructive reconcile. Still After InstallFiles (the exe must be on
            disk) and Before StartServices (so the full config exists before SCM launches the service). -->
       <Custom Action="UpgradeConfig" After="SetDataDir" Condition="WIX_UPGRADE_DETECTED" />
+      <!-- Every non-uninstall path: fresh install, upgrade AND repair. The util: elements these replace were
+           component-based and so re-ran whenever their component was (re)installed; the condition reproduces
+           that rather than narrowing it, since a repair exists precisely to put back an ACL or a recovery
+           setting somebody has cleared. Both are idempotent.
+           BOTH must sit strictly between InstallServices and StartServices, and for the SAME reason, not two:
+           the default identity is the VIRTUAL account NT SERVICE\Jenkins, whose SID does not exist until
+           ServiceInstall creates the service. Grant the ACL before that and LookupAccountName cannot resolve
+           it - 1722 from the custom action, 1603, rollback. (util:PermissionEx scheduled its deferred apply
+           after ServiceInstall for exactly this reason.) They must equally run BEFORE StartServices: the
+           service is registered Start="install", so SCM launches it there, into a folder it must already be
+           able to write. Test-MsiPlatform.ps1 asserts the window statically, on every package. -->
+      <Custom Action="GrantDataAccess" After="InstallServices" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="ConfigureRecovery" After="GrantDataAccess" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <!-- Uninstall cleanup. Two parts of the condition, each load-bearing:
              REMOVE="ALL"             - a full uninstall, not a feature-level or partial removal.
              NOT UPGRADINGPRODUCTCODE - the old product's removal during a MAJOR UPGRADE must not purge.

@@ -1,0 +1,37 @@
+<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- ════════════════════════════════════════════════════════════════════════════════════════════════
+       What the bundle hands whichever MSI runs. Included into EVERY MsiPackage element.
+
+       The packages cannot be factored into one - they have different SourceFiles and mutually exclusive
+       InstallConditions, and Burn has no loop over a chain - but their contents can, and had to be. Written
+       out per package, adding or renaming a setting is a three-site edit that nothing checks: exactly one of
+       the packages ever runs on a given machine, so an omission from the x86 list ships as "that setting
+       silently does nothing on 32-bit hosts", and CI runs the bundle only on an x64 runner - which cannot
+       exercise the x86 or the arm64 list at all.
+
+       The names live in Bundle.wxs (JasForwardedSettings and JasForwardedSecrets), which generates its
+       Variable declarations from the same two lists - so the declarations and the forwarding cannot disagree.
+       ════════════════════════════════════════════════════════════════════════════════════════════════ -->
+
+  <!-- The architecture policy, in one line: whichever package matches the machine may replace an installed
+       product of another architecture. The MSI's own gate stays strict for a bare .msi run by hand. -->
+  <MsiProperty Name="FORCE_UPGRADE" Value="1" />
+
+  <!-- Each setting is forwarded verbatim from the like-named bundle variable. An unset one therefore
+       reaches the MSI as an EMPTY property, and an empty public property does not mean "unset" to Windows
+       Installer - it means "set to empty", and it overrides the Property table default.
+       That is handled in the MSI, by the SetProperty rows in Package.wxs that restore each default when the
+       property arrives empty. It is handled there rather than here for two reasons: a hand-run
+       msiexec SERVICE_ACCOUNT= has the same effect and nothing on this side can cover it, and the obvious
+       fix here does not work: a Condition on each MsiProperty testing the variable against an empty string
+       compiles, and appears correctly in the Burn manifest, and the properties were STILL passed empty at
+       runtime - so do not re-add it and assume it filters anything. Whatever forwarding happens here, the MSI's defaults survive it. -->
+  <?foreach JasSetting in $(JasForwardedSettings) ?>
+    <MsiProperty Name="$(JasSetting)" Value="[$(JasSetting)]" />
+  <?endforeach?>
+  <?foreach JasSecret in $(JasForwardedSecrets) ?>
+    <MsiProperty Name="$(JasSecret)" Value="[$(JasSecret)]" />
+  <?endforeach?>
+
+</Include>

@@ -1,0 +1,26 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <!-- Matches the installer project: WiX extensions are pinned to the SDK version and locked, and these
+         packages are outside Central Package Management (which governs the .NET projects only). -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <OutputType>Bundle</OutputType>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <!-- The three MSIs to embed. All are REQUIRED and none is built by this project: a bundle that silently
+         packaged a stale MSI would be indistinguishable from a good one, so the paths are passed in by the
+         build step that just produced them. -->
+    <X64Msi Condition="'$(X64Msi)' == ''">..\..\msi\x64\JenkinsAsService.Installer.msi</X64Msi>
+    <X86Msi Condition="'$(X86Msi)' == ''">..\..\msi\x86\JenkinsAsService.Installer.msi</X86Msi>
+    <Arm64Msi Condition="'$(Arm64Msi)' == ''">..\..\msi\arm64\JenkinsAsService.Installer.msi</Arm64Msi>
+    <DefineConstants>Version=$(Version);X64Msi=$(X64Msi);X86Msi=$(X86Msi);Arm64Msi=$(Arm64Msi)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

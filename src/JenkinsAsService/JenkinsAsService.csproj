@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <!-- Publish identity declared in-project so the lock file captures the per-RID assets and the
          single-file ILLink.Tasks reference, keeping RestoreLockedMode valid for both build and publish. -->
-    <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
+    <RuntimeIdentifiers>win-x64;win-x86;win-arm64</RuntimeIdentifiers>
     <PublishSingleFile>true</PublishSingleFile>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

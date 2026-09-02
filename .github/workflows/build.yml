@@ -9,6 +9,28 @@ on:
 permissions:
   contents: read
 
+# The version ladder, in one place - and workflow-level rather than job-level because TWO jobs now consume it
+# (msi-lifecycle and msi-lifecycle-arm64), and a per-job copy is precisely the drift these values exist to
+# prevent: the arm64 job would install a baseline the x64 job had already moved past, and every assertion
+# would still pass. The ORDER is the load-bearing part, and every rung depends on the one below it:
+#   BASELINE  -> installed first by the lifecycle suites, and the "from" side of the migration gate
+#   X86       -> higher than BASELINE, so the cross-architecture migration is an upgrade, not a downgrade
+#   BUNDLE    -> higher than X86, since the bundle test installs the X86 package as its baseline and then
+#                migrates it; a lower value makes MajorUpgrade refuse the run on a version rule while the
+#                failure appears to say something about architecture
+#
+# Every rung is asserted at the top of the suite that consumes it (Assert-VersionLadder), so a wrong value
+# here fails on a named ladder error before anything is installed rather than as a green run of a suite that
+# silently tested nothing. These comments describe the ladder; they do not enforce it.
+#
+# There is deliberately no separate "upgrade" rung between BASELINE and X86. The lifecycle suite needs a
+# package strictly above BASELINE, and BUNDLE already is one - building a third purely to sit in the middle
+# bought nothing but a per-run MSI build.
+env:
+  BASELINE_VERSION: 1.0.0
+  X86_VERSION: 1.0.2
+  BUNDLE_VERSION: 1.0.3
+
 jobs:
   build:
     name: Build & Test
@@ -51,6 +73,15 @@ jobs:
           runtime: win-x86
           output: publish/x86/
 
+      # Cross-compiled from the x64 runner, ReadyToRun included - crossgen2 targets win-arm64 from an x64
+      # host, so no ARM64 runner is needed to BUILD the native package. Running it is another matter; see the
+      # note on the arm64 coverage gap in the msi-lifecycle job below.
+      - name: Publish arm64
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-arm64
+          output: publish/arm64/
+
       - name: Build MSI x64
         uses: ./.github/actions/build-msi
         with:
@@ -67,16 +98,28 @@ jobs:
           version: 0.0.0
           output: msi/x86/
 
+      - name: Build MSI arm64
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/arm64/
+          platform: arm64
+          version: 0.0.0
+          output: msi/arm64/
+
       # build.yml mirrors the release steps, so it mirrors the guard too.
       - name: Verify each MSI targets its own architecture
         shell: pwsh
-        run: .github/scripts/Test-MsiPlatform.ps1 -X64Msi (Get-Item msi/x64/*.msi).FullName -X86Msi (Get-Item msi/x86/*.msi).FullName
+        run: >-
+          .github/scripts/Test-MsiPlatform.ps1
+          -X64Msi (Get-Item msi/x64/*.msi).FullName
+          -X86Msi (Get-Item msi/x86/*.msi).FullName
+          -Arm64Msi (Get-Item msi/arm64/*.msi).FullName
 
   # Installs the MSI for real. The reconcile logic is unit-tested, but custom-action SEQUENCING under
   # WIX_UPGRADE_DETECTED only happens during an actual in-place upgrade — previously a manual-verify step,
   # which is why the upgrade path stayed on the "not verified" list release after release.
   msi-lifecycle:
-    name: MSI Install / Upgrade / Uninstall
+    name: MSI Install / Upgrade / Uninstall / Arch Migration
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -94,33 +137,218 @@ jobs:
           runtime: win-x64
           output: publish/x64/
 
-      # Two versions from one publish: the upgrade needs a higher ProductVersion, nothing else differs. The
-      # build-msi action derives a per-version intermediate directory, which is what keeps these two builds
-      # from collapsing into one copied package — see the action for why that matters.
-      - name: Build MSI 1.0.0
+      # The "from" side of both the lifecycle upgrade and the refused migration. The build-msi action derives
+      # a per-version intermediate directory, which is what keeps the several x64 builds in this job from
+      # collapsing into one copied package — see the action for why that matters.
+      - name: Build MSI x64 ${{ env.BASELINE_VERSION }}
         uses: ./.github/actions/build-msi
         with:
           publish-dir: ../../publish/x64/
           platform: x64
-          version: 1.0.0
+          version: ${{ env.BASELINE_VERSION }}
           output: msi/v1/
 
-      - name: Build MSI 1.0.1
+      # The x64 <-> x86 migration gate needs a real package of the OTHER architecture: the two share an
+      # UpgradeCode, so nothing short of actually installing one over the other exercises it.
+      - name: Publish x86
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-x86
+          output: publish/x86/
+
+      # Higher than the baseline the migration test installs, so it is an upgrade (matching versions would make
+      # msiexec reconfigure instead, and every assertion would pass without a migration happening).
+      - name: Build MSI x86 ${{ env.X86_VERSION }}
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x86/
+          platform: x86
+          version: ${{ env.X86_VERSION }}
+          output: msi/x86/
+
+      # The bundle embeds ALL THREE architectures at the SAME version — a dedicated set rather than reusing an
+      # earlier x64 build, because that version has to outrank the x86 baseline the bundle test installs (see
+      # the ladder above). This is the rung whose ordering matters most and is easiest to get wrong.
+      - name: Build MSI x64 ${{ env.BUNDLE_VERSION }}
         uses: ./.github/actions/build-msi
         with:
           publish-dir: ../../publish/x64/
           platform: x64
-          version: 1.0.1
-          output: msi/v2/
+          version: ${{ env.BUNDLE_VERSION }}
+          output: msi/bundle-x64/
 
+      - name: Build MSI x86 ${{ env.BUNDLE_VERSION }}
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/x86/
+          platform: x86
+          version: ${{ env.BUNDLE_VERSION }}
+          output: msi/bundle-x86/
+
+      # The arm64 payload. Nothing in THIS job installs it - the runner is x64 - but msi-lifecycle-arm64
+      # does, from the artifact uploaded at the end of this job. Built here rather than there so one job
+      # builds every package and the ARM64 runner installs exactly what was verified, not a second build.
+      - name: Publish arm64
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-arm64
+          output: publish/arm64/
+
+      - name: Build MSI arm64 ${{ env.BUNDLE_VERSION }}
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/arm64/
+          platform: arm64
+          version: ${{ env.BUNDLE_VERSION }}
+          output: msi/bundle-arm64/
+
+      # The "from" side of the ARM64 job's own lifecycle run. Built here rather than on the ARM64 runner for
+      # the same reason everything else is: one place builds packages, so the artifacts that job installs are
+      # the ones this job verified, not a second set built with a second set of flags.
+      - name: Build MSI arm64 ${{ env.BASELINE_VERSION }}
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/arm64/
+          platform: arm64
+          version: ${{ env.BASELINE_VERSION }}
+          output: msi/arm64-baseline/
+
+      - name: Build bundle ${{ env.BUNDLE_VERSION }}
+        uses: ./.github/actions/build-bundle
+        with:
+          x64-msi: ../../msi/bundle-x64/JenkinsAsService.Installer.msi
+          x86-msi: ../../msi/bundle-x86/JenkinsAsService.Installer.msi
+          arm64-msi: ../../msi/bundle-arm64/JenkinsAsService.Installer.msi
+          version: ${{ env.BUNDLE_VERSION }}
+          output: bundle/
+
+      # Every package exists by this point, so the three real-install suites run back to back. They install
+      # the SAME product on the SAME machine, so they cannot be split across parallel jobs without either
+      # rebuilding every package per job or shipping them between jobs as artifacts - both of which cost more
+      # than the serialization saves. Each ends by uninstalling, and the order is fixed.
+      #
+      # The upgrade target is the bundle's x64 package: any x64 package above the baseline does, and that one
+      # already exists.
       - name: Install, upgrade, uninstall
         shell: pwsh
-        run: .github/scripts/Test-MsiLifecycle.ps1 -V1Msi (Get-Item msi/v1/*.msi).FullName -V2Msi (Get-Item msi/v2/*.msi).FullName
+        run: >-
+          .github/scripts/Test-MsiLifecycle.ps1
+          -V1Msi (Get-Item msi/v1/*.msi).FullName
+          -V2Msi (Get-Item msi/bundle-x64/*.msi).FullName
+
+      # Runs after the lifecycle suite, which ends with an uninstall - both suites install the same product,
+      # so they must not overlap.
+      #
+      # Both halves of the asymmetric policy, so it needs three packages in a strict version ladder: the x64
+      # baseline that the x86 package must be REFUSED over (even with FORCE_UPGRADE, since a 32-bit package
+      # cannot recover a 64-bit install folder), then the x86 install that the higher x64 package migrates on
+      # FORCE_UPGRADE=1. The x64 target is the bundle's package, reused rather than built again.
+      - name: Cross-architecture migration policy
+        shell: pwsh
+        run: >-
+          .github/scripts/Test-MsiArchMigration.ps1
+          -X64BaselineMsi (Get-Item msi/v1/*.msi).FullName
+          -X86Msi (Get-Item msi/x86/*.msi).FullName
+          -X64TargetMsi (Get-Item msi/bundle-x64/*.msi).FullName
+
+      # Runs last: like the two suites above it installs the same product, so they must not overlap. This is
+      # the one that proves an architecture migration does not trip the MSI's purge and destroy the config.
+      #
+      # This runner is x64, so it proves the chain picks x64 and NOT arm64 - the NEGATIVE half of the
+      # NativeMachine condition, and the half that fails silently: were NativeMachine undefined or
+      # misspelled, an ARM64 machine would just keep getting the emulated x64 package forever, which installs
+      # and runs. The positive half is asserted by msi-lifecycle-arm64 below, on real ARM64 silicon.
+      - name: Bundle migrates an x86 install to x64
+        shell: pwsh
+        run: >-
+          .github/scripts/Test-Bundle.ps1
+          -BaselineMsi (Get-Item msi/x86/*.msi).FullName
+          -BaselineArchitecture x86
+          -ExpectedArchitecture x64
+          -BundleExe (Get-Item bundle/*.exe).FullName
+          -BundleVersion ${{ env.BUNDLE_VERSION }}
 
       - name: Upload MSI logs on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: msi-logs
+          path: msi-logs/
+          if-no-files-found: warn
+
+      # Everything the ARM64 job installs. Uploaded even when the suites above failed, because an arm64-only
+      # regression is exactly the kind this job cannot see - and because these packages are built here on
+      # purpose: an ARM64 runner cross-compiling its own x64 payload would be a second, unverified build.
+      - name: Upload packages for the ARM64 job
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arm64-suite-packages
+          path: |
+            msi/v1/
+            msi/arm64-baseline/
+            msi/bundle-arm64/
+            bundle/
+          if-no-files-found: error
+
+  # Everything above runs on x64 silicon, which can build the arm64 package but cannot answer the only
+  # question that matters about it: does it install, and does the bundle CHOOSE it? The chain decides from
+  # Burn's NativeMachine - the silicon, not the emulation - so an x64 runner can only ever exercise the
+  # NEGATIVE half of that condition. This job supplies the positive half on real ARM64 hardware.
+  #
+  # It builds nothing. The packages come from msi-lifecycle as artifacts, so what installs here is byte-for-
+  # byte what that job's Test-MsiPlatform verified, rather than a second build made with a second set of
+  # flags on a different host architecture.
+  #
+  # windows-11-arm is GitHub-hosted and free for public repositories.
+  msi-lifecycle-arm64:
+    name: ARM64 Install / Upgrade / Migration
+    runs-on: windows-11-arm
+    needs: msi-lifecycle
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # No setup-dotnet: nothing here compiles. The suites drive msiexec and the bundle .exe and read the
+      # results out of the registry, the filesystem and SCM - all of which Windows PowerShell provides.
+      - name: Download packages built on the x64 job
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: arm64-suite-packages
+          path: pkg/
+
+      # Same suite as the x64 job, pointed at the arm64 packages: a native install, an in-place upgrade that
+      # preserves the config and secret, and an uninstall that removes both trees. Nothing about it is
+      # architecture-specific beyond -Platform, which selects the default install folder and the location key.
+      - name: Install, upgrade, uninstall (native arm64)
+        shell: pwsh
+        run: >-
+          .github/scripts/Test-MsiLifecycle.ps1
+          -V1Msi (Get-Item pkg/msi/arm64-baseline/*.msi).FullName
+          -V2Msi (Get-Item pkg/msi/bundle-arm64/*.msi).FullName
+          -Platform arm64
+
+      # THE test this job exists for. Every ARM64 machine that installed this product before there was an
+      # arm64 package received the x64 one and has been running it emulated, so x64 -> arm64 is the migration
+      # that will actually happen in the field on the first upgrade after this ships.
+      #
+      # The baseline goes to a non-default folder deliberately: x64 and arm64 are both 64-bit and therefore
+      # share a default install folder, so with the default the "kept the original folder" assertion would
+      # hold no matter what the recovery did.
+      - name: Bundle migrates an emulated x64 install to native arm64
+        shell: pwsh
+        run: >-
+          .github/scripts/Test-Bundle.ps1
+          -BaselineMsi (Get-Item pkg/msi/v1/*.msi).FullName
+          -BaselineArchitecture x64
+          -ExpectedArchitecture arm64
+          -BaselineInstallFolder 'C:\JenkinsArmMigration'
+          -BundleExe (Get-Item pkg/bundle/*.exe).FullName
+          -BundleVersion ${{ env.BUNDLE_VERSION }}
+
+      - name: Upload MSI logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: msi-logs-arm64
           path: msi-logs/
           if-no-files-found: warn
