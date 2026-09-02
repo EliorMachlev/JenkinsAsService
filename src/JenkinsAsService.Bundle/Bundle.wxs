@@ -5,19 +5,21 @@
        One downloadable file that installs the right architecture.
 
        A single .msi cannot do this. An MSI's Summary Information Template field carries exactly one platform
-       token - "x64" or "Intel" - which is the field Test-MsiPlatform.ps1 already reads to prove the two
-       packages differ. There is no "both", a 32-bit package cannot install 64-bit components, and
-       ProgramFiles64Folder is not addressable from one. The container cannot express it, so the selection
-       moves one level up: a Burn bundle that carries both MSIs and installs the one matching the machine.
+       token - "x64", "Intel" or "Arm64" - which is the field Test-MsiPlatform.ps1 already reads to prove the
+       packages differ. There is no "any", a 32-bit package cannot install 64-bit components, and
+       ProgramFiles64Folder is not addressable from one. Nor can one self-contained .NET build cover them:
+       self-contained embeds a native runtime, so the payload is per-RID by construction. The container cannot
+       express it, so the selection moves one level up: a Burn bundle that carries all three MSIs and installs
+       the one matching the machine. This .exe is the single artifact a user downloads.
 
-       Both MSIs are still shipped separately, for anyone who wants to hand the exact package to a deployment
-       tool that only speaks MSI.
+       All three MSIs are still shipped separately, for anyone who wants to hand the exact package to a
+       deployment tool that only speaks MSI.
 
        ARCHITECTURE POLICY: always the machine's native architecture. There is no reason to run the 32-bit
-       agent on a 64-bit machine, so the bundle does not preserve a mismatched install - it migrates it. That
-       is why both packages are handed FORCE_UPGRADE=1 below. The gate in the MSI stays strict for anyone
-       running a raw .msi by hand, where a wrong-architecture install is a mistake rather than a decision;
-       the bundle is the path that has already made the decision.
+       agent on a 64-bit machine, or the emulated x64 agent on Windows on ARM, so the bundle does not preserve
+       a mismatched install - it migrates it. That is why every package is handed FORCE_UPGRADE=1 below. The
+       gate in the MSI stays strict for anyone running a raw .msi by hand, where a wrong-architecture install
+       is a mistake rather than a decision; the bundle is the path that has already made the decision.
        ════════════════════════════════════════════════════════════════════════════════════════════════ -->
   <Bundle Name="Jenkins Agent Service"
           Manufacturer="EliorMachlev"
@@ -28,10 +30,20 @@
           HelpUrl="https://jenkinsasservice.machlev.org"
           Compressed="yes">
 
-    <!-- Both payloads are embedded, so the file works on a machine with no network and nothing to resolve at
-         install time. That is ~76 MB of self-contained .NET runtime; the alternative (downloading the other
-         MSI on demand) trades that for a install that can fail halfway through, which is the worse deal for
-         something whose whole job is to come up unattended. -->
+    <!-- All three payloads are embedded, so the file works on a machine with no network and nothing to
+         resolve at install time. That is ~110 MB of self-contained .NET runtime; the alternative (downloading
+         the matching MSI on demand) trades that for an install that can fail halfway through, which is the
+         worse deal for something whose whole job is to come up unattended. -->
+
+    <!-- The chain conditions below read NativeMachine, which Burn sets from IsWow64Process2 and which exists
+         only on Windows 10 1511 and later. Below that it is undefined, and an undefined variable in a Burn
+         condition is an evaluation error rather than a false - which would surface as an unreadable chain
+         failure instead of an answer. This states the real floor instead: the service targets
+         net10.0-windows, and .NET 10 supports Windows 10 1607 / Server 2016 and up, so every machine that
+         can run the thing being installed also defines NativeMachine. An older one is rejected here, up
+         front, with a message that says what is wrong. -->
+    <bal:Condition Condition="VersionNT &gt;= v10.0"
+                   Message="Jenkins Agent Service requires Windows 10, Windows Server 2016, or later." />
 
     <BootstrapperApplication>
       <!-- The MSI keeps its own configuration wizard (DisplayInternalUI below), so this only needs to be the
@@ -52,45 +64,74 @@
          Each defaults to empty and is passed through verbatim, so an unset one reaches the MSI as an empty
          property and the MSI's own default applies - the bundle deliberately restates none of those defaults,
          since two copies of a default value is exactly how they drift apart. ─── -->
-    <!-- The forwarding list, stated once. MsiProperties.wxi turns it into the MsiProperty rows of both
-         packages, so a name added here reaches x64 and x86 alike or neither - it cannot reach just one.
-         FORCE_UPGRADE is not in it: it is the bundle's own policy, not a setting an operator supplies. -->
-    <?define JasForwardedSettings = JENKINS_URL;JENKINS_SECRET;JENKINS_SECRET_MODE;JENKINS_AGENT_NAME;JENKINS_METHOD;JENKINS_THUMBPRINT;JENKINS_JAVA_PATH;DATAFOLDER;SERVICE_ACCOUNT;SERVICE_ACCOUNT_DOMAIN;SERVICE_ACCOUNT_NAME;SERVICE_PASSWORD ?>
+    <!-- The forwarding lists, stated once and used twice each: the Variable declarations below, and the
+         MsiProperty rows MsiProperties.wxi generates for EVERY package. A name added to a list therefore
+         becomes a declared variable and reaches all three architectures, or does none of those - it cannot
+         reach just one. Written out as elements instead, the two directions drifted silently: a name forwarded but
+         never declared makes the MsiProperty expand an undeclared variable, and a name declared but never
+         forwarded is overridable on the command line and forwarded to neither MSI, i.e. the setting looks
+         like it works and does nothing.
+         Split by secrecy rather than by purpose, because that is the only attribute that differs.
+         FORCE_UPGRADE is in neither: it is the bundle's own policy, not a setting an operator supplies. -->
+    <?define JasForwardedSettings = JENKINS_URL;JENKINS_SECRET_MODE;JENKINS_AGENT_NAME;JENKINS_METHOD;JENKINS_THUMBPRINT;JENKINS_JAVA_PATH;DATAFOLDER;SERVICE_ACCOUNT;SERVICE_ACCOUNT_DOMAIN;SERVICE_ACCOUNT_NAME ?>
+    <!-- Hidden and Persisted="no": these must not be written into the bundle's registry-backed variable
+         store, where they would outlive the install, and must not be echoed into the bundle log. -->
+    <?define JasForwardedSecrets = JENKINS_SECRET;SERVICE_PASSWORD ?>
 
-    <Variable Name="JENKINS_URL" bal:Overridable="yes" Value="" />
-    <!-- Hidden and Persisted="no": the secret must not be written into the bundle's registry-backed variable
-         store, where it would outlive the install, and must not be echoed into the bundle log. -->
-    <Variable Name="JENKINS_SECRET" bal:Overridable="yes" Value="" Hidden="yes" Persisted="no" />
-    <Variable Name="JENKINS_SECRET_MODE" bal:Overridable="yes" Value="" />
-    <Variable Name="JENKINS_AGENT_NAME" bal:Overridable="yes" Value="" />
-    <Variable Name="JENKINS_METHOD" bal:Overridable="yes" Value="" />
-    <Variable Name="JENKINS_THUMBPRINT" bal:Overridable="yes" Value="" />
-    <Variable Name="JENKINS_JAVA_PATH" bal:Overridable="yes" Value="" />
-    <Variable Name="DATAFOLDER" bal:Overridable="yes" Value="" />
-    <Variable Name="SERVICE_ACCOUNT" bal:Overridable="yes" Value="" />
-    <Variable Name="SERVICE_ACCOUNT_DOMAIN" bal:Overridable="yes" Value="" />
-    <Variable Name="SERVICE_ACCOUNT_NAME" bal:Overridable="yes" Value="" />
-    <Variable Name="SERVICE_PASSWORD" bal:Overridable="yes" Value="" Hidden="yes" Persisted="no" />
+    <?foreach JasSetting in $(JasForwardedSettings) ?>
+      <Variable Name="$(JasSetting)" bal:Overridable="yes" Value="" />
+    <?endforeach?>
+    <?foreach JasSecret in $(JasForwardedSecrets) ?>
+      <Variable Name="$(JasSecret)" bal:Overridable="yes" Value="" Hidden="yes" Persisted="no" />
+    <?endforeach?>
+
+    <!-- IMAGE_FILE_MACHINE_ARM64, in the decimal Burn conditions compare in. Named once rather than written
+         as a bare 43620 in the two conditions that need it - one of which is the NEGATIVE test, where a typo
+         would not fail loudly: the machine would simply be offered the emulated x64 package forever, which
+         installs and runs, so nothing would look broken. -->
+    <?define ImageFileMachineArm64 = 43620 ?>
 
     <Chain>
-      <!-- Exactly one of these installs, decided by VersionNT64. The conditions are complements of each
-           other, so the chain can neither install both nor install neither.
+      <!-- Exactly one of these installs. VersionNT64 alone cannot decide it: Windows on ARM is a 64-bit
+           Windows and sets VersionNT64, so on that machine the x64 condition and an arm64 condition written
+           against VersionNT64 would both be true. The discriminator is NativeMachine - Burn's IsWow64Process2
+           result, i.e. what the silicon IS rather than what the current process is being emulated as. Burn
+           itself runs as x86, so anything derived from its own process architecture would report x86
+           everywhere and is useless here.
+
+           The three conditions partition the machines exactly once, with no overlap and no gap:
+             arm64  native ARM64
+             x64    64-bit and not native ARM64  (so: real x64 hardware)
+             x86    not 64-bit
+           An ARM64 machine therefore gets the NATIVE package, not the x64 one it would previously have run
+           under emulation - and because the MSI is handed FORCE_UPGRADE=1, an existing emulated-x64 install
+           is migrated in place rather than left alone or installed beside.
 
            DisplayInternalUI so an interactive run still gets the MSI's configuration wizard - the bundle has
            no UI of its own for collecting a controller URL and a secret, and building one would mean a custom
            bootstrapper application to keep in sync with the MSI's pages.
 
            FORCE_UPGRADE=1 is the architecture policy in one line: whichever package matches the machine is
-           allowed to replace an installed product of the other architecture. The MSI still preserves the
+           allowed to replace an installed product of another architecture. The MSI still preserves the
            install folder, data folder, configuration and secret across that migration - see
            InstallLocation.wxs - so this changes the binaries and nothing else. -->
-      <!-- Distinct payload Names: both source files are called JenkinsAsService.Installer.msi, and inside the
-           attached container that collides - `wix burn extract` would silently overwrite one with the other,
-           leaving an "extracted" bundle containing two copies of a single architecture. -->
+      <!-- Distinct payload Names: all three source files are called JenkinsAsService.Installer.msi, and
+           inside the attached container that collides - `wix burn extract` would silently overwrite one with
+           another, leaving an "extracted" bundle containing repeats of a single architecture. -->
+      <MsiPackage Id="JenkinsAgentServiceArm64"
+                  SourceFile="$(var.Arm64Msi)"
+                  Name="JenkinsAsService_arm64.msi"
+                  InstallCondition="NativeMachine = $(var.ImageFileMachineArm64)"
+                  bal:DisplayInternalUICondition="1"
+                  Vital="yes"
+                  Compressed="yes">
+        <?include MsiProperties.wxi ?>
+      </MsiPackage>
+
       <MsiPackage Id="JenkinsAgentServiceX64"
                   SourceFile="$(var.X64Msi)"
                   Name="JenkinsAsService_x64.msi"
-                  InstallCondition="VersionNT64"
+                  InstallCondition="VersionNT64 AND NativeMachine &lt;&gt; $(var.ImageFileMachineArm64)"
                   bal:DisplayInternalUICondition="1"
                   Vital="yes"
                   Compressed="yes">

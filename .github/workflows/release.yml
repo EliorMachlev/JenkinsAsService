@@ -17,6 +17,12 @@ jobs:
   release:
     name: Build & Publish
     runs-on: windows-latest
+    # The architectures a release ships, in one place. The publish and build-msi steps below are still
+    # written out per architecture - a `uses:` step cannot be looped - but everything that only manipulates
+    # the RESULTING FILES is driven from this list, so an architecture cannot ship with no 7z archive or go
+    # missing from the checksum file. Those are the omissions nothing downstream would notice.
+    env:
+      ARCHITECTURES: x64 x86 arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -83,6 +89,15 @@ jobs:
           output: publish/x86/
           version: ${{ steps.version.outputs.VERSION }}
 
+      # Cross-compiled from the x64 runner - crossgen2 targets win-arm64 from an x64 host, so the native
+      # ARM64 build needs no ARM64 runner.
+      - name: Publish arm64
+        uses: ./.github/actions/publish
+        with:
+          runtime: win-arm64
+          output: publish/arm64/
+          version: ${{ steps.version.outputs.VERSION }}
+
       - name: Build MSI x64
         uses: ./.github/actions/build-msi
         with:
@@ -99,19 +114,32 @@ jobs:
           version: ${{ steps.version.outputs.VERSION }}
           output: msi/x86/
 
+      - name: Build MSI arm64
+        uses: ./.github/actions/build-msi
+        with:
+          publish-dir: ../../publish/arm64/
+          platform: arm64
+          version: ${{ steps.version.outputs.VERSION }}
+          output: msi/arm64/
+
       # Every release to date shipped an x86 package that was really the x64 one, because nothing ever
       # checked. Verified before the packages are renamed and published.
       - name: Verify each MSI targets its own architecture
         shell: pwsh
-        run: .github/scripts/Test-MsiPlatform.ps1 -X64Msi (Get-Item msi/x64/*.msi).FullName -X86Msi (Get-Item msi/x86/*.msi).FullName
+        run: >-
+          .github/scripts/Test-MsiPlatform.ps1
+          -X64Msi (Get-Item msi/x64/*.msi).FullName
+          -X86Msi (Get-Item msi/x86/*.msi).FullName
+          -Arm64Msi (Get-Item msi/arm64/*.msi).FullName
 
-      # The single self-selecting installer, built from the two packages just verified above. Built BEFORE the
-      # rename, because the bundle project takes the paths the build-msi action produced.
+      # The single self-selecting installer, built from the three packages just verified above. Built BEFORE
+      # the rename, because the bundle project takes the paths the build-msi action produced.
       - name: Build bundle
         uses: ./.github/actions/build-bundle
         with:
           x64-msi: ../../msi/x64/JenkinsAsService.Installer.msi
           x86-msi: ../../msi/x86/JenkinsAsService.Installer.msi
+          arm64-msi: ../../msi/arm64/JenkinsAsService.Installer.msi
           version: ${{ steps.version.outputs.VERSION }}
           output: bundle/
 
@@ -120,6 +148,7 @@ jobs:
           $v = "${{ steps.version.outputs.VERSION }}"
           Move-Item msi/x64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x64.msi"
           Move-Item msi/x86/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x86.msi"
+          Move-Item msi/arm64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_arm64.msi"
           Move-Item bundle/JenkinsAsService.Bundle.exe "JenkinsAsService_${v}.exe"
 
       - name: Generate SBOM (CycloneDX)
@@ -135,23 +164,32 @@ jobs:
       # the published SHA256 checksums already cover integrity, which is what that was standing in for.
       - name: Create 7z archives
         run: |
-          7z a -t7z -mx=9 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z" ./publish/x64/JenkinsAsService.exe ./publish/x64/appsettings.json
-          7z a -t7z -mx=9 "JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.7z" ./publish/x86/JenkinsAsService.exe ./publish/x86/appsettings.json
+          $v = "${{ steps.version.outputs.VERSION }}"
+          foreach ($arch in $env:ARCHITECTURES.Split(' ')) {
+            7z a -t7z -mx=9 "JenkinsAsService_${v}_${arch}.7z" ./publish/$arch/JenkinsAsService.exe ./publish/$arch/appsettings.json
+            if ($LASTEXITCODE -ne 0) { throw "7z failed for $arch" }
+          }
 
       - name: Generate checksums
         run: |
           $v = "${{ steps.version.outputs.VERSION }}"
-          $files = [ordered]@{
-            "JenkinsAsService_${v}.exe"      = "JenkinsAsService_${v}.exe"
-            "JenkinsAsService_${v}_x64.msi"  = "JenkinsAsService_${v}_x64.msi"
-            "JenkinsAsService_${v}_x86.msi"  = "JenkinsAsService_${v}_x86.msi"
-            "JenkinsAsService_${v}_x64.7z"   = "JenkinsAsService_${v}_x64.7z"
-            "JenkinsAsService_${v}_x86.7z"   = "JenkinsAsService_${v}_x86.7z"
-            "x64/JenkinsAsService.exe"       = "publish/x64/JenkinsAsService.exe"
-            "x64/appsettings.json"           = "publish/x64/appsettings.json"
-            "x86/JenkinsAsService.exe"       = "publish/x86/JenkinsAsService.exe"
-            "x86/appsettings.json"           = "publish/x86/appsettings.json"
-            "JenkinsAsService_${v}_sbom.json" = "JenkinsAsService_${v}_sbom.json"
+          # Published name -> path on disk, covering EVERY release asset. The per-architecture rows are
+          # GENERATED from the architecture list rather than written out: at three architectures the literal
+          # table was fourteen rows of which twelve differed only in an arch token, and the failure mode of
+          # missing one is a release whose checksum file quietly does not cover an artifact that shipped.
+          $files = [ordered]@{}
+          foreach ($name in "JenkinsAsService_${v}.exe", "JenkinsAsService_${v}_sbom.json") {
+            $files[$name] = $name          # released from the repo root; name and path are the same
+          }
+          foreach ($arch in $env:ARCHITECTURES.Split(' ')) {
+            foreach ($ext in 'msi', '7z') {
+              $name = "JenkinsAsService_${v}_${arch}.${ext}"
+              $files[$name] = $name
+            }
+            # The loose published payload, named by architecture so the entries stay unambiguous.
+            foreach ($payload in 'JenkinsAsService.exe', 'appsettings.json') {
+              $files["$arch/$payload"] = "publish/$arch/$payload"
+            }
           }
           $checksums = [ordered]@{ version = $v; algorithm = "SHA256"; files = [ordered]@{} }
           foreach ($entry in $files.GetEnumerator()) {
@@ -180,7 +218,9 @@ jobs:
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_winget-manifests.zip
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.msi
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.msi
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_arm64.msi
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x64.7z
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_x86.7z
+            JenkinsAsService_${{ steps.version.outputs.VERSION }}_arm64.7z
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_sbom.json
             JenkinsAsService_${{ steps.version.outputs.VERSION }}_checksums.json

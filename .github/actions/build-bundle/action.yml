@@ -1,9 +1,9 @@
 name: Build WiX Burn bundle
 description: >-
-  Builds the single self-selecting installer .exe that embeds both MSIs. Exists for the same reason as the
-  publish and build-msi actions: build.yml and release.yml must package identically, and the only way to
+  Builds the single self-selecting installer .exe that embeds all three MSIs. Exists for the same reason as
+  the publish and build-msi actions: build.yml and release.yml must package identically, and the only way to
   guarantee that is for both to call one definition. It deliberately does NOT build the MSIs - it takes the
-  two that were just produced, so a bundle can never embed a stale package it happened to find on disk.
+  three that were just produced, so a bundle can never embed a stale package it happened to find on disk.
 
 inputs:
   x64-msi:
@@ -11,6 +11,9 @@ inputs:
     required: true
   x86-msi:
     description: Path to the x86 MSI to embed, relative to the bundle project.
+    required: true
+  arm64-msi:
+    description: Path to the arm64 MSI to embed, relative to the bundle project.
     required: true
   version:
     description: Bundle version, e.g. 1.0.0.
@@ -33,6 +36,7 @@ runs:
         -p:RestoreLockedMode=true
         -p:X64Msi=${{ inputs.x64-msi }}
         -p:X86Msi=${{ inputs.x86-msi }}
+        -p:Arm64Msi=${{ inputs.arm64-msi }}
         -p:Version=${{ inputs.version }}
         -p:BaseIntermediateOutputPath=obj/bundle-${{ inputs.version }}/
         --output ${{ inputs.output }}

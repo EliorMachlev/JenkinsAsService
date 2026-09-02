@@ -14,15 +14,18 @@
 
 Set-StrictMode -Version Latest
 
-# Summary Information stream, PID_TEMPLATE. Holds "<platform>;<language>", e.g. "x64;1033" or "Intel;1033",
-# and is the only authoritative statement of the architecture a package targets.
+# Summary Information stream, PID_TEMPLATE. Holds "<platform>;<language>" - "x64;1033", "Intel;1033" or
+# "Arm64;1033" - and is the only authoritative statement of the architecture a package targets.
 $script:TemplateSummaryProperty = 7
 
-# The one piece of Windows Installer trivia nobody remembers: a 32-bit package's platform token is spelled
-# "Intel", not "x86". Held here, next to the function that reads the field, so no caller has to know it.
+# The pieces of Windows Installer trivia nobody remembers: a 32-bit package's platform token is spelled
+# "Intel", not "x86", and the ARM64 token is "Arm64" in that exact casing while the x64 one is lower-case.
+# Held here, next to the function that reads the field, so no caller has to know any of it - and matched
+# case-insensitively below, since the comparison is against an emitted constant rather than user input.
 $script:PlatformTokens = [ordered]@{
-    x64 = 'x64'
-    x86 = 'Intel'
+    x64   = 'x64'
+    x86   = 'Intel'
+    arm64 = 'Arm64'
 }
 
 # Named Get-, not New-: it opens a read-only handle and changes nothing. A New- verb would (correctly) draw
@@ -125,21 +128,13 @@ function Get-MsiProperty {
     finally { Close-MsiDatabase -Msi $msi }
 }
 
-function Get-MsiPlatformToken {
-    <#
-    .SYNOPSIS
-        The summary Template token an architecture is spelled with - x64 -> "x64", x86 -> "Intel".
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param([Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$Platform)
-    return $script:PlatformTokens[$Platform]
-}
-
 function Get-MsiPlatform {
     <#
     .SYNOPSIS
-        The platform token from the summary Template - "x64" for a 64-bit package, "Intel" for 32-bit.
+        The platform token from the summary Template - "x64", "Intel" for 32-bit, or "Arm64".
+    .DESCRIPTION
+        Internal: the raw token is the one thing this module exists to stop callers handling. Everything
+        outside compares architectures, which is what Get-MsiArchitecture returns.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -165,10 +160,10 @@ function Get-MsiPlatform {
 function Get-MsiArchitecture {
     <#
     .SYNOPSIS
-        The architecture a package targets, normalised to x64/x86 - or the raw token if it is neither.
+        The architecture a package targets, normalised to x64/x86/arm64 - or the raw token if it is none.
     .DESCRIPTION
-        What callers actually want to compare against an x64/x86 parameter, without each of them having to
-        know how a 32-bit package spells itself.
+        What callers actually want to compare against an x64/x86/arm64 parameter, without each of them having
+        to know how a 32-bit package spells itself.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -216,5 +211,4 @@ function Get-MsiControlEvent {
     finally { Close-MsiDatabase -Msi $msi }
 }
 
-Export-ModuleMember -Function Get-MsiProperty, Get-MsiPlatform, Get-MsiPlatformToken,
-    Get-MsiArchitecture, Get-MsiControlEvent
+Export-ModuleMember -Function Get-MsiProperty, Get-MsiArchitecture, Get-MsiControlEvent

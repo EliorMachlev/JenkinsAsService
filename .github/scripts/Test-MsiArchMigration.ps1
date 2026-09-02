@@ -22,6 +22,12 @@
     Nothing is lost by refusing: the bundle's policy is the machine's NATIVE architecture, so it only ever
     needs the supported direction (x64 on a 64-bit machine; on a 32-bit machine no x64 install can exist).
 
+    SCOPE. The gate's rule is 64-bit vs 32-bit rather than x64 vs x86, so arm64 sits on the supported side
+    alongside x64 and takes the same code path through InstallLocation.wxs - one condition, one error string,
+    one recovery chain, differing only in which property names they name. This suite exercises the x64/x86
+    pair because it must really INSTALL each package, and the runner is x64. What it therefore proves about
+    arm64 is that the shared authoring works, not that an ARM64 machine behaves; that half is manual.
+
     Asserting only one half would be worthless. Asserting only the forced half would let a gate that never
     blocks anything pass; asserting only the blocked half would let a gate that blocks everything - including
     the migration it is supposed to permit - pass just as easily.
@@ -51,17 +57,10 @@ Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 # The x64 and x86 packages install to DIFFERENT default folders - ProgramFiles6432Folder resolves to
 # "C:\Program Files" in a 64-bit package and "C:\Program Files (x86)" in a 32-bit one. Which folder the
 # migrated install ends up in is the whole point of the supported half, so both are named here.
-$x64InstallFolder = Join-Path $env:ProgramFiles 'Jenkins'
-$x86InstallFolder = Join-Path ${env:ProgramFiles(x86)} 'Jenkins'
+$x64InstallFolder = Get-JasDefaultInstallFolder -Platform 'x64'
+$x86InstallFolder = Get-JasDefaultInstallFolder -Platform 'x86'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceArchTest'
-$serviceName = 'Jenkins'
-$logDir = Join-Path (Get-Location) 'msi-logs'
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-
-function Get-ArchLogPath {
-    param([Parameter(Mandatory)][string]$Name)
-    return Join-Path $logDir "$Name.log"
-}
+$serviceName = Get-JasServiceName
 
 $freshInstallProperties = @(
     "DATAFOLDER=$dataFolder",
@@ -71,9 +70,10 @@ $freshInstallProperties = @(
     'JENKINS_AGENT_NAME=arch-node'
 )
 
-# Asserts a refused install was also INERT. BlockArchMigration is sequenced at 58/59, far ahead of
-# InstallInitialize (1500) and RemoveExistingProducts (1501), so nothing should have been removed, moved or
-# reconfigured - a gate that blocks but damages the installed product on its way out is not a gate.
+# Asserts a refused install was also INERT. BlockArchMigration is sequenced with the location searches it
+# reads, far ahead of InstallInitialize (1500) and RemoveExistingProducts (1501), so nothing should have been
+# removed, moved or reconfigured - a gate that blocks but damages the installed product on its way out is not
+# a gate.
 function Assert-RefusalWasInert {
     param(
         [Parameter(Mandatory)][ValidateSet('x64', 'x86')][string]$ExpectedPlatform,
@@ -95,21 +95,12 @@ Write-Host "`n=== 0. Package preconditions ==="
 $baselineVersion = Get-MsiProperty -Path $X64BaselineMsi -Name 'ProductVersion'
 $x86Version = Get-MsiProperty -Path $X86Msi -Name 'ProductVersion'
 $targetVersion = Get-MsiProperty -Path $X64TargetMsi -Name 'ProductVersion'
-Write-Host "  x64 baseline: $baselineVersion"
-Write-Host "  x86         : $x86Version"
-Write-Host "  x64 target  : $targetVersion"
 
-# Hard stops, not assertions. Matching ProductVersions turn a second /i into a maintenance reconfigure that
-# touches nothing and passes everything, and a lower version makes MajorUpgrade refuse on a version rule
-# while the failure appears to say something about architecture.
-foreach ($pair in @(
-        @{ Lower = $baselineVersion; Higher = $x86Version; What = 'x86 package vs x64 baseline' },
-        @{ Lower = $x86Version; Higher = $targetVersion; What = 'x64 target vs x86 package' })) {
-    if ([version]$pair.Higher -le [version]$pair.Lower) {
-        Write-Host "::error::$($pair.What): $($pair.Higher) must be strictly greater than $($pair.Lower)."
-        throw "Version ladder is wrong for $($pair.What)."
-    }
-}
+Assert-VersionLadder -Rungs ([ordered]@{
+        'x64 baseline' = $baselineVersion
+        'x86 package'  = $x86Version
+        'x64 target'   = $targetVersion
+    })
 
 Assert-That ((Get-MsiArchitecture -Path $X64BaselineMsi) -eq 'x64') 'the baseline package really targets x64'
 Assert-That ((Get-MsiArchitecture -Path $X86Msi) -eq 'x86') 'the x86 package really targets x86'
@@ -119,7 +110,7 @@ Assert-That ((Get-MsiArchitecture -Path $X64TargetMsi) -eq 'x64') 'the target pa
 # PART ONE - the refused direction: x64 installed, x86 package must not take over.
 # ==================================================================================================
 Write-Host "`n=== 1. Install x64 $baselineVersion ==="
-$log = Get-ArchLogPath -Name 'arch-x64-install'
+$log = Get-MsiLogPath -Name 'arch-x64-install'
 $code = Invoke-Msiexec -LogPath $log -Arguments (@('/i', $X64BaselineMsi) + $freshInstallProperties)
 Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'x64 baseline install'
 
@@ -136,7 +127,7 @@ Write-Host "`n=== 2. x86 $x86Version must be refused - with AND without FORCE_UP
 foreach ($attempt in @(
         @{ Name = 'arch-x86-blocked'; Args = @('/i', $X86Msi); What = 'x86 over x64 without FORCE_UPGRADE' },
         @{ Name = 'arch-x86-forced'; Args = @('/i', $X86Msi, 'FORCE_UPGRADE=1'); What = 'x86 over x64 WITH FORCE_UPGRADE' })) {
-    $code = Invoke-Msiexec -LogPath (Get-ArchLogPath -Name $attempt.Name) -Arguments $attempt.Args
+    $code = Invoke-Msiexec -LogPath (Get-MsiLogPath -Name $attempt.Name) -Arguments $attempt.Args
     Assert-That (-not (Test-InstallerSuccess -ExitCode $code)) `
         "$($attempt.What) is refused (msiexec exit code $code)"
     Assert-RefusalWasInert -ExpectedPlatform 'x64' -ConfigPath $x64ConfigPath -What $attempt.What
@@ -146,7 +137,7 @@ Assert-That (-not (Test-Path (Join-Path $x86InstallFolder 'JenkinsAsService.exe'
     'the refused x86 install left nothing in the 32-bit Program Files - it never got as far as installing'
 
 Write-Host "`n=== 3. Remove the x64 install ==="
-Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-x64-uninstall') -Arguments @('/x', $X64BaselineMsi) | Out-Null
+Invoke-Msiexec -LogPath (Get-MsiLogPath -Name 'arch-x64-uninstall') -Arguments @('/x', $X64BaselineMsi) | Out-Null
 Assert-That ($null -eq (Get-InstalledPlatform)) 'no architecture key survives the x64 uninstall'
 Assert-That (-not (Test-Path $dataFolder)) 'the data folder is removed by the x64 uninstall'
 
@@ -154,7 +145,7 @@ Assert-That (-not (Test-Path $dataFolder)) 'the data folder is removed by the x6
 # PART TWO - the supported direction: x86 installed, x64 package migrates it on FORCE_UPGRADE=1.
 # ==================================================================================================
 Write-Host "`n=== 4. Install x86 $x86Version ==="
-$log = Get-ArchLogPath -Name 'arch-x86-install'
+$log = Get-MsiLogPath -Name 'arch-x86-install'
 $code = Invoke-Msiexec -LogPath $log -Arguments (@('/i', $X86Msi) + $freshInstallProperties)
 Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'x86 install'
 
@@ -172,7 +163,7 @@ $raw.Jenkins.Logging.RetainedLogs = 7
 $raw | ConvertTo-Json -Depth 8 | Set-Content $x86ConfigPath -Encoding utf8
 
 Write-Host "`n=== 5. x64 $targetVersion WITHOUT FORCE_UPGRADE must be refused ==="
-$code = Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-x64-blocked') -Arguments @('/i', $X64TargetMsi)
+$code = Invoke-Msiexec -LogPath (Get-MsiLogPath -Name 'arch-x64-blocked') -Arguments @('/i', $X64TargetMsi)
 Assert-That (-not (Test-InstallerSuccess -ExitCode $code)) `
     "x64 over x86 without FORCE_UPGRADE is refused (msiexec exit code $code)"
 Assert-RefusalWasInert -ExpectedPlatform 'x86' -ConfigPath $x86ConfigPath -What 'x64 over x86 without FORCE_UPGRADE'
@@ -180,7 +171,7 @@ Assert-RefusalWasInert -ExpectedPlatform 'x86' -ConfigPath $x86ConfigPath -What 
 Write-Host "`n=== 6. x64 $targetVersion WITH FORCE_UPGRADE=1 must succeed and preserve everything ==="
 # No DATAFOLDER, no URL, no secret: a migration must recover all of that from what is already recorded on the
 # machine. Supplying any of it would hide a recovery that never happened.
-$log = Get-ArchLogPath -Name 'arch-x64-forced'
+$log = Get-MsiLogPath -Name 'arch-x64-forced'
 $code = Invoke-Msiexec -LogPath $log -Arguments @('/i', $X64TargetMsi, 'FORCE_UPGRADE=1')
 Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'forced x86 -> x64 migration'
 
@@ -216,7 +207,7 @@ Assert-That ($null -ne $service -and $service.Status -eq 'Running') 'the service
 
 # --------------------------------------------------------------------------------------------------
 Write-Host "`n=== 7. Clean up ==="
-Invoke-Msiexec -LogPath (Get-ArchLogPath -Name 'arch-final-uninstall') -Arguments @('/x', $X64TargetMsi) | Out-Null
+Invoke-Msiexec -LogPath (Get-MsiLogPath -Name 'arch-final-uninstall') -Arguments @('/x', $X64TargetMsi) | Out-Null
 Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) 'service is removed'
 Assert-That (-not (Test-Path $dataFolder)) 'the data folder is removed'
 Assert-That ($null -eq (Get-InstalledPlatform)) 'neither architecture key survives the uninstall'

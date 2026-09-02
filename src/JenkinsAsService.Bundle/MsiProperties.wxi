@@ -1,20 +1,21 @@
 <Include xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
   <!-- ════════════════════════════════════════════════════════════════════════════════════════════════
-       What the bundle hands whichever MSI runs. Included into BOTH MsiPackage elements.
+       What the bundle hands whichever MSI runs. Included into EVERY MsiPackage element.
 
-       The two packages cannot be factored into one - they have different SourceFiles and complementary
+       The packages cannot be factored into one - they have different SourceFiles and mutually exclusive
        InstallConditions, and Burn has no loop over a chain - but their contents can, and had to be. Written
-       out per package, adding or renaming a setting is a two-site edit that nothing checks: exactly one of
-       the two packages ever runs on a given machine, so an omission from the x86 list ships as "that setting
-       silently does nothing on 32-bit hosts", and CI runs the bundle only on a 64-bit runner.
+       out per package, adding or renaming a setting is a three-site edit that nothing checks: exactly one of
+       the packages ever runs on a given machine, so an omission from the x86 list ships as "that setting
+       silently does nothing on 32-bit hosts", and CI runs the bundle only on an x64 runner - which cannot
+       exercise the x86 or the arm64 list at all.
 
-       The list of names lives in Bundle.wxs (JasForwardedSettings), next to the Variable declarations it has
-       to agree with.
+       The names live in Bundle.wxs (JasForwardedSettings and JasForwardedSecrets), which generates its
+       Variable declarations from the same two lists - so the declarations and the forwarding cannot disagree.
        ════════════════════════════════════════════════════════════════════════════════════════════════ -->
 
   <!-- The architecture policy, in one line: whichever package matches the machine may replace an installed
-       product of the other architecture. The MSI's own gate stays strict for a bare .msi run by hand. -->
+       product of another architecture. The MSI's own gate stays strict for a bare .msi run by hand. -->
   <MsiProperty Name="FORCE_UPGRADE" Value="1" />
 
   <!-- Each setting is forwarded verbatim from the like-named bundle variable. All default to empty, so an
@@ -22,6 +23,9 @@
        none of those defaults, since two copies of a default value is how they drift apart. -->
   <?foreach JasSetting in $(JasForwardedSettings) ?>
     <MsiProperty Name="$(JasSetting)" Value="[$(JasSetting)]" />
+  <?endforeach?>
+  <?foreach JasSecret in $(JasForwardedSecrets) ?>
+    <MsiProperty Name="$(JasSecret)" Value="[$(JasSecret)]" />
   <?endforeach?>
 
 </Include>

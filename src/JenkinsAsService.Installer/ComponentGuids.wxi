@@ -12,9 +12,10 @@
        the only copy of the secret) at the old path. CI never installs a pre-key version, so nothing catches
        it.
 
-       Both are deliberately the SAME GUID in the x64 and x86 packages - the two share an UpgradeCode and
-       cannot coexist, and one GUID per resource is what lets the fallback find the other architecture's
-       install. (Contrast InstallLocationRegistry, which needs a GUID per architecture; see the note there.)
+       Both are deliberately the SAME GUID in the x64, x86 and arm64 packages - all three share an
+       UpgradeCode and cannot coexist, and one GUID per resource is what lets the fallback find another
+       architecture's install. (Contrast InstallLocationRegistry, which needs a GUID per architecture, since
+       each of those writes a different key; see the note there.)
        ════════════════════════════════════════════════════════════════════════════════════════════════ -->
   <?define JasServiceComponentGuid = "A3AFD0C7-0249-4230-8F74-1A229AF71C2C" ?>
   <?define JasDataFolderComponentGuid = "9D1F73AD-383E-436A-8F1A-7C83CFC0A5A0" ?>

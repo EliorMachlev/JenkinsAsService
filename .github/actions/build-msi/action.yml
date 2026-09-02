@@ -12,7 +12,7 @@ inputs:
     description: Published payload to package, relative to the installer project (e.g. ../../publish/x64/).
     required: true
   platform:
-    description: InstallerPlatform - x64 or x86.
+    description: InstallerPlatform - x64, x86 or arm64.
     required: true
   version:
     description: Package ProductVersion, e.g. 1.0.0.

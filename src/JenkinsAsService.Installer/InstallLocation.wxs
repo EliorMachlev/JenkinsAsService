@@ -33,25 +33,29 @@
              HKLM, never HKCU: the product is perMachine and its custom actions run as SYSTEM, so a per-user
              hive would be both wrong and unreadable from the account that needs it.
 
-             Each architecture owns a named subkey - SOFTWARE\JenkinsAsService\x64 and ...\x86 - so WHICH key
-             holds a path is itself the statement of which architecture is installed. That is the only way a
-             later package can tell a same-arch upgrade from a cross-arch migration: the two share an
-             UpgradeCode, and FindRelatedProducts cannot distinguish them. It needs no separate value to go
-             stale, and it is legible to anyone poking at the machine with regedit.
+             Each architecture owns a named subkey - SOFTWARE\JenkinsAsService\x64, ...\x86 and ...\arm64 -
+             so WHICH key holds a path is itself the statement of which architecture is installed. That is the
+             only way a later package can tell a same-arch upgrade from a cross-arch migration: all three
+             share an UpgradeCode, and FindRelatedProducts cannot distinguish them. It needs no separate value
+             to go stale, and it is legible to anyone poking at the machine with regedit.
 
-             No Bitness attribute - the component inherits the package's, so the x64 package writes the native
-             64-bit view and the x86 package writes WOW6432Node. The searches below therefore read each key in
-             the matching view, and read both, which is what makes the cross-architecture case detectable. ─── -->
+             No Bitness attribute - the component inherits the package's, so the x64 and arm64 packages write
+             the native 64-bit view and the x86 package writes WOW6432Node. (On Windows on ARM the native and
+             the emulated-x64 registry views are the same one; only 32-bit x86 is redirected.) The searches
+             below therefore read each key in the matching view, and read all three, which is what makes the
+             cross-architecture case detectable. ─── -->
     <!-- A GUID PER ARCHITECTURE, unlike ServiceComponent, and the difference matters. Component GUIDs are
          what Windows Installer reference-counts, and a GUID must always name the same resource - but these
-         two components write different keys in different registry views. Sharing one GUID would make a forced
-         cross-arch migration install the new component (refcount 2) and then remove the old product's
-         reference (back to 1), so the OLD architecture's key would never be deleted. Both keys would then
-         exist, and the next package would see two architectures installed at once and block against a product
-         that is no longer there. ServiceComponent can share a GUID precisely because both packages install
-         the same file to the same path. -->
+         three components write different keys, two of them in a different registry view. Sharing one GUID
+         would make a forced cross-arch migration install the new component (refcount 2) and then remove the
+         old product's reference (back to 1), so the OLD architecture's key would never be deleted. Two keys
+         would then exist, and the next package would see two architectures installed at once and block
+         against a product that is no longer there. ServiceComponent can share a GUID precisely because every
+         package installs the same file to the same path. -->
     <?if $(var.InstallerPlatform) = "x64" ?>
       <?define LocationComponentGuid = "F06D514A-43FA-4FAE-B1F8-4B7A050B19E3" ?>
+    <?elseif $(var.InstallerPlatform) = "arm64" ?>
+      <?define LocationComponentGuid = "3284A7DD-E5CA-4553-8C45-74F06E4AE8BE" ?>
     <?else?>
       <?define LocationComponentGuid = "F49566AD-A619-40DF-BE18-CA39E6ABA61D" ?>
     <?endif?>
@@ -63,10 +67,15 @@
       </RegistryKey>
     </Component>
 
-    <!-- ─── 2. Search. Three sources per location, deliberately overlapping.
+    <!-- ─── 2. Search. Four sources per location, deliberately overlapping.
 
-             The registry values are the primary source and are read in BOTH views, so an x64 package sees an
-             x86 install and vice versa.
+             The registry values are the primary source and are read in BOTH views and under ALL THREE
+             architecture names, so any package sees an install made by any other one.
+
+             The two 64-bit names are read with Bitness="always64" and the x86 name with always32, matching
+             where each package's own component wrote. arm64 is NOT a third view: Windows on ARM gives native
+             ARM64 and emulated x64 processes the same 64-bit registry, so the arm64 and x64 keys are
+             siblings under one hive and only x86 is redirected into WOW6432Node.
 
              ComponentSearch is the fallback: it resolves the directory of a component by GUID out of
              Windows Installer's own component registration, which is architecture-neutral and needs nothing
@@ -76,6 +85,10 @@
              ─── -->
     <Property Id="JAS_INSTALLDIR_X64" Secure="yes">
       <RegistrySearch Id="SearchInstallPathX64" Root="HKLM" Key="SOFTWARE\JenkinsAsService\x64"
+                      Name="InstallPath" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="JAS_INSTALLDIR_ARM64" Secure="yes">
+      <RegistrySearch Id="SearchInstallPathArm64" Root="HKLM" Key="SOFTWARE\JenkinsAsService\arm64"
                       Name="InstallPath" Type="raw" Bitness="always64" />
     </Property>
     <Property Id="JAS_INSTALLDIR_X86" Secure="yes">
@@ -89,6 +102,10 @@
 
     <Property Id="JAS_DATADIR_X64" Secure="yes">
       <RegistrySearch Id="SearchDataPathX64" Root="HKLM" Key="SOFTWARE\JenkinsAsService\x64"
+                      Name="DataPath" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="JAS_DATADIR_ARM64" Secure="yes">
+      <RegistrySearch Id="SearchDataPathArm64" Root="HKLM" Key="SOFTWARE\JenkinsAsService\arm64"
                       Name="DataPath" Type="raw" Bitness="always64" />
     </Property>
     <Property Id="JAS_DATADIR_X86" Secure="yes">
@@ -113,9 +130,10 @@
 
              Precedence is FIRST match wins, encoded by the `NOT <target>` clause every one of them carries:
              once a higher-priority action has set the property, every later action's condition is false.
-             Order: the x64 key, then the x86 key, then the component registration. Only one of the two keys
-             can exist at a time - the packages share an UpgradeCode and cannot coexist - so the order between
-             them settles nothing in practice; it is fixed so the behaviour is stated rather than incidental.
+             Order: the x64 key, then arm64, then x86, then the component registration. Only one of the three
+             keys can exist at a time - the packages share an UpgradeCode and cannot coexist - so the order
+             between them settles nothing in practice; it is fixed so the behaviour is stated rather than
+             incidental.
 
              That same clause is what protects an explicit override. Before CostFinalize a directory property
              holds a value ONLY if it was passed on the command line - the Directory table has not been
@@ -124,14 +142,14 @@
 
              Everything here must run after AppSearch (where the values above are found) and before
              CostFinalize (where directory properties are resolved into real paths). In this package that is
-             AppSearch at 50, these at 51-60, CostFinalize at 1000. Both sequences are authored: the UI
-             sequence needs the recovered paths for what it displays, the execute sequence for where it
+             AppSearch at 50, these immediately after it, CostFinalize at 1000. Both sequences are authored:
+             the UI sequence needs the recovered paths for what it displays, the execute sequence for where it
              actually writes. ─── -->
-    <!-- The x64 install folder is recovered ONLY by the x64 package, and that is not a tidiness choice.
-         A 32-bit package cannot read a 64-bit Program Files path back out of the registry: the search itself
-         works, but Windows Installer's WIN64DUALFOLDERS substitution then rewrites the RESULT, mapping the
-         `C:\Program Files\` prefix of any folder-shaped AppSearch value to `C:\Program Files (x86)\`. Observed
-         in CI, in the verbose log, verbatim:
+    <!-- The two 64-bit install folders are recovered ONLY by the 64-bit packages, and that is not a tidiness
+         choice. A 32-bit package cannot read a 64-bit Program Files path back out of the registry: the search
+         itself works, but Windows Installer's WIN64DUALFOLDERS substitution then rewrites the RESULT, mapping
+         the `C:\Program Files\` prefix of any folder-shaped AppSearch value to `C:\Program Files (x86)\`.
+         Observed in CI, in the verbose log, verbatim:
 
              WIN64DUALFOLDERS: 'C:\Program Files (x86)\' will substitute 17 characters in
              'C:\Program Files\Jenkins\' folder path.
@@ -142,15 +160,23 @@
          That is the exact failure this whole file exists to prevent, which is why the x86 package refuses the
          migration outright rather than recovering a value it cannot trust (see the gate below).
 
-         DATAFOLDER is unaffected and is recovered by both: %ProgramData% is not part of a dual-folder pair,
-         so nothing rewrites it. -->
-    <?if $(var.InstallerPlatform) = "x64" ?>
+         The split is 64-bit vs 32-bit, NOT x64 vs everything-else: an arm64 package is a 64-bit package whose
+         ProgramFiles6432Folder is the real `C:\Program Files`, so nothing substitutes its recovered paths and
+         it reads both 64-bit keys exactly as the x64 package does. Writing the condition against x64 alone
+         would have silently stopped ARM64 upgrades recovering their own previous install folder.
+
+         DATAFOLDER is unaffected and is recovered by all three: %ProgramData% is not part of a dual-folder
+         pair, so nothing rewrites it. -->
+    <?if $(var.InstallerPlatform) = "x86" ?>
+      <?define InstallDirChainAnchor = "AppSearch" ?>
+    <?else?>
       <SetProperty Id="INSTALLFOLDER" Action="RecoverInstallDirFromX64" Value="[JAS_INSTALLDIR_X64]"
                    After="AppSearch" Sequence="both"
                    Condition="JAS_INSTALLDIR_X64 AND NOT INSTALLFOLDER" />
-      <?define InstallDirChainAnchor = "RecoverInstallDirFromX64" ?>
-    <?else?>
-      <?define InstallDirChainAnchor = "AppSearch" ?>
+      <SetProperty Id="INSTALLFOLDER" Action="RecoverInstallDirFromArm64" Value="[JAS_INSTALLDIR_ARM64]"
+                   After="RecoverInstallDirFromX64" Sequence="both"
+                   Condition="JAS_INSTALLDIR_ARM64 AND NOT INSTALLFOLDER" />
+      <?define InstallDirChainAnchor = "RecoverInstallDirFromArm64" ?>
     <?endif?>
     <SetProperty Id="INSTALLFOLDER" Action="RecoverInstallDirFromX86" Value="[JAS_INSTALLDIR_X86]"
                  After="$(var.InstallDirChainAnchor)" Sequence="both"
@@ -161,87 +187,113 @@
     <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromX64" Value="[JAS_DATADIR_X64]"
                  After="RecoverInstallDirFromComponent" Sequence="both"
                  Condition="JAS_DATADIR_X64 AND NOT DATAFOLDER" />
-    <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromX86" Value="[JAS_DATADIR_X86]"
+    <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromArm64" Value="[JAS_DATADIR_ARM64]"
                  After="RecoverDataDirFromX64" Sequence="both"
+                 Condition="JAS_DATADIR_ARM64 AND NOT DATAFOLDER" />
+    <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromX86" Value="[JAS_DATADIR_X86]"
+                 After="RecoverDataDirFromArm64" Sequence="both"
                  Condition="JAS_DATADIR_X86 AND NOT DATAFOLDER" />
     <SetProperty Id="DATAFOLDER" Action="RecoverDataDirFromComponent" Value="[JAS_DATADIR_COMPONENT]"
                  After="RecoverDataDirFromX86" Sequence="both"
                  Condition="JAS_DATADIR_COMPONENT AND NOT DATAFOLDER" />
 
-    <!-- The architecture of whatever is already installed - which is simply the name of the key that had a
-         path in it. Left unset when only the component search found the product: an install from a version
-         that predates these keys states no architecture, and guessing one would be worse than admitting it
-         (so a migration away from such an install is not detected, and not blocked). -->
-    <SetProperty Id="JAS_INSTALLED_PLATFORM" Action="RecordInstalledPlatformX64" Value="x64"
-                 After="RecoverDataDirFromComponent" Sequence="both"
-                 Condition="JAS_INSTALLDIR_X64 AND NOT JAS_INSTALLED_PLATFORM" />
-    <SetProperty Id="JAS_INSTALLED_PLATFORM" Action="RecordInstalledPlatformX86" Value="x86"
-                 After="RecordInstalledPlatformX64" Sequence="both"
-                 Condition="JAS_INSTALLDIR_X86 AND NOT JAS_INSTALLED_PLATFORM" />
-
     <!-- ─── 4. The cross-architecture gate, which is deliberately ASYMMETRIC.
 
-             x64 and x86 share an UpgradeCode, so MajorUpgrade will happily replace one with the other and
-             FindRelatedProducts cannot tell the difference. There is no undo: the old product is removed at
-             InstallInitialize, before anything can be reconsidered.
+             All three packages share an UpgradeCode, so MajorUpgrade will happily replace any of them with
+             any other and FindRelatedProducts cannot tell the difference. There is no undo: the old product
+             is removed at InstallInitialize, before anything can be reconsidered.
 
-             x86 install -> x64 package is SUPPORTED, opt-in via FORCE_UPGRADE=1. Windows Installer takes
-             PROPERTIES rather than command-line switches, so the opt-in is spelled FORCE_UPGRADE=1 rather
-             than as a dashed flag, and the requirement is identical in the wizard and in a silent install: a
-             silent run has nobody to prompt, and a run that would prompt has no business being easier to get
-             wrong. When it is forced, the recovery above has already pointed INSTALLFOLDER and DATAFOLDER at
-             the existing locations, so the migrated install lands on top of the config and data it inherits.
+             The rule is 64-bit vs 32-bit, not a table of six directed pairs:
 
-             x64 install -> x86 package is REFUSED OUTRIGHT, and FORCE_UPGRADE does not override it. The 32-bit
-             package cannot recover the previous install folder: WIN64DUALFOLDERS rewrites the recovered path
-             to `C:\Program Files (x86)\...` (see the note above the recovery), so the migration would install
-             beside the real one and strand appsettings.json - the only copy of the secret - at the old path.
-             A migration that silently destroys the thing it promises to keep is worse than one that refuses,
-             so the package refuses and says which one to run instead.
+               * INTO a 64-bit package (x64 or arm64), from any other architecture: SUPPORTED, opt-in via
+                 FORCE_UPGRADE=1. Windows Installer takes PROPERTIES rather than command-line switches, so the
+                 opt-in is spelled FORCE_UPGRADE=1 rather than as a dashed flag, and the requirement is
+                 identical in the wizard and in a silent install: a silent run has nobody to prompt, and a run
+                 that would prompt has no business being easier to get wrong. When it is forced, the recovery
+                 above has already pointed INSTALLFOLDER and DATAFOLDER at the existing locations, so the
+                 migrated install lands on top of the config and data it inherits. This covers x86 -> x64,
+                 x86 -> arm64, and - the one that matters for Windows on ARM - x64 -> arm64, since every
+                 ARM64 machine that installed this product before there was an arm64 package is running the
+                 x64 build under emulation and should be migrated to the native one.
 
-             Nothing is lost by this. The bundle never needs the refused direction: its policy is the machine's
-             NATIVE architecture, so on a 64-bit machine it installs x64 (the supported direction), and on a
-             32-bit machine no x64 install can exist. Going deliberately from a 64-bit to a 32-bit agent is an
-             uninstall followed by a fresh install - which is honest, because the config would have to be
-             re-created at the new location either way.
+               * INTO the x86 package, from either 64-bit architecture: REFUSED OUTRIGHT, and FORCE_UPGRADE
+                 does not override it. The 32-bit package cannot recover the previous install folder:
+                 WIN64DUALFOLDERS rewrites the recovered path to `C:\Program Files (x86)\...` (see the note
+                 above the recovery), so the migration would install beside the real one and strand
+                 appsettings.json - the only copy of the secret - at the old path. A migration that silently
+                 destroys the thing it promises to keep is worse than one that refuses, so the package
+                 refuses and says which one to run instead.
+
+             Nothing is lost by the refusal. The bundle never needs that direction: its policy is the
+             machine's NATIVE architecture, so it only ever installs x86 on a machine where no 64-bit install
+             can exist. Going deliberately from a 64-bit to a 32-bit agent is an uninstall followed by a fresh
+             install - which is honest, because the config would have to be re-created at the new location
+             either way.
 
              A type-19 error action rather than a LaunchCondition: LaunchConditions is sequenced at 100, after
              AppSearch (50) but the gate has to sit next to the searches it depends on, and authoring it as an
-             error action keeps the two adjacent instead of split across files. It lands at 60 - far ahead of
-             InstallInitialize (1500) and RemoveExistingProducts (1501) - so a blocked run aborts before the
-             installed product has been touched at all.
+             error action keeps the two adjacent instead of split across files. It lands immediately after the
+             recovery actions above - far ahead of InstallInitialize (1500) and RemoveExistingProducts (1501)
+             - so a blocked run aborts before the installed product has been touched at all.
              NOT Installed keeps it off the uninstall and maintenance paths; during a major upgrade the
-             incoming ProductCode is not installed yet, so the gate still applies there. ─── -->
+             incoming ProductCode is not installed yet, so the gate still applies there.
+
+             The condition reads the SEARCH results directly. There is no intermediate "installed platform"
+             property, because which key held a path already IS that statement and re-recording it into a
+             third property added a value that could only ever agree or be wrong. Note that each 64-bit
+             condition below is the exact reading of first-match-wins: a package blocks on ANOTHER
+             architecture's key only when its OWN key is absent, so a machine that somehow carries two is
+             treated as this package's own architecture rather than blocked against a product that is no
+             longer there. An install found only by ComponentSearch states no architecture at all - it
+             predates these keys - so a migration away from one is neither detected nor blocked. ─── -->
     <!-- Kept under 255 characters: CustomAction.Target is capped there (ICE03), the same limit that forced
-         WriteAdvanced1/2/3 apart. The full explanation lives in docs/installation.html; this has to fit. -->
-    <?if $(var.InstallerPlatform) = "x64" ?>
+         WriteAdvanced1/2/3 apart. The full explanation lives in docs/installation.html; this has to fit.
+         The 64-bit message names its own architecture by expanding InstallerPlatform, so the x64 and arm64
+         packages share one string rather than carrying two that say the same thing about different words. -->
+    <?if $(var.InstallerPlatform) = "x86" ?>
       <CustomAction Id="BlockArchMigration"
-                    Error="[ProductName] is installed as [JAS_INSTALLED_PLATFORM]; this is the x64 package. Switching architecture is not reversible. Re-run with FORCE_UPGRADE=1 to migrate (config, secret and data are kept), or use the [JAS_INSTALLED_PLATFORM] package." />
-      <!-- The whole precondition in one condition, rather than a separate action setting a JAS_ARCH_MISMATCH
-           flag for this one consumer to read: an architecture is recorded, it is not this package's, and the
-           migration was not asked for. -->
-      <!-- Only the override TERM differs per architecture, so that is all the define carries: XML escapes
-           inside a <?define?> would arrive at the condition as literal "&lt;" text and fail ICE03. -->
-      <?define ArchGateOverride = "AND NOT FORCE_UPGRADE " ?>
-    <?else?>
-      <CustomAction Id="BlockArchMigration"
-                    Error="[ProductName] is installed as 64-bit. A 32-bit package cannot take over that install - Windows Installer rewrites the recorded path, which would strand your configuration and agent secret. Install the x64 package, or the .exe installer." />
+                    Error="[ProductName] is installed as 64-bit. A 32-bit package cannot take over that install - Windows Installer rewrites the recorded path, which would strand your configuration and agent secret. Install the 64-bit package, or the .exe installer." />
       <!-- No FORCE_UPGRADE term: this direction is refused, not gated. Adding an override would only offer a
            way to reach the broken path on purpose. -->
-      <?define ArchGateOverride = "" ?>
+      <?define ArchGateCondition = "(JAS_INSTALLDIR_X64 OR JAS_INSTALLDIR_ARM64) AND NOT Installed" ?>
+    <?else?>
+      <CustomAction Id="BlockArchMigration"
+                    Error="[ProductName] is installed for another architecture; this is the $(var.InstallerPlatform) package. Switching is not reversible. Re-run with FORCE_UPGRADE=1 to migrate (config, secret and data are kept), or use the matching package." />
+      <!-- The whole precondition in one condition, rather than a separate action setting a JAS_ARCH_MISMATCH
+           flag for this one consumer to read: some other architecture is recorded, this one is not, and the
+           migration was not asked for.
+
+           The two 64-bit packages differ only in which three property names fill those three slots, so each
+           branch supplies the NAMES and the SHAPE is written once below it. Spelled out per branch instead,
+           the policy lived in two ~130-character strings that had to stay parallel by eye - and a fourth
+           architecture would have added a third copy. Note that MSI property names are CASE-SENSITIVE, which
+           is why the own-arch name is a define rather than JAS_INSTALLDIR_$(var.InstallerPlatform): that
+           expands to the lower-case spelling, which is simply a different, always-empty property, so the
+           gate would silently stop blocking anything. -->
+      <?if $(var.InstallerPlatform) = "x64" ?>
+        <?define ArchGateOwn = "JAS_INSTALLDIR_X64" ?>
+        <?define ArchGateOthers = "JAS_INSTALLDIR_X86 OR JAS_INSTALLDIR_ARM64" ?>
+      <?else?>
+        <?define ArchGateOwn = "JAS_INSTALLDIR_ARM64" ?>
+        <?define ArchGateOthers = "JAS_INSTALLDIR_X86 OR JAS_INSTALLDIR_X64" ?>
+      <?endif?>
+      <?define ArchGateCondition = "($(var.ArchGateOthers)) AND NOT $(var.ArchGateOwn) AND NOT FORCE_UPGRADE AND NOT Installed" ?>
     <?endif?>
 
     <!-- An error action cannot be scheduled with Sequence="both" the way the SetPropertys above are, so this
-         is the one thing still authored per sequence - two rows for one action, and the condition itself comes
-         from a single define, so there is nothing left to keep in sync by hand. -->
+         is the one thing still authored per sequence: two rows for one action. They carry the same condition
+         by CONSTRUCTION rather than by care, both expanding one define - which only became possible once the
+         condition stopped comparing against a quoted string literal, since a <?define?> value cannot itself
+         carry double quotes. A hand-mirrored divergence would not have been caught: Test-MsiArchMigration.ps1
+         only ever runs /quiet, which executes the InstallExecuteSequence row alone. -->
     <InstallUISequence>
-      <Custom Action="BlockArchMigration" After="RecordInstalledPlatformX86"
-              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot; $(var.ArchGateOverride)AND NOT Installed" />
+      <Custom Action="BlockArchMigration" After="RecoverDataDirFromComponent"
+              Condition="$(var.ArchGateCondition)" />
     </InstallUISequence>
 
     <InstallExecuteSequence>
-      <Custom Action="BlockArchMigration" After="RecordInstalledPlatformX86"
-              Condition="JAS_INSTALLED_PLATFORM AND JAS_INSTALLED_PLATFORM &lt;&gt; &quot;$(var.InstallerPlatform)&quot; $(var.ArchGateOverride)AND NOT Installed" />
+      <Custom Action="BlockArchMigration" After="RecoverDataDirFromComponent"
+              Condition="$(var.ArchGateCondition)" />
     </InstallExecuteSequence>
 
   </Fragment>

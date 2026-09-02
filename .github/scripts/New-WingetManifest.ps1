@@ -8,11 +8,15 @@
     them from one place is the only way that stays true; a hand-edited manifest with a stale hash is rejected
     by the community-repo pipeline long after the release has shipped.
 
-    The manifest points at the BUNDLE, not the two MSIs, and lists it under BOTH architectures with the same
-    URL. That is deliberate. winget picks an installer by architecture, and the bundle is the component that
-    knows how to choose - it installs the machine's native architecture and migrates an install of the other
-    one. Listing the MSIs directly would move that decision into winget, which would then offer an x64
-    package to a machine running the x86 install and produce a failed upgrade rather than a migration.
+    The manifest points at the BUNDLE, not the individual MSIs, and lists it under ALL THREE architectures
+    with the same URL. That is deliberate. winget picks an installer by architecture, and the bundle is the
+    component that knows how to choose - it installs the machine's native architecture and migrates an install
+    of another one. Listing the MSIs directly would move that decision into winget, which would then offer an
+    x64 package to a machine running the x86 install and produce a failed upgrade rather than a migration.
+
+    The arm64 entry matters more than it looks. Without it winget falls back to offering x64 on an ARM64
+    machine, which installs and runs under emulation - so the package would appear to work everywhere while
+    never once delivering the native build.
 
     The output is not submitted anywhere. It is attached to the release so the winget-pkgs pull request can be
     opened from a known-good, hash-correct starting point.
@@ -27,15 +31,31 @@ param(
     [Parameter(Mandatory)][string]$BundlePath,
     [Parameter(Mandatory)][string]$InstallerUrl,
     [Parameter(Mandatory)][string]$OutputDirectory,
-    # The bundle's UpgradeCode, which is how winget matches an installed Burn bundle in ARP. Authored in
-    # Bundle.wxs; defaulted here rather than hardcoded inline so a rotation has one obvious place to land and
-    # a caller can pass the built bundle's own value. If the two ever disagree, winget stops recognising the
-    # installed package and every upgrade fails on a user's machine with nothing failing in CI.
-    [string]$BundleUpgradeCode = '{015B49BD-10B0-4FC7-802B-A248BD50A205}'
+    # The bundle's UpgradeCode, which is how winget matches an installed Burn bundle in ARP. Left empty by
+    # default and read back out of Bundle.wxs below, for the same reason the installer hash is computed from
+    # the artifact rather than passed in: a second copy of the GUID that drifts from the authoring stops
+    # winget recognising the installed package, and every upgrade then fails on a user's machine with
+    # nothing failing in CI. Overridable only for a bundle built from different authoring.
+    [string]$BundleUpgradeCode
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if ([string]::IsNullOrWhiteSpace($BundleUpgradeCode)) {
+    $bundleAuthoring = Join-Path $PSScriptRoot '..' |
+        Join-Path -ChildPath '..' |
+        Join-Path -ChildPath 'src' |
+        Join-Path -ChildPath 'JenkinsAsService.Bundle' |
+        Join-Path -ChildPath 'Bundle.wxs'
+    $authored = ([xml](Get-Content -LiteralPath $bundleAuthoring -Raw)).Wix.Bundle.UpgradeCode
+    if ([string]::IsNullOrWhiteSpace($authored)) {
+        throw "No UpgradeCode found in $bundleAuthoring - the manifest cannot be generated without it."
+    }
+    # ARP, and therefore winget, spells it with braces; the WiX authoring does not.
+    $BundleUpgradeCode = '{' + $authored.Trim('{', '}') + '}'
+    Write-Host "  bundle UpgradeCode $BundleUpgradeCode (read from Bundle.wxs)"
+}
 
 $packageId = 'EliorMachlev.JenkinsAsService'
 # Pinned rather than tracking the newest: a schema bump can add required fields, and finding that out during
@@ -64,7 +84,7 @@ ManifestVersion: $manifestVersion
 
 # InstallerType: burn - a WiX bundle, which winget understands natively (it knows the -quiet/-norestart and
 # -uninstall switches, and that ARP registration is the bundle's UpgradeCode rather than an MSI ProductCode).
-# The same file is listed for both architectures because the bundle selects internally; see the note above.
+# The same file is listed for every architecture because the bundle selects internally; see the note above.
 Write-Manifest -Name "$packageId.installer.yaml" -Content @"
 # yaml-language-server: `$schema=https://aka.ms/winget-manifest.installer.$manifestVersion.schema.json
 PackageIdentifier: $packageId
@@ -83,6 +103,9 @@ Installers:
     InstallerUrl: $InstallerUrl
     InstallerSha256: $hash
   - Architecture: x86
+    InstallerUrl: $InstallerUrl
+    InstallerSha256: $hash
+  - Architecture: arm64
     InstallerUrl: $InstallerUrl
     InstallerSha256: $hash
 ManifestType: installer

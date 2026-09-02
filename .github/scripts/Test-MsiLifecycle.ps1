@@ -37,14 +37,11 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'MsiQuery.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'MsiTestHelpers.psm1') -Force
 
-$installFolder = Join-Path $env:ProgramFiles 'Jenkins'
+$installFolder = Get-JasDefaultInstallFolder -Platform 'x64'
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
-$serviceName = 'Jenkins'
+$serviceName = Get-JasServiceName
 $productName = 'Jenkins Agent Service'
-$logDir = Join-Path (Get-Location) 'msi-logs'
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-
 # Fresh-install properties. The upgrade deliberately supplies NONE of these - see step 2.
 $installProperties = @(
     "DATAFOLDER=$dataFolder",
@@ -63,7 +60,7 @@ $otherArchKey = Get-JasLocationKeyPath -Platform 'x86'
 # Every install here must succeed, so the exit code is checked rather than returned.
 function Invoke-Msi {
     param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogName)
-    $log = Join-Path $logDir "$LogName.log"
+    $log = Get-MsiLogPath -Name $LogName
     $code = Invoke-Msiexec -Arguments $Arguments -LogPath $log
     Assert-InstallerSucceeded -ExitCode $code -LogPath $log -Activity 'msiexec'
 }
@@ -92,23 +89,16 @@ function Get-InstalledVersion {
 }
 
 # --------------------------------------------------------------------------------------------------
-# Precondition, checked BEFORE anything is installed.
-#
-# If the two packages carry the same ProductVersion, msiexec treats the second /i as a maintenance-mode
-# reconfigure of the product already on the machine: RemoveExistingProducts is skipped, the reconcile custom
-# actions never run, and every downstream assertion still passes because nothing was touched. That is exactly
-# how this job first failed - a build-caching bug made both packages 1.0.0 and the "upgrade" tested nothing.
-# A suite that cannot tell "the upgrade worked" from "the upgrade never happened" is worse than no suite, so
-# this is a hard stop rather than an assertion.
+# Precondition, checked BEFORE anything is installed: the upgrade package must outrank the baseline. See
+# Assert-VersionLadder for why this is a hard stop and not an assertion - it is the failure mode that lets a
+# suite report green for an upgrade that never happened, and it is how this job first failed.
 Write-Host "`n=== 0. Package preconditions ==="
 $v1Version = Get-MsiProperty -Path $V1Msi -Name 'ProductVersion'
 $v2Version = Get-MsiProperty -Path $V2Msi -Name 'ProductVersion'
-Write-Host "  v1 package: $v1Version"
-Write-Host "  v2 package: $v2Version"
-if ($v1Version -eq $v2Version) {
-    Write-Host "::error::Both MSIs are stamped $v1Version - the upgrade would be a no-op reconfigure, not an upgrade."
-    throw "MSI ProductVersion must differ between the two packages (both are $v1Version)"
-}
+Assert-VersionLadder -Rungs ([ordered]@{
+        'v1 baseline' = $v1Version
+        'v2 upgrade'  = $v2Version
+    })
 
 # --------------------------------------------------------------------------------------------------
 # The wizard is never shown by this job - every msiexec call below is /quiet - so the upgrade UI gating is
