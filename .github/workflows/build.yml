@@ -55,7 +55,7 @@ jobs:
           dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output sbom --output-format Json --filename bom.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-cyclonedx
           path: sbom/bom.json
@@ -270,7 +270,7 @@ jobs:
 
       - name: Upload MSI logs on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: msi-logs
           path: msi-logs/
@@ -281,7 +281,7 @@ jobs:
       # purpose: an ARM64 runner cross-compiling its own x64 payload would be a second, unverified build.
       - name: Upload packages for the ARM64 job
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: arm64-suite-packages
           path: |
@@ -311,7 +311,7 @@ jobs:
       # No setup-dotnet: nothing here compiles. The suites drive msiexec and the bundle .exe and read the
       # results out of the registry, the filesystem and SCM - all of which Windows PowerShell provides.
       - name: Download packages built on the x64 job
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: arm64-suite-packages
           path: pkg/
@@ -347,7 +347,7 @@ jobs:
 
       - name: Upload MSI logs on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: msi-logs-arm64
           path: msi-logs/
