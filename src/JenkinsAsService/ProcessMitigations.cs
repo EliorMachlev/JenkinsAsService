@@ -23,10 +23,10 @@ namespace JenkinsAsService;
 /// — so the attribute is honoured, and inheritance simply wins.
 /// </para>
 /// <para>
-/// So <c>Jenkins:Hardening:ProcessMitigations</c> is a dial on what the <em>service</em> takes, not on
-/// what it passes down — see <see cref="MitigationLevel"/>. Of the three image-load flags only
-/// <see cref="NoRemoteImages"/> has build-visible consequences, which is why declining it has a level of
-/// its own instead of forcing the all-or-nothing choice.
+/// So <c>Jenkins:Hardening:ProcessMitigations</c> selects what the <em>service</em> takes, not what it
+/// passes down — three independent digits, see <see cref="MitigationMask"/>. Only
+/// <see cref="MitigationMask.NoRemoteImagesFlag"/> has build-visible consequences, but each is its own
+/// decision because none of them can be withheld from the build tree while the service holds it.
 /// </para>
 /// </summary>
 internal static class ProcessMitigations
@@ -38,12 +38,8 @@ internal static class ProcessMitigations
         ProcessImageLoadPolicy = 10,
     }
 
-    // PROCESS_MITIGATION_IMAGE_LOAD_POLICY flag bits.
-    // The one flag with build-visible consequences, and so the only one MitigationLevel.AllowNetworkImages
-    // drops. Inherited by the build tree like the rest, which is exactly why it gets its own level.
-    private const uint NoRemoteImages = 1u << 0;          // Block loading DLLs from UNC / network paths.
-    private const uint NoLowMandatoryLabelImages = 1u << 1; // Block DLLs written by low-integrity processes.
-    private const uint PreferSystem32Images = 1u << 2;     // Resolve known system DLLs from %WinDir%\System32 first.
+    // The PROCESS_MITIGATION_IMAGE_LOAD_POLICY bits live on MitigationMask, which is what turns the
+    // configured digits into them - one definition, so the config format and the P/Invoke cannot disagree.
 
     // PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY flag bits.
     // Current Windows enables this before the process runs, so the call below commonly fails with
@@ -56,44 +52,54 @@ internal static class ProcessMitigations
     private static extern bool SetProcessMitigationPolicy(PolicyType policy, ref uint buffer, nuint length);
 
     /// <summary>
-    /// The image-load flag set for a given level. Pure, so the one part of this type carrying a decision is
-    /// testable without touching the real policy — which cannot be undone once set, and is inherited by
-    /// everything the test process later spawns.
+    /// Resolves the configured value to a mask, falling back to <see cref="MitigationMask.All"/> when it is
+    /// missing or malformed and reporting that via <paramref name="warn"/>. Pure, so the one part of this
+    /// type carrying a decision is testable without touching the real policy — which cannot be undone once
+    /// set, and is inherited by everything the test process later spawns.
     /// </summary>
-    internal static uint ImageLoadFlags(MitigationLevel level) => level switch
+    internal static MitigationMask Resolve(string? configured, Action<string>? warn = null)
     {
-        MitigationLevel.Off => 0,
-        MitigationLevel.AllowNetworkImages => NoLowMandatoryLabelImages | PreferSystem32Images,
-        // Full, and deliberately the DEFAULT arm rather than a named one: an unrecognised level must fail
-        // towards the most protective set, not the least. A config carrying a level this build does not
-        // know about is the case that matters, and it binds to 0 (Full) anyway.
-        _ => NoRemoteImages | NoLowMandatoryLabelImages | PreferSystem32Images
-    };
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return MitigationMask.All;
+        }
+
+        if (MitigationMask.TryParse(configured, out var mask))
+        {
+            return mask;
+        }
+
+        // Fail towards the most protective set, never the least: a value this build cannot read is a
+        // mistake, and guessing "they meant to turn things off" would silently weaken every agent whose
+        // config was written by a version that spelled this setting differently.
+        warn?.Invoke(
+            $"Process mitigations value '{configured}' is not three 0/1 digits; applying all of them.");
+        return MitigationMask.All;
+    }
 
     /// <summary>
-    /// Applies the safe mitigation subset at <paramref name="level"/>. No-op on non-Windows, and no-op
-    /// entirely at <see cref="MitigationLevel.Off"/>. Each policy is best-effort: a failure (older OS,
+    /// Applies the image-load mitigations selected by <paramref name="mask"/>, plus extension-point-disable
+    /// which is unconditional. No-op on non-Windows. Each policy is best-effort: a failure (older OS,
     /// already-set, or insufficient rights) is reported via <paramref name="warn"/> and skipped.
     /// </summary>
-    /// <returns><c>true</c> if any policy was attempted; <c>false</c> at <see cref="MitigationLevel.Off"/>
-    /// or off-Windows, so the caller can log that the service is running unhardened.</returns>
-    internal static bool Apply(MitigationLevel level = MitigationLevel.Full, Action<string>? warn = null)
+    /// <returns><c>false</c> off-Windows, where nothing was attempted.</returns>
+    internal static bool Apply(MitigationMask mask, Action<string>? warn = null)
     {
-        if (!OperatingSystem.IsWindows() || level == MitigationLevel.Off)
+        if (!OperatingSystem.IsWindows())
         {
             return false;
         }
 
-        ApplyWindows(level, warn);
+        ApplyWindows(mask, warn);
         return true;
     }
 
     [SupportedOSPlatform("windows")]
-    private static void ApplyWindows(MitigationLevel level, Action<string>? warn)
+    private static void ApplyWindows(MitigationMask mask, Action<string>? warn)
     {
         TryApply(
             PolicyType.ProcessImageLoadPolicy,
-            ImageLoadFlags(level),
+            mask.ImageLoadFlags,
             "image-load",
             warn);
 

@@ -38,9 +38,9 @@ public static class UpdateSecretCommand
           --custom-args <value>   Extra java.exe arguments
           --sanitize-env <bool>   Sanitize the agent child environment (true/false)
           --allowed-env <value>   Extra env var names to pass through (semicolon/comma separated)
-          --mitigations <value>   Process mitigations applied to the service, and inherited by the build:
-                                  Full (default), AllowNetworkImages (permit DLL loads from UNC/mapped
-                                  drives), or Off
+          --mitigations <digits>  Image-load mitigations applied to the service, and inherited by the
+                                  build, as three 0/1 digits: no-remote, no-low-label, prefer-System32.
+                                  "111" (default) applies all three; "101" drops the low-integrity block
           --upgrade               Reconcile appsettings.json to the current schema on MSI upgrade:
                                   add new settings at their defaults, prune settings the schema no longer
                                   defines, and preserve existing values and the secret. If no secret is
@@ -89,7 +89,7 @@ public static class UpdateSecretCommand
         public string? CustomArgs;
         public bool? SanitizeEnv;
         public string? AllowedEnv;
-        public MitigationLevel? Mitigations;
+        public MitigationMask? Mitigations;
         public bool? DebugMode;
         public bool? CompactLog;
         public int? RetainedLogs;
@@ -248,7 +248,7 @@ public static class UpdateSecretCommand
                 state.AllowedEnv = Next(args, ref i, state);
                 return true;
             case "--mitigations":
-                state.Mitigations = ParseOrFail(state, option, Next(args, ref i, state), ParseMitigationLevel);
+                state.Mitigations = ParseOrFail(state, option, Next(args, ref i, state), ParseMitigations);
                 return true;
             case "--debug":
                 state.DebugMode = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
@@ -677,8 +677,27 @@ public static class UpdateSecretCommand
     internal static DpapiScope? ParseDpapiScope(string? value) =>
         ParseEnumOption<DpapiScope>(value, "dpapi-scope", "Machine, User");
 
-    internal static MitigationLevel? ParseMitigationLevel(string? value) =>
-        ParseEnumOption<MitigationLevel>(value, "mitigations", "Full, AllowNetworkImages, Off");
+    /// <summary>
+    /// The three-digit mitigation mask. Empty is "unset" and silent, per <see cref="ParseOrFail"/>; a
+    /// non-empty value that is not three 0/1 digits names the format rather than being ignored.
+    /// </summary>
+    internal static MitigationMask? ParseMitigations(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (MitigationMask.TryParse(value, out var mask))
+        {
+            return mask;
+        }
+
+        Console.Error.WriteLine(
+            $"Error: unknown mitigations '{value}'. Valid: three 0/1 digits (no-remote, no-low-label, "
+            + "prefer-System32), e.g. 111 or 101");
+        return null;
+    }
 
     internal static ConnectionMethod? ParseMethod(string? value) =>
         ParseEnumOption<ConnectionMethod>(value, "method", "Auto, WebSocket, Https");

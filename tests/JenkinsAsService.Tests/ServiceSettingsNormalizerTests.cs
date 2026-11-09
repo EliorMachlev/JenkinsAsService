@@ -138,20 +138,20 @@ public class ServiceSettingsNormalizerTests
         var (_, added, _) = ServiceSettingsNormalizer.NormalizeJson(existing);
 
         added.Should().Contain("Jenkins:Hardening:ProcessMitigations");
-        Merged(existing)["Jenkins"]!["Hardening"]!["ProcessMitigations"]!.GetValue<string>().Should().Be("Full");
+        Merged(existing)["Jenkins"]!["Hardening"]!["ProcessMitigations"]!.GetValue<string>().Should().Be("111");
     }
 
     [Fact]
     public void Upgrade_preserves_an_explicitly_chosen_mitigation_level()
     {
         const string existing = """
-            { "Jenkins": { "Hardening": { "ProcessMitigations": "AllowNetworkImages" } } }
+            { "Jenkins": { "Hardening": { "ProcessMitigations": "101" } } }
             """;
 
         var (_, added, _) = ServiceSettingsNormalizer.NormalizeJson(existing);
 
         added.Should().NotContain("Jenkins:Hardening:ProcessMitigations");
         Merged(existing)["Jenkins"]!["Hardening"]!["ProcessMitigations"]!.GetValue<string>()
-            .Should().Be("AllowNetworkImages");
+            .Should().Be("101");
     }
 }

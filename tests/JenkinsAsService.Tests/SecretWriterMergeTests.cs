@@ -38,7 +38,7 @@ public class SecretWriterMergeTests : IDisposable
             CustomArguments = "-noCertificateCheck",
             SanitizeEnvironment = false,
             AllowedEnvironmentVariables = "MAVEN_OPTS;GRADLE_USER_HOME",
-            ProcessMitigations = MitigationLevel.Off,
+            ProcessMitigations = new MitigationMask(false, false, false),
             DebugMode = true,
             CompactLog = true,
             RetainedLogs = 7,
@@ -54,7 +54,7 @@ public class SecretWriterMergeTests : IDisposable
         j.GetProperty("Hardening").GetProperty("AllowedEnvironmentVariables").GetString().Should().Be("MAVEN_OPTS;GRADLE_USER_HOME");
         // Written as the enum NAME, not its ordinal - the config binder parses "Off", and a 2 would bind
         // to Off today and to something else the moment a level is inserted above it.
-        j.GetProperty("Hardening").GetProperty("ProcessMitigations").GetString().Should().Be("Off");
+        j.GetProperty("Hardening").GetProperty("ProcessMitigations").GetString().Should().Be("000");
         j.GetProperty("Logging").GetProperty("DebugMode").GetBoolean().Should().BeTrue();
         j.GetProperty("Logging").GetProperty("CompactLog").GetBoolean().Should().BeTrue();
         j.GetProperty("Logging").GetProperty("RetainedLogs").GetInt32().Should().Be(7);

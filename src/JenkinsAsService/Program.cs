@@ -64,22 +64,23 @@ Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, dataDir);
 
 // Harden the service process: block remote/low-integrity/non-System32 DLL loads and legacy
 // extension-point injection. Best-effort - never blocks startup. These policies are INHERITED by the
-// Java child and everything the build spawns beneath it, which is why the level is configurable at all;
-// see ProcessMitigations for the measurement and MitigationLevel for what each level costs.
-var mitigationLevel = jenkinsSection.GetValue<MitigationLevel?>(MitigationsKey) ?? MitigationLevel.Full;
-if (!ProcessMitigations.Apply(mitigationLevel, msg => Log.Warning("{Warning}", msg)))
+// Java child and everything the build spawns beneath it, which is why they are configurable at all;
+// see ProcessMitigations for the measurement and MitigationMask for what each digit costs.
+var mitigationMask = ProcessMitigations.Resolve(
+    jenkinsSection[MitigationsKey], msg => Log.Warning("{Warning}", msg));
+ProcessMitigations.Apply(mitigationMask, msg => Log.Warning("{Warning}", msg));
+
+if (mitigationMask != MitigationMask.All)
 {
-    // A reduced security posture is an operator decision, but it must be visible in the log of the
-    // machine it applies to - not only in a config file somebody has to think to go and read. Worded as
-    // "were not applied" because Apply also returns false off-Windows, where naming the level would read
-    // as though the level were the reason.
-    Log.Warning("Process mitigations were not applied ({Key} = {Level}); the service is unhardened.",
-        MitigationsKey, mitigationLevel);
-}
-else if (mitigationLevel != MitigationLevel.Full)
-{
-    Log.Warning("Process mitigations reduced ({Key} = {Level}); DLL loads from network paths are allowed.",
-        MitigationsKey, mitigationLevel);
+    // A reduced security posture is an operator decision, but it must be visible in the log of the machine
+    // it applies to - not only in a config file somebody has to think to go and read. The digits are named
+    // rather than printed raw, because "101" in a log tells nobody which one was dropped.
+    Log.Warning(
+        "Process mitigations reduced ({Key} = {Mask}): network-DLL block {NoRemote}, "
+        + "low-integrity block {NoLowLabel}, System32 preference {PreferSystem32}. "
+        + "The Java agent and the build tree beneath it inherit this.",
+        MitigationsKey, mitigationMask.ToString(),
+        mitigationMask.NoRemoteImages, mitigationMask.NoLowLabelImages, mitigationMask.PreferSystem32Images);
 }
 
 try

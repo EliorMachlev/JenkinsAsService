@@ -297,13 +297,13 @@ public static class SecretWriter
     private static JsonObject? ExistingObject(JsonObject? existing, string key) =>
         existing?[key] as JsonObject;
 
-    // Preserve an existing Hardening:ProcessMitigations, else default to Full (so the enum binds).
+    // Preserve an existing Hardening:ProcessMitigations, else write the all-on mask. Anything that is
+    // not three 0/1 digits is replaced rather than carried forward, so a full write repairs a value an
+    // older build wrote in a different format instead of preserving something nothing can read.
     private static string ExistingMitigations(JsonObject? hardening)
     {
         var value = ExistingString(hardening, ConfigKeys.Hardening.ProcessMitigations);
-        return Enum.TryParse<MitigationLevel>(value, ignoreCase: true, out var level)
-            ? level.ToString()
-            : nameof(MitigationLevel.Full);
+        return MitigationMask.TryParse(value, out var mask) ? mask.ToString() : MitigationMask.All.ToString();
     }
 
     // Preserve an existing Connection:Method, else default to Auto (so the enum binds to a valid value).
@@ -390,7 +390,7 @@ public sealed record ConfigMergeFields
     public string? CustomArguments { get; init; }
     public bool? SanitizeEnvironment { get; init; }
     public string? AllowedEnvironmentVariables { get; init; }
-    public MitigationLevel? ProcessMitigations { get; init; }
+    public MitigationMask? ProcessMitigations { get; init; }
     public bool? DebugMode { get; init; }
     public bool? CompactLog { get; init; }
     public int? RetainedLogs { get; init; }

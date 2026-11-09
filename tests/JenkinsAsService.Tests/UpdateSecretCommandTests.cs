@@ -400,18 +400,20 @@ public class UpdateSecretCommandTests : IDisposable
     }
 
     [Theory]
-    [InlineData("Full", MitigationLevel.Full)]
-    [InlineData("allownetworkimages", MitigationLevel.AllowNetworkImages)]
-    [InlineData("OFF", MitigationLevel.Off)]
-    public void ParseMitigationLevel_accepts_every_level_case_insensitively(string value, MitigationLevel expected) =>
-        UpdateSecretCommand.ParseMitigationLevel(value).Should().Be(expected);
+    [InlineData("111")]
+    [InlineData("101")]
+    [InlineData("000")]
+    public void ParseMitigations_accepts_three_binary_digits(string value) =>
+        UpdateSecretCommand.ParseMitigations(value)?.ToString().Should().Be(value);
 
     [Theory]
     [InlineData("true")]
-    [InlineData("None")]
-    [InlineData("AllowNetworkImage")]
-    public void ParseMitigationLevel_rejects_an_unknown_level(string value) =>
-        UpdateSecretCommand.ParseMitigationLevel(value).Should().BeNull();
+    [InlineData("Full")]
+    [InlineData("11")]
+    [InlineData("1112")]
+    public void ParseMitigations_rejects_a_malformed_value(string value) =>
+        CaptureStderr(() => UpdateSecretCommand.ParseMitigations(value).Should().BeNull())
+            .Should().Contain("three 0/1 digits");
 
     // An unset installer property reaches the custom action as "" - every [PROPERTY] expansion is quoted
     // for exactly that reason - so empty must mean "leave it alone" and must NOT write a parse error into
@@ -422,7 +424,7 @@ public class UpdateSecretCommandTests : IDisposable
         { "mode", v => UpdateSecretCommand.ParseMode(v) },
         { "dpapi-scope", v => UpdateSecretCommand.ParseDpapiScope(v) },
         { "method", v => UpdateSecretCommand.ParseMethod(v) },
-        { "mitigations", v => UpdateSecretCommand.ParseMitigationLevel(v) }
+        { "mitigations", v => UpdateSecretCommand.ParseMitigations(v) }
     };
 
     // Console.Error is process-wide, so every capture must restore it even when the assertion inside
