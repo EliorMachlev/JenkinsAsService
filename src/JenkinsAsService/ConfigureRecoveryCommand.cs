@@ -52,13 +52,17 @@ internal static class ConfigureRecoveryCommand
     }
 
     /// <summary>Parses <c>--service</c>, defaulting to the name the installer registers.</summary>
+    internal static readonly IReadOnlyDictionary<string, string> Aliases = CliAliases.Build(["--service"]);
+
+    private static readonly IReadOnlyDictionary<string, string> AliasLookup = CliAliases.Reverse(Aliases);
+
     internal static (string? ServiceName, string? Error) ParseArguments(string[] args)
     {
         var serviceName = DefaultServiceName;
 
         for (var i = 0; i < args.Length; i++)
         {
-            switch (args[i])
+            switch (CliAliases.Resolve(args[i], AliasLookup))
             {
                 case Name:
                     break;

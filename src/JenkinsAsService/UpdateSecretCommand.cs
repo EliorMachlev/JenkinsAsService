@@ -6,50 +6,62 @@ public static class UpdateSecretCommand
 {
     internal const string Name = "update-secret";
 
+    // Long option -> short alias (--m for --mitigations). The list order is the allocation order, see
+    // CliAliases: mitigations comes first so it owns --m, ahead of --mode and --method.
+    internal static readonly IReadOnlyDictionary<string, string> Aliases = CliAliases.Build(
+    [
+        "--mitigations", "--secret", "--secret-file", "--secret-env", "--url", "--mode", "--dpapi-scope",
+        "--thumbprint", "--service-account", "--set-data-dir", "--agent-name", "--java-path", "--username", "--method",
+        "--via-file", "--custom-args", "--sanitize-env", "--allowed-env", "--debug", "--compact-log", "--retained-logs",
+        "--max-retries", "--silent", "--impersonate", "--merge", "--upgrade", "--help"
+    ]);
+
+    private static readonly IReadOnlyDictionary<string, string> AliasLookup = CliAliases.Reverse(Aliases);
+
     private const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
 
         Options:
-          --secret <value>        The Jenkins agent secret (plaintext)
-          --secret-file <path>    Read secret from file (file is deleted after reading)
-          --secret-env <var>      Read secret from named environment variable
-          --url <value>           Jenkins controller address (include port)
-          --mode <value>          Protection mode: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected
-                                  Tpm encrypts with a non-exportable TPM-resident key (pass --service-account
-                                  so the service can decrypt at runtime).
-          --dpapi-scope <value>   DPAPI scope when --mode Dpapi: Machine (default) or User.
-                                  User-scope requires writing as the service account (see --impersonate).
-          --thumbprint <value>    SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
-          --service-account <acct> Service account (e.g. 'NT SERVICE\Jenkins') granted read on the
-                                  written config; appsettings.json ACL is hardened to deny Users.
-          --set-data-dir <path>   Only set Jenkins:DataDirectory in appsettings.json, then exit (used
-                                  by the installer; the writable data dir, separate from the binary).
-          --agent-name <value>    Agent node label (default: hostname)
-          --java-path <value>     Java installation directory (default: JAVA_HOME)
-          --impersonate           Run Credential Manager write as a different user account.
-                                  Interactive: prompts for username and password.
-                                  Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
-          --username <value>      Windows account for impersonation (DOMAIN\account)
-          --silent                Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
-          --merge                 Merge only the optional fields below into an existing appsettings.json
-                                  (no secret written). Used by the installer's advanced custom actions.
-          --method <value>        Connection transport: Auto, WebSocket, Https
-          --via-file <bool>       Pass secret to agent via file (true/false)
-          --custom-args <value>   Extra java.exe arguments
-          --sanitize-env <bool>   Sanitize the agent child environment (true/false)
-          --allowed-env <value>   Extra env var names to pass through (semicolon/comma separated)
-          --mitigations <digits>  Image-load mitigations applied to the service, and inherited by the
-                                  build, as three 0/1 digits: no-remote, no-low-label, prefer-System32.
-                                  "111" (default) applies all three; "101" drops the low-integrity block
-          --upgrade               Reconcile appsettings.json to the current schema on MSI upgrade:
-                                  add new settings at their defaults, prune settings the schema no longer
-                                  defines, and preserve existing values and the secret. If no secret is
-                                  present, falls back to a full write from --secret/--url/--mode.
-          --debug <bool>          Verbose Java agent logging (true/false)
-          --compact-log <bool>    Compact JSON log format (true/false)
-          --retained-logs <int>   Number of rolled log files to keep
-          --max-retries <int>     Max auto-recovery attempts (0 = infinite)
-          --help                  Show this help
+          --s, --secret <value>                   The Jenkins agent secret (plaintext)
+          --se, --secret-file <path>              Read secret from file (file is deleted after reading)
+          --sec, --secret-env <var>               Read secret from named environment variable
+          --u, --url <value>                      Jenkins controller address (include port)
+          --mo, --mode <value>                    Protection mode: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected
+                                                  Tpm encrypts with a non-exportable TPM-resident key (pass --service-account
+                                                  so the service can decrypt at runtime).
+          --d, --dpapi-scope <value>              DPAPI scope when --mode Dpapi: Machine (default) or User.
+                                                  User-scope requires writing as the service account (see --impersonate).
+          --t, --thumbprint <value>               SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
+          --ser, --service-account <acct>         Service account (e.g. 'NT SERVICE\Jenkins') granted read on the
+                                                  written config; appsettings.json ACL is hardened to deny Users.
+          --set, --set-data-dir <path>            Only set Jenkins:DataDirectory in appsettings.json, then exit (used
+                                                  by the installer; the writable data dir, separate from the binary).
+          --a, --agent-name <value>               Agent node label (default: hostname)
+          --j, --java-path <value>                Java installation directory (default: JAVA_HOME)
+          --i, --impersonate                      Run Credential Manager write as a different user account.
+                                                  Interactive: prompts for username and password.
+                                                  Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
+          --us, --username <value>                Windows account for impersonation (DOMAIN\account)
+          --si, --silent                          Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
+          --mer, --merge                          Merge only the optional fields below into an existing appsettings.json
+                                                  (no secret written). Used by the installer's advanced custom actions.
+          --me, --method <value>                  Connection transport: Auto, WebSocket, Https
+          --v, --via-file <bool>                  Pass secret to agent via file (true/false)
+          --c, --custom-args <value>              Extra java.exe arguments
+          --sa, --sanitize-env <bool>             Sanitize the agent child environment (true/false)
+          --al, --allowed-env <value>             Extra env var names to pass through (semicolon/comma separated)
+          --m, --mitigations <digits>             Image-load mitigations applied to the service, and inherited by the
+                                                  build, as three 0/1 digits: no-remote, no-low-label, prefer-System32.
+                                                  "111" (default) applies all three; "101" drops the low-integrity block
+          --up, --upgrade                         Reconcile appsettings.json to the current schema on MSI upgrade:
+                                                  add new settings at their defaults, prune settings the schema no longer
+                                                  defines, and preserve existing values and the secret. If no secret is
+                                                  present, falls back to a full write from --secret/--url/--mode.
+          --de, --debug <bool>                    Verbose Java agent logging (true/false)
+          --co, --compact-log <bool>              Compact JSON log format (true/false)
+          --r, --retained-logs <int>              Number of rolled log files to keep
+          --ma, --max-retries <int>               Max auto-recovery attempts (0 = infinite)
+          --h, --help                             Show this help
         """;
 
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
@@ -172,6 +184,9 @@ public static class UpdateSecretCommand
         var state = new ParseState();
         for (int i = 1; i < args.Length; i++)
         {
+            // Resolved here, at an option position only: a value that happens to read "--m" is
+            // consumed by Next() and never reaches this line.
+            args[i] = CliAliases.Resolve(args[i], AliasLookup);
             if (!TryApplyValueArg(args, ref i, state) && !TryApplyFlagArg(args[i], state))
             {
                 Console.Error.WriteLine($"Unknown option: {args[i]}");

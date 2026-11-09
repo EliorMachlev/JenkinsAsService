@@ -33,7 +33,7 @@ internal static class CliCommands
     internal static string TrimQuoted(string value) => value.Trim().Trim('"').Trim();
 
     /// <summary>True when the caller asked for usage text rather than an action.</summary>
-    internal static bool WantsHelp(string[] args) => Array.Exists(args, a => a is "--help" or "-h");
+    internal static bool WantsHelp(string[] args) => Array.Exists(args, a => a is "--help" or "--h" or "-h");
 
     /// <summary>
     /// Resolves <paramref name="args"/>[0] to a handler. False means service mode.

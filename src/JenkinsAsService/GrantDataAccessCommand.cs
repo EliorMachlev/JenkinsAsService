@@ -56,6 +56,10 @@ internal static class GrantDataAccessCommand
     /// Parses <c>--path</c> and <c>--account</c>. The account has no default: falling back to a built-in
     /// name would grant the wrong identity on any install that overrode SERVICE_ACCOUNT.
     /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> Aliases = CliAliases.Build(["--path", "--account"]);
+
+    private static readonly IReadOnlyDictionary<string, string> AliasLookup = CliAliases.Reverse(Aliases);
+
     internal static (string? Path, string? Account, string? Error) ParseArguments(string[] args)
     {
         string? path = null;
@@ -63,7 +67,7 @@ internal static class GrantDataAccessCommand
 
         for (var i = 0; i < args.Length; i++)
         {
-            switch (args[i])
+            switch (CliAliases.Resolve(args[i], AliasLookup))
             {
                 case Name:
                     break;
