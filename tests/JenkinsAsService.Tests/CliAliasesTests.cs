@@ -6,39 +6,49 @@ namespace JenkinsAsService.Tests;
 public class CliAliasesTests
 {
     [Fact]
-    public void Build_uses_first_letter_then_two_then_three()
+    public void Uses_first_letter_then_two_then_three()
     {
-        var map = CliAliases.Build(["--secret", "--secret-file", "--secret-env", "--set-data-dir"]);
+        var aliases = new CliAliases(["--secret", "--secret-file", "--secret-env", "--set-data-dir"]);
 
-        map["--secret"].Should().Be("--s");
-        map["--secret-file"].Should().Be("--se");
-        map["--secret-env"].Should().Be("--sec");
-        map["--set-data-dir"].Should().Be("--set");
+        aliases["--secret"].Should().Be("--s");
+        aliases["--secret-file"].Should().Be("--se");
+        aliases["--secret-env"].Should().Be("--sec");
+        aliases["--set-data-dir"].Should().Be("--set");
     }
 
     [Fact]
-    public void Build_ignores_hyphens_when_taking_a_prefix()
+    public void Ignores_hyphens_when_taking_a_prefix()
     {
-        // "compact-log" is c-o-m..., not "c-" + something: the alias is typed, so it must be letters only.
-        CliAliases.Build(["--custom-args", "--compact-log"])["--compact-log"].Should().Be("--co");
+        // The alias is typed, so it is letters only: "compact-log" -> --co, never "--c-".
+        new CliAliases(["--custom-args", "--compact-log"])["--compact-log"].Should().Be("--co");
     }
 
     [Fact]
-    public void Build_throws_when_no_alias_of_three_letters_is_free()
+    public void Never_shadows_a_long_option()
     {
-        var act = () => CliAliases.Build(["--abc1", "--abc2", "--abc3", "--abc4"]);
+        // "--u" is free, but "--url" is a real option, so nothing may be aliased to it.
+        var aliases = new CliAliases(["--url", "--urgent"]);
+
+        aliases.All.Values.Should().NotContain("--url");
+        aliases["--urgent"].Should().Be("--ur");
+    }
+
+    [Fact]
+    public void Throws_when_no_alias_of_three_letters_is_free()
+    {
+        var act = () => new CliAliases(["--abc1", "--abc2", "--abc3", "--abc4"]);
         act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
     public void Resolve_maps_an_alias_to_its_long_form_and_leaves_everything_else()
     {
-        var reverse = CliAliases.Reverse(CliAliases.Build(["--mitigations", "--mode"]));
+        var aliases = new CliAliases(["--mitigations", "--mode"]);
 
-        CliAliases.Resolve("--m", reverse).Should().Be("--mitigations");
-        CliAliases.Resolve("--mo", reverse).Should().Be("--mode");
-        CliAliases.Resolve("--mitigations", reverse).Should().Be("--mitigations");
-        CliAliases.Resolve("111", reverse).Should().Be("111");
+        aliases.Resolve("--m").Should().Be("--mitigations");
+        aliases.Resolve("--mo").Should().Be("--mode");
+        aliases.Resolve("--mitigations").Should().Be("--mitigations");
+        aliases.Resolve("111").Should().Be("111");
     }
 
     [Fact]
@@ -54,20 +64,30 @@ public class CliAliasesTests
     {
         foreach (var aliases in new[] { UpdateSecretCommand.Aliases, GrantDataAccessCommand.Aliases, ConfigureRecoveryCommand.Aliases })
         {
-            aliases.Values.Should().OnlyHaveUniqueItems();
-            aliases.Values.Should().NotIntersectWith(aliases.Keys);
+            aliases.All.Values.Should().OnlyHaveUniqueItems();
+            aliases.All.Values.Should().NotIntersectWith(aliases.All.Keys);
         }
     }
 
     [Fact]
-    public void Update_secret_accepts_aliases_in_place_of_long_options()
+    public void Update_secret_usage_text_lists_every_alias()
+    {
+        // The usage text spells aliases out by hand; this is what stops it drifting from the table.
+        foreach (var (option, alias) in UpdateSecretCommand.Aliases.All)
+        {
+            UpdateSecretCommand.UsageText.Should().Contain($"{alias}, {option}");
+        }
+    }
+
+    [Fact]
+    public void Update_secret_resolves_aliases_in_place_of_long_options()
     {
         var args = new[] { UpdateSecretCommand.Name, "--m", "101", "--si" };
-        var parsed = typeof(UpdateSecretCommand)
-            .GetMethod("ParseArgs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
-            .Invoke(null, [args]);
 
-        parsed.Should().NotBeNull();
+        typeof(UpdateSecretCommand)
+            .GetMethod("ParseArgs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, [args]).Should().NotBeNull();
+
         args[1].Should().Be("--mitigations");
         args[3].Should().Be("--silent");
     }

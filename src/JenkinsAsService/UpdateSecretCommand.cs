@@ -8,7 +8,7 @@ public static class UpdateSecretCommand
 
     // Long option -> short alias (--m for --mitigations). The list order is the allocation order, see
     // CliAliases: mitigations comes first so it owns --m, ahead of --mode and --method.
-    internal static readonly IReadOnlyDictionary<string, string> Aliases = CliAliases.Build(
+    internal static readonly CliAliases Aliases = new(
     [
         "--mitigations", "--secret", "--secret-file", "--secret-env", "--url", "--mode", "--dpapi-scope",
         "--thumbprint", "--service-account", "--set-data-dir", "--agent-name", "--java-path", "--username", "--method",
@@ -16,9 +16,7 @@ public static class UpdateSecretCommand
         "--max-retries", "--silent", "--impersonate", "--merge", "--upgrade", "--help"
     ]);
 
-    private static readonly IReadOnlyDictionary<string, string> AliasLookup = CliAliases.Reverse(Aliases);
-
-    private const string UsageText = """
+    internal const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
 
         Options:
@@ -186,7 +184,7 @@ public static class UpdateSecretCommand
         {
             // Resolved here, at an option position only: a value that happens to read "--m" is
             // consumed by Next() and never reaches this line.
-            args[i] = CliAliases.Resolve(args[i], AliasLookup);
+            args[i] = Aliases.Resolve(args[i]);
             if (!TryApplyValueArg(args, ref i, state) && !TryApplyFlagArg(args[i], state))
             {
                 Console.Error.WriteLine($"Unknown option: {args[i]}");
