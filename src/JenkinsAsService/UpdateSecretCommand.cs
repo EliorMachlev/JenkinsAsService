@@ -6,15 +6,57 @@ public static class UpdateSecretCommand
 {
     internal const string Name = "update-secret";
 
-    // Long option -> short alias (--m for --mitigations). The list order is the allocation order, see
-    // CliAliases: mitigations comes first so it owns --m, ahead of --mode and --method.
-    internal static readonly CliAliases Aliases = new(
+    // One row per option: the single place a name, its value parser and its target field are stated. The
+    // aliases below are derived from these names, so an option cannot be parseable yet have no short form.
+    // Raw is null when the value was missing (already reported by Next) and empty when the installer field
+    // was untouched; ParseOrFail is the one statement of what each means.
+    private delegate void ValueHandler(ParseState state, string option, string? raw);
+
+    // mitigations is first, deliberately: allocation order decides who gets the shorter alias (see
+    // CliAliases), and this puts --m on mitigations ahead of --mode and --method.
+    private static readonly (string Name, ValueHandler Apply)[] ValueOptions =
     [
-        "--mitigations", "--secret", "--secret-file", "--secret-env", "--url", "--mode", "--dpapi-scope",
-        "--thumbprint", "--service-account", "--set-data-dir", "--agent-name", "--java-path", "--username", "--method",
-        "--via-file", "--custom-args", "--sanitize-env", "--allowed-env", "--debug", "--compact-log", "--retained-logs",
-        "--max-retries", "--silent", "--impersonate", "--merge", "--upgrade", "--help"
-    ]);
+        ("--mitigations", (s, o, v) => s.Mitigations = ParseOrFail(s, o, v, ParseMitigations)),
+        ("--secret", (s, _, v) => s.SecretArg = v),
+        ("--secret-file", (s, _, v) => s.SecretFile = v),
+        ("--secret-env", (s, _, v) => s.SecretEnv = v),
+        ("--url", (s, _, v) => s.Url = v),
+        ("--mode", (s, o, v) => s.Mode = ParseOrFail(s, o, v, ParseMode)),
+        ("--dpapi-scope", (s, o, v) => s.DpapiScope = ParseOrFail(s, o, v, ParseDpapiScope)),
+        ("--thumbprint", (s, _, v) => s.Thumbprint = v),
+        ("--service-account", (s, _, v) => s.ServiceAccount = v),
+        ("--set-data-dir", (s, _, v) => s.SetDataDir = SanitizePathArgument(v)),
+        ("--agent-name", (s, _, v) => s.AgentName = v),
+        ("--java-path", (s, _, v) => s.JavaPath = SanitizePathArgument(v)),
+        ("--username", (s, _, v) => s.Username = v),
+        ("--method", (s, o, v) => s.Method = ParseOrFail(s, o, v, ParseMethod)),
+        ("--via-file", (s, o, v) => s.ViaFile = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--custom-args", (s, _, v) => s.CustomArgs = v),
+        ("--sanitize-env", (s, o, v) => s.SanitizeEnv = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--allowed-env", (s, _, v) => s.AllowedEnv = v),
+        ("--debug", (s, o, v) => s.DebugMode = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--compact-log", (s, o, v) => s.CompactLog = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--retained-logs", (s, o, v) => s.RetainedLogs = ParseOrFail(s, o, v, ParseInt, WholeNumber)),
+        ("--max-retries", (s, o, v) => s.MaxRetries = ParseOrFail(s, o, v, ParseInt, WholeNumber)),
+    ];
+
+    private static readonly (string Name, Action<ParseState> Apply)[] FlagOptions =
+    [
+        ("--silent", s => s.Silent = true),
+        ("--impersonate", s => s.Impersonate = true),
+        ("--merge", s => s.Merge = true),
+        ("--upgrade", s => s.Upgrade = true),
+    ];
+
+    private static readonly Dictionary<string, ValueHandler> ValueHandlers =
+        ValueOptions.ToDictionary(o => o.Name, o => o.Apply, StringComparer.Ordinal);
+
+    private static readonly Dictionary<string, Action<ParseState>> FlagHandlers =
+        FlagOptions.ToDictionary(o => o.Name, o => o.Apply, StringComparer.Ordinal);
+
+    // Long option -> short alias (--m for --mitigations), allocated in table order.
+    internal static readonly CliAliases Aliases = new(
+        ValueOptions.Select(o => o.Name).Concat(FlagOptions.Select(o => o.Name)).Append("--help"));
 
     internal const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
@@ -202,103 +244,27 @@ public static class UpdateSecretCommand
 
     private static bool TryApplyValueArg(string[] args, ref int i, ParseState state)
     {
-        // Read ONCE, and reused for both the switch and the error message. Writing the literal twice per
-        // case is how "--debug" ends up reporting itself as "--method": it compiles, and the only symptom
-        // is an operator editing the wrong line of their install script. Next() advances i, which is why
-        // this is captured before the switch rather than read again inside it.
+        // Read ONCE, before Next() advances i: the name is what the error message must report, and writing
+        // it twice per option is how "--debug" ends up reporting itself as "--method".
         var option = args[i];
-        switch (option)
+        if (!ValueHandlers.TryGetValue(option, out var apply))
         {
-            case "--secret":
-                state.SecretArg = Next(args, ref i, state);
-                return true;
-            case "--secret-file":
-                state.SecretFile = Next(args, ref i, state);
-                return true;
-            case "--secret-env":
-                state.SecretEnv = Next(args, ref i, state);
-                return true;
-            case "--url":
-                state.Url = Next(args, ref i, state);
-                return true;
-            case "--mode":
-                state.Mode = ParseOrFail(state, option, Next(args, ref i, state), ParseMode);
-                return true;
-            case "--dpapi-scope":
-                state.DpapiScope = ParseOrFail(state, option, Next(args, ref i, state), ParseDpapiScope);
-                return true;
-            case "--thumbprint":
-                state.Thumbprint = Next(args, ref i, state);
-                return true;
-            case "--service-account":
-                state.ServiceAccount = Next(args, ref i, state);
-                return true;
-            case "--set-data-dir":
-                state.SetDataDir = SanitizePathArgument(Next(args, ref i, state));
-                return true;
-            case "--agent-name":
-                state.AgentName = Next(args, ref i, state);
-                return true;
-            case "--java-path":
-                state.JavaPath = SanitizePathArgument(Next(args, ref i, state));
-                return true;
-            case "--username":
-                state.Username = Next(args, ref i, state);
-                return true;
-            case "--method":
-                state.Method = ParseOrFail(state, option, Next(args, ref i, state), ParseMethod);
-                return true;
-            case "--via-file":
-                state.ViaFile = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--custom-args":
-                state.CustomArgs = Next(args, ref i, state);
-                return true;
-            case "--sanitize-env":
-                state.SanitizeEnv = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--allowed-env":
-                state.AllowedEnv = Next(args, ref i, state);
-                return true;
-            case "--mitigations":
-                state.Mitigations = ParseOrFail(state, option, Next(args, ref i, state), ParseMitigations);
-                return true;
-            case "--debug":
-                state.DebugMode = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--compact-log":
-                state.CompactLog = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--retained-logs":
-                state.RetainedLogs = ParseOrFail(state, option, Next(args, ref i, state), ParseInt, WholeNumber);
-                return true;
-            case "--max-retries":
-                state.MaxRetries = ParseOrFail(state, option, Next(args, ref i, state), ParseInt, WholeNumber);
-                return true;
-            default:
-                return false;
+            return false;
         }
+
+        apply(state, option, Next(args, ref i, state));
+        return true;
     }
 
     private static bool TryApplyFlagArg(string arg, ParseState state)
     {
-        switch (arg)
+        if (!FlagHandlers.TryGetValue(arg, out var apply))
         {
-            case "--silent":
-                state.Silent = true;
-                return true;
-            case "--impersonate":
-                state.Impersonate = true;
-                return true;
-            case "--merge":
-                state.Merge = true;
-                return true;
-            case "--upgrade":
-                state.Upgrade = true;
-                return true;
-            default:
-                return false;
+            return false;
         }
+
+        apply(state);
+        return true;
     }
 
     // ─── Silent mode ─────────────────────────────────────────────────────────
