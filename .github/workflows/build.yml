@@ -272,7 +272,7 @@ jobs:
           -BaselineArchitecture x86
           -ExpectedArchitecture x64
           -BundleExe (Get-Item bundle/*.exe).FullName
-          -BundleVersion ${{ env.BUNDLE_VERSION }}
+          -BundleVersion $env:BUNDLE_VERSION
 
       - name: Upload MSI logs on failure
         if: failure()
@@ -349,7 +349,7 @@ jobs:
           -ExpectedArchitecture arm64
           -BaselineInstallFolder 'C:\JenkinsArmMigration'
           -BundleExe (Get-Item pkg/bundle/*.exe).FullName
-          -BundleVersion ${{ env.BUNDLE_VERSION }}
+          -BundleVersion $env:BUNDLE_VERSION
 
       - name: Upload MSI logs on failure
         if: failure()

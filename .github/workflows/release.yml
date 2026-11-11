@@ -72,6 +72,12 @@ jobs:
             $tag = $version
             Write-Host "Auto-bumped latest release '$latest' -> '$version'"
           }
+          # Every later step builds file names, MSBuild properties and a release URL from this value, so it
+          # must be a plain dotted version (MSI ProductVersion is numeric anyway): a tag or input carrying
+          # anything else fails here, by name, instead of somewhere downstream.
+          if ($version -notmatch '^\d+(\.\d+){1,3}$') {
+            throw "Version '$version' is not a dotted numeric version (e.g. 1.15 or 1.0.5)."
+          }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
           echo "TAG=$tag" >> $env:GITHUB_OUTPUT
 
@@ -144,16 +150,20 @@ jobs:
           output: bundle/
 
       - name: Rename installer files
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          $v = "${{ steps.version.outputs.VERSION }}"
+          $v = $env:VERSION
           Move-Item msi/x64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x64.msi"
           Move-Item msi/x86/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_x86.msi"
           Move-Item msi/arm64/JenkinsAsService.Installer.msi "JenkinsAsService_${v}_arm64.msi"
           Move-Item bundle/JenkinsAsService.Bundle.exe "JenkinsAsService_${v}.exe"
 
       - name: Generate SBOM (CycloneDX)
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          $v = "${{ steps.version.outputs.VERSION }}"
+          $v = $env:VERSION
           dotnet tool restore  # CycloneDX version lives in .config/dotnet-tools.json
           dotnet tool run dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output . --output-format Json --filename "JenkinsAsService_${v}_sbom.json" --set-version $v
 
@@ -163,16 +173,20 @@ jobs:
       # LZMA2 at -mx=9 is the better compressor anyway. The one thing genuinely lost is RAR's recovery record;
       # the published SHA256 checksums already cover integrity, which is what that was standing in for.
       - name: Create 7z archives
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          $v = "${{ steps.version.outputs.VERSION }}"
+          $v = $env:VERSION
           foreach ($arch in $env:ARCHITECTURES.Split(' ')) {
             7z a -t7z -mx=9 "JenkinsAsService_${v}_${arch}.7z" ./publish/$arch/JenkinsAsService.exe ./publish/$arch/appsettings.json
             if ($LASTEXITCODE -ne 0) { throw "7z failed for $arch" }
           }
 
       - name: Generate checksums
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          $v = "${{ steps.version.outputs.VERSION }}"
+          $v = $env:VERSION
           # Published name -> path on disk, covering EVERY release asset. The per-architecture rows are
           # GENERATED from the architecture list rather than written out: at three architectures the literal
           # table was fourteen rows of which twelve differed only in an arch token, and the failure mode of
@@ -202,9 +216,12 @@ jobs:
       # ships. Attached to the release rather than submitted: opening the winget-pkgs PR stays a deliberate act.
       - name: Generate winget manifests
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          TAG: ${{ steps.version.outputs.TAG }}
         run: |
-          $v = "${{ steps.version.outputs.VERSION }}"
-          $url = "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.TAG }}/JenkinsAsService_${v}.exe"
+          $v = $env:VERSION
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:TAG/JenkinsAsService_${v}.exe"
           .github/scripts/New-WingetManifest.ps1 -Version $v -BundlePath "JenkinsAsService_${v}.exe" -InstallerUrl $url -OutputDirectory winget/
           Compress-Archive -Path winget/* -DestinationPath "JenkinsAsService_${v}_winget-manifests.zip"
 
