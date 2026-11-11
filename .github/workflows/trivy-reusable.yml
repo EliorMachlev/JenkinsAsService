@@ -32,6 +32,9 @@ jobs:
           # exist to avoid. Not tracked by Dependabot: re-check on each trivy-action bump, and drop this line
           # once the action's default catches up.
           version: v0.76.2
+          # Per-advisory, per-file, expiring exceptions; each one is listed in EXCEPTIONS.md. The action
+          # hands a single .yaml file to trivy as TRIVY_IGNOREFILE (YAML ignore files are not auto-loaded).
+          trivyignores: .trivyignore.yaml
           scan-type: ${{ inputs.scan-type }}
           scan-ref: ${{ inputs.scan-ref }}
           format: sarif
