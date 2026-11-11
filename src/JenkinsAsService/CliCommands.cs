@@ -32,8 +32,34 @@ internal static class CliCommands
     /// </summary>
     internal static string TrimQuoted(string value) => value.Trim().Trim('"').Trim();
 
-    /// <summary>True when the caller asked for usage text rather than an action.</summary>
-    internal static bool WantsHelp(string[] args) => Array.Exists(args, a => a is "--help" or "--h" or "-h");
+    /// <summary>
+    /// True when the caller asked for usage text rather than an action. A help flag counts only at an
+    /// option position: the argument after an option that takes a value is that option's value, however it
+    /// reads, so <c>--custom-args "--h"</c> passes <c>--h</c> to the agent instead of cancelling the run
+    /// (a silent install would otherwise print usage, exit 0 and write nothing - reported as success).
+    /// </summary>
+    /// <param name="args">The command line, verb included.</param>
+    /// <param name="takesValue">
+    /// Whether an argument is an option that consumes the next one. Null for a command with no value
+    /// options. Pass the same resolution the command's parser uses, aliases included.
+    /// </param>
+    internal static bool WantsHelp(string[] args, Func<string, bool>? takesValue = null)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] is "--help" or "--h" or "-h")
+            {
+                return true;
+            }
+
+            if (takesValue?.Invoke(args[i]) == true)
+            {
+                i++; // the value, skipped unread
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Resolves <paramref name="args"/>[0] to a handler. False means service mode.

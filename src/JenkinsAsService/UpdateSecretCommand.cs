@@ -177,7 +177,7 @@ public static class UpdateSecretCommand
     {
         basePath ??= AppContext.BaseDirectory;
 
-        if (CliCommands.WantsHelp(args))
+        if (CliCommands.WantsHelp(args, arg => ValueHandlers.ContainsKey(Aliases.Resolve(arg))))
         {
             Console.WriteLine(UsageText);
             return 0;

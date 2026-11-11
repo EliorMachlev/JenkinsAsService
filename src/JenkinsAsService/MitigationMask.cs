@@ -9,7 +9,7 @@ namespace JenkinsAsService;
 /// <list type="bullet">
 /// <item><c>"111"</c> — everything (the default).</item>
 /// <item><c>"011"</c> — drops only the network-DLL block (first digit), keeping the low-integrity block and
-/// the System32 preference. This is the build-relevant case: a build step that runs tooling or loads a
+/// the System32 preference. This is the usual build-relevant case: a build step that runs tooling or loads a
 /// native DLL from a UNC path or mapped drive. It is what the old <c>AllowNetworkImages</c> level meant.</item>
 /// <item><c>"101"</c> — drops only the low-integrity block (second digit).</item>
 /// <item><c>"000"</c> — applies none of them.</item>
@@ -56,8 +56,8 @@ public readonly struct MitigationMask : IEquatable<MitigationMask>
             | (preferSystem32Images ? 0 : PreferSystem32ImagesFlag);
     }
 
-    /// <summary>Block DLL loads from UNC paths and mapped network drives. The one with build-visible
-    /// consequences: a build step that runs tooling from a share fails under the service.</summary>
+    /// <summary>Block DLL loads from UNC paths and mapped network drives. The one builds most often hit:
+    /// a build step that runs tooling from a share fails under the service.</summary>
     public bool NoRemoteImages => (_disabled & NoRemoteImagesFlag) == 0;
 
     /// <summary>Block DLLs written by low-integrity processes.</summary>

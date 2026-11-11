@@ -146,4 +146,30 @@ public class CliAliasesTests
     {
         CliCommands.WantsHelp(["--h"]).Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("--h")]
+    [InlineData("-h")]
+    public void A_help_flag_at_an_option_position_is_help(string flag)
+    {
+        CliCommands.WantsHelp(["update-secret", "--silent", flag], a => a == "--url").Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("--h")]
+    [InlineData("-h")]
+    public void A_help_flag_in_a_value_position_is_a_value_not_help(string flag)
+    {
+        CliCommands.WantsHelp(["update-secret", "--silent", "--custom-args", flag], a => a == "--custom-args")
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_help_flag_after_a_value_that_follows_a_value_option_is_still_help()
+    {
+        // --url consumes "x"; the next token is back at an option position.
+        CliCommands.WantsHelp(["update-secret", "--url", "x", "--h"], a => a == "--url").Should().BeTrue();
+    }
 }

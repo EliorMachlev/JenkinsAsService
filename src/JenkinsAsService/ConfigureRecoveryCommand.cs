@@ -35,7 +35,7 @@ internal static class ConfigureRecoveryCommand
     /// <summary>Runs the command. Returns a process exit code.</summary>
     internal static int Run(string[] args)
     {
-        if (CliCommands.WantsHelp(args))
+        if (CliCommands.WantsHelp(args, arg => Aliases.Resolve(arg) == "--service"))
         {
             Console.WriteLine(UsageText);
             return 0;

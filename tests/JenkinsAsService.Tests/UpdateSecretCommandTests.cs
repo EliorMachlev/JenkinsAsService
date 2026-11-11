@@ -666,6 +666,32 @@ public class UpdateSecretCommandTests : IDisposable
             .GetProperty("ProcessMitigations").GetString().Should().Be("101");
     }
 
+    [Fact]
+    public void A_value_that_reads_dash_dash_h_is_not_a_help_request()
+    {
+        // --custom-args consumes "--h": it is the value, not a request for usage. Before, WantsHelp scanned
+        // every argument, so this printed usage and exited 0 without updating anything.
+        UpdateSecretCommand.ParseArgs(["update-secret", "--merge", "--custom-args", "--h"])!
+            .CustomArgs.Should().Be("--h");
+
+        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", "--custom-args", "--h"], _tempDir));
+
+        stdout.Should().NotContain(UpdateSecretCommand.UsageText);
+    }
+
+    [Fact]
+    public void An_alias_option_consumes_its_value_for_help_detection_too()
+    {
+        // --cu is the alias of --custom-args, resolved the same way the parser resolves it.
+        var alias = UpdateSecretCommand.Aliases["--custom-args"];
+
+        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", alias, "--h"], _tempDir));
+
+        stdout.Should().NotContain(UpdateSecretCommand.UsageText);
+    }
+
     private static (int Code, string Stdout, string Stderr) CaptureBoth(Func<int> action)
     {
         var stdout = new StringWriter();

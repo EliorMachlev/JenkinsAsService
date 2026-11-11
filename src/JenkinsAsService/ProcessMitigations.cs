@@ -24,8 +24,8 @@ namespace JenkinsAsService;
 /// </para>
 /// <para>
 /// So <c>Jenkins:Hardening:ProcessMitigations</c> selects what the <em>service</em> takes, not what it
-/// passes down — three independent digits, see <see cref="MitigationMask"/>. Only
-/// <see cref="MitigationMask.NoRemoteImagesFlag"/> has build-visible consequences, but each is its own
+/// passes down — three independent digits, see <see cref="MitigationMask"/>. The
+/// <see cref="MitigationMask.NoRemoteImagesFlag"/> block is the one builds most often hit, but each is its own
 /// decision because none of them can be withheld from the build tree while the service holds it.
 /// </para>
 /// </summary>

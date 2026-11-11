@@ -62,7 +62,7 @@ var dataDir = DataPaths.ResolveDataDirectory(jenkinsSection[DataDirectoryKey]);
 
 Log.Logger = BuildLogger(debugMode, compactLog, retainedLogs, dataDir);
 
-// Harden the service process: block remote/low-integrity/non-System32 DLL loads and legacy
+// Harden the service process: block remote and low-integrity DLL loads, prefer System32 for system DLLs, and legacy
 // extension-point injection. Best-effort - never blocks startup. These policies are INHERITED by the
 // Java child and everything the build spawns beneath it, which is why they are configurable at all;
 // see ProcessMitigations for the measurement and MitigationMask for what each digit costs.

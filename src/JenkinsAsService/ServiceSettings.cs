@@ -125,7 +125,7 @@ public sealed class HardeningSettings
     /// Which image-load process mitigations the service applies to itself, as three digits:
     /// <c>NoRemoteImages</c>, <c>NoLowLabelImages</c>, <c>PreferSystem32Images</c>. <c>"111"</c> (default)
     /// applies all three; <c>"011"</c> drops only the network-DLL block, the one a build loading tooling or
-    /// a native DLL from a share trips over (what the old <c>AllowNetworkImages</c> level did);
+    /// a native DLL from a share most often trips over (what the old <c>AllowNetworkImages</c> level did);
     /// <c>"101"</c> drops only the low-integrity block; <c>"000"</c> applies none.
     /// <para>
     /// These policies are <strong>inherited by child processes</strong>, so they reach <c>java.exe</c> and
