@@ -128,6 +128,11 @@
         "keywords": ["secret via file", "secret off command line", "process table", "get-process", "wmi commandline", "secret file"]
       },
       {
+        "title": "Process mitigations",
+        "url": "configuration.html#process-mitigations",
+        "keywords": ["process mitigations", "mitigation policy", "allow network images", "unc dll", "mapped drive", "noremoteimages", "image load policy", "inherited by child", "build breaks", "hardening level"]
+      },
+      {
         "title": "Environment sanitization",
         "url": "configuration.html#env-sanitization",
         "keywords": ["environment sanitization", "allowed environment variables", "env allowlist", "deny by default", "pipeline isolation"]

@@ -32,7 +32,8 @@ public class ConfigBindingTests
             "Connection": { "Url": "https://ci.example.com:8443", "Method": "Https", "AgentName": "node-1", "ControllerCertThumbprint": "AABB", "Proxy": "proxy.corp:3128", "ProxyBypass": "*.corp.local" },
             "Secret": { "Value": "cipher", "Mode": "Tpm", "DpapiScope": "User", "ViaFile": false },
             "Agent": { "JavaPath": "C:/jdk/bin", "CustomArguments": "-noCertificateCheck", "DataDirectory": "D:/data" },
-            "Hardening": { "SanitizeEnvironment": false, "AllowedEnvironmentVariables": "MAVEN_OPTS" },
+            "Hardening": { "SanitizeEnvironment": false, "AllowedEnvironmentVariables": "MAVEN_OPTS",
+                           "ProcessMitigations": "AllowNetworkImages" },
             "Logging": { "DebugMode": true, "CompactLog": true, "RetainedLogs": 7 },
             "Recovery": { "MaxRetries": 5 }
           }
@@ -57,6 +58,7 @@ public class ConfigBindingTests
         s.Agent.DataDirectory.Should().Be("D:/data");
         s.Hardening.SanitizeEnvironment.Should().BeFalse();
         s.Hardening.AllowedEnvironmentVariables.Should().Be("MAVEN_OPTS");
+        s.Hardening.ProcessMitigations.Should().Be(MitigationLevel.AllowNetworkImages);
         s.Logging.DebugMode.Should().BeTrue();
         s.Logging.CompactLog.Should().BeTrue();
         s.Logging.RetainedLogs.Should().Be(7);

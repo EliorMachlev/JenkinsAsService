@@ -107,6 +107,8 @@ public static class SecretWriter
             GetOrCreate(jenkins, ConfigKeys.Hardening.Name)[ConfigKeys.Hardening.SanitizeEnvironment] = sanitize;
         if (fields.AllowedEnvironmentVariables is { } allowed)
             GetOrCreate(jenkins, ConfigKeys.Hardening.Name)[ConfigKeys.Hardening.AllowedEnvironmentVariables] = allowed;
+        if (fields.ProcessMitigations is { } mitigations)
+            GetOrCreate(jenkins, ConfigKeys.Hardening.Name)[ConfigKeys.Hardening.ProcessMitigations] = mitigations.ToString();
         if (fields.DebugMode is { } debug)
             GetOrCreate(jenkins, ConfigKeys.Logging.Name)[ConfigKeys.Logging.DebugMode] = debug;
         if (fields.CompactLog is { } compact)
@@ -276,7 +278,8 @@ public static class SecretWriter
             [ConfigKeys.Hardening.Name] = new JsonObject
             {
                 [ConfigKeys.Hardening.SanitizeEnvironment] = ExistingValue(hardening, ConfigKeys.Hardening.SanitizeEnvironment, true),
-                [ConfigKeys.Hardening.AllowedEnvironmentVariables] = ExistingString(hardening, ConfigKeys.Hardening.AllowedEnvironmentVariables)
+                [ConfigKeys.Hardening.AllowedEnvironmentVariables] = ExistingString(hardening, ConfigKeys.Hardening.AllowedEnvironmentVariables),
+                [ConfigKeys.Hardening.ProcessMitigations] = ExistingMitigations(hardening)
             },
             [ConfigKeys.Logging.Name] = new JsonObject
             {
@@ -293,6 +296,15 @@ public static class SecretWriter
 
     private static JsonObject? ExistingObject(JsonObject? existing, string key) =>
         existing?[key] as JsonObject;
+
+    // Preserve an existing Hardening:ProcessMitigations, else default to Full (so the enum binds).
+    private static string ExistingMitigations(JsonObject? hardening)
+    {
+        var value = ExistingString(hardening, ConfigKeys.Hardening.ProcessMitigations);
+        return Enum.TryParse<MitigationLevel>(value, ignoreCase: true, out var level)
+            ? level.ToString()
+            : nameof(MitigationLevel.Full);
+    }
 
     // Preserve an existing Connection:Method, else default to Auto (so the enum binds to a valid value).
     private static string ExistingMethod(JsonObject? connection)
@@ -378,6 +390,7 @@ public sealed record ConfigMergeFields
     public string? CustomArguments { get; init; }
     public bool? SanitizeEnvironment { get; init; }
     public string? AllowedEnvironmentVariables { get; init; }
+    public MitigationLevel? ProcessMitigations { get; init; }
     public bool? DebugMode { get; init; }
     public bool? CompactLog { get; init; }
     public int? RetainedLogs { get; init; }

@@ -64,6 +64,9 @@ internal static class ConfigKeys
         internal const string Name = "Hardening";
         internal const string SanitizeEnvironment = "SanitizeEnvironment";
         internal const string AllowedEnvironmentVariables = "AllowedEnvironmentVariables";
+        internal const string ProcessMitigations = "ProcessMitigations";
+
+        internal const string ProcessMitigationsPath = Name + ":" + ProcessMitigations;
     }
 
     internal static class Logging

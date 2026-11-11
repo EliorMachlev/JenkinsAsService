@@ -38,6 +38,9 @@ public static class UpdateSecretCommand
           --custom-args <value>   Extra java.exe arguments
           --sanitize-env <bool>   Sanitize the agent child environment (true/false)
           --allowed-env <value>   Extra env var names to pass through (semicolon/comma separated)
+          --mitigations <value>   Process mitigations applied to the service, and inherited by the build:
+                                  Full (default), AllowNetworkImages (permit DLL loads from UNC/mapped
+                                  drives), or Off
           --upgrade               Reconcile appsettings.json to the current schema on MSI upgrade:
                                   add new settings at their defaults, prune settings the schema no longer
                                   defines, and preserve existing values and the secret. If no secret is
@@ -51,6 +54,11 @@ public static class UpdateSecretCommand
 
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
     private const string ImpersonatePasswordEnv = "JAS_IMPERSONATE_PASSWORD";
+
+    // What an option accepts, for the two parsers that do not name their own valid values. Each is used
+    // by several options, and this text is what an operator sees on a typo.
+    private const string TrueOrFalse = "true or false";
+    private const string WholeNumber = "a whole number";
 
     private const string ConfigFileName = ConfigKeys.FileName;
     private const string ConfigSectionName = ConfigKeys.Section;
@@ -81,10 +89,17 @@ public static class UpdateSecretCommand
         public string? CustomArgs;
         public bool? SanitizeEnv;
         public string? AllowedEnv;
+        public MitigationLevel? Mitigations;
         public bool? DebugMode;
         public bool? CompactLog;
         public int? RetainedLogs;
         public int? MaxRetries;
+
+        /// <summary>
+        /// Set when an option was supplied with a value that could not be used. Parsing continues so the
+        /// operator sees every bad option at once rather than one per run, but the command then exits 1.
+        /// </summary>
+        public bool Failed;
     }
 
     public static int Run(string[] args)
@@ -128,6 +143,7 @@ public static class UpdateSecretCommand
                 CustomArguments = parsed.CustomArgs,
                 SanitizeEnvironment = parsed.SanitizeEnv,
                 AllowedEnvironmentVariables = parsed.AllowedEnv,
+                ProcessMitigations = parsed.Mitigations,
                 DebugMode = parsed.DebugMode,
                 CompactLog = parsed.CompactLog,
                 RetainedLogs = parsed.RetainedLogs,
@@ -164,75 +180,87 @@ public static class UpdateSecretCommand
             }
         }
 
-        return state;
+        // A rejected value is fatal, not something to shrug off and carry on from. These run as MSI
+        // deferred custom actions whose Return is the default "check", so exiting 0 after ignoring a
+        // mistyped option installs a configuration the operator did not ask for and reports success -
+        // the one outcome worse than a failed install, because nothing prompts anyone to look.
+        return state.Failed ? null : state;
     }
 
     private static bool TryApplyValueArg(string[] args, ref int i, ParseState state)
     {
-        switch (args[i])
+        // Read ONCE, and reused for both the switch and the error message. Writing the literal twice per
+        // case is how "--debug" ends up reporting itself as "--method": it compiles, and the only symptom
+        // is an operator editing the wrong line of their install script. Next() advances i, which is why
+        // this is captured before the switch rather than read again inside it.
+        var option = args[i];
+        switch (option)
         {
             case "--secret":
-                state.SecretArg = Next(args, ref i);
+                state.SecretArg = Next(args, ref i, state);
                 return true;
             case "--secret-file":
-                state.SecretFile = Next(args, ref i);
+                state.SecretFile = Next(args, ref i, state);
                 return true;
             case "--secret-env":
-                state.SecretEnv = Next(args, ref i);
+                state.SecretEnv = Next(args, ref i, state);
                 return true;
             case "--url":
-                state.Url = Next(args, ref i);
+                state.Url = Next(args, ref i, state);
                 return true;
             case "--mode":
-                state.Mode = ParseMode(Next(args, ref i));
+                state.Mode = ParseOrFail(state, option, Next(args, ref i, state), ParseMode);
                 return true;
             case "--dpapi-scope":
-                state.DpapiScope = ParseDpapiScope(Next(args, ref i));
+                state.DpapiScope = ParseOrFail(state, option, Next(args, ref i, state), ParseDpapiScope);
                 return true;
             case "--thumbprint":
-                state.Thumbprint = Next(args, ref i);
+                state.Thumbprint = Next(args, ref i, state);
                 return true;
             case "--service-account":
-                state.ServiceAccount = Next(args, ref i);
+                state.ServiceAccount = Next(args, ref i, state);
                 return true;
             case "--set-data-dir":
-                state.SetDataDir = SanitizePathArgument(Next(args, ref i));
+                state.SetDataDir = SanitizePathArgument(Next(args, ref i, state));
                 return true;
             case "--agent-name":
-                state.AgentName = Next(args, ref i);
+                state.AgentName = Next(args, ref i, state);
                 return true;
             case "--java-path":
-                state.JavaPath = SanitizePathArgument(Next(args, ref i));
+                state.JavaPath = SanitizePathArgument(Next(args, ref i, state));
                 return true;
             case "--username":
-                state.Username = Next(args, ref i);
+                state.Username = Next(args, ref i, state);
                 return true;
             case "--method":
-                state.Method = ParseMethod(Next(args, ref i));
+                state.Method = ParseOrFail(state, option, Next(args, ref i, state), ParseMethod);
                 return true;
             case "--via-file":
-                state.ViaFile = ParseBool(Next(args, ref i));
+                state.ViaFile = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
                 return true;
             case "--custom-args":
-                state.CustomArgs = Next(args, ref i);
+                state.CustomArgs = Next(args, ref i, state);
                 return true;
             case "--sanitize-env":
-                state.SanitizeEnv = ParseBool(Next(args, ref i));
+                state.SanitizeEnv = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
                 return true;
             case "--allowed-env":
-                state.AllowedEnv = Next(args, ref i);
+                state.AllowedEnv = Next(args, ref i, state);
+                return true;
+            case "--mitigations":
+                state.Mitigations = ParseOrFail(state, option, Next(args, ref i, state), ParseMitigationLevel);
                 return true;
             case "--debug":
-                state.DebugMode = ParseBool(Next(args, ref i));
+                state.DebugMode = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
                 return true;
             case "--compact-log":
-                state.CompactLog = ParseBool(Next(args, ref i));
+                state.CompactLog = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
                 return true;
             case "--retained-logs":
-                state.RetainedLogs = ParseInt(Next(args, ref i));
+                state.RetainedLogs = ParseOrFail(state, option, Next(args, ref i, state), ParseInt, WholeNumber);
                 return true;
             case "--max-retries":
-                state.MaxRetries = ParseInt(Next(args, ref i));
+                state.MaxRetries = ParseOrFail(state, option, Next(args, ref i, state), ParseInt, WholeNumber);
                 return true;
             default:
                 return false;
@@ -570,7 +598,7 @@ public static class UpdateSecretCommand
         return null;
     }
 
-    private static string? Next(string[] args, ref int i)
+    private static string? Next(string[] args, ref int i, ParseState state)
     {
         if (++i < args.Length)
         {
@@ -578,59 +606,82 @@ public static class UpdateSecretCommand
         }
 
         Console.Error.WriteLine($"Error: {args[i - 1]} requires a value.");
+        state.Failed = true;
         return null;
     }
 
-    // Returns null (instead of defaulting to Dpapi) so callers can fail explicitly on invalid input.
-    internal static SecretMode? ParseMode(string? value)
+    /// <summary>
+    /// Applies a value parser and records a rejected value on <paramref name="state"/>, which makes the
+    /// command exit 1.
+    /// <para>
+    /// THE ONE STATEMENT OF THE UNSET RULE, which every value option obeys. <c>null</c> (option absent, or
+    /// its value missing - already reported by <see cref="Next"/>) and empty are NOT errors: every
+    /// <c>[PROPERTY]</c> in a custom-action command line is quoted so that an unset optional setting
+    /// arrives as <c>""</c>, and rejecting that would fail an install that did nothing wrong. A non-empty
+    /// value the parser rejects IS an error, and must not be silently dropped - these run as deferred
+    /// custom actions with the default <c>Return="check"</c>, so exiting 0 after ignoring a typo installs a
+    /// configuration nobody asked for and calls it success.
+    /// </para>
+    /// </summary>
+    /// <param name="expected">
+    /// What the option accepts, for parsers that do not print their own message (bool and int). Enum
+    /// parsers pass <c>null</c> here because they already list their valid values.
+    /// </param>
+    private static T? ParseOrFail<T>(ParseState state, string option, string? raw,
+        Func<string?, T?> parse, string? expected = null)
+        where T : struct
     {
-        if (value is null)
+        var parsed = parse(raw);
+        if (parsed is not null || string.IsNullOrWhiteSpace(raw))
+        {
+            return parsed;
+        }
+
+        if (expected is not null)
+        {
+            Console.Error.WriteLine($"Error: {option} expects {expected}, got '{raw}'.");
+        }
+
+        state.Failed = true;
+        return null;
+    }
+
+    /// <summary>
+    /// Shared body of every enum-valued option. Null on anything not recognised, so a caller fails
+    /// explicitly instead of silently defaulting to whatever the enum's zero value happens to be. Empty is
+    /// "unset" and is silent, per <see cref="ParseOrFail"/>; the guard is repeated here because these
+    /// parsers are also called directly, including by tests. Where the setting is genuinely required
+    /// (<c>--mode</c>), the required-field check names it, which is the more useful message anyway.
+    /// </summary>
+    private static T? ParseEnumOption<T>(string? value, string option, string valid)
+        where T : struct, Enum
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
             return null;
         }
 
-        if (Enum.TryParse<SecretMode>(value, ignoreCase: true, out var mode))
+        if (Enum.TryParse<T>(value, ignoreCase: true, out var parsed))
         {
-            return mode;
+            return parsed;
         }
 
-        Console.Error.WriteLine($"Error: unknown mode '{value}'. Valid: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected");
+        Console.Error.WriteLine($"Error: unknown {option} '{value}'. Valid: {valid}");
         return null;
     }
 
-    // Returns null on invalid input so callers can fail explicitly.
-    internal static DpapiScope? ParseDpapiScope(string? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
+    internal static SecretMode? ParseMode(string? value) =>
+        ParseEnumOption<SecretMode>(value, "mode",
+            "Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected");
 
-        if (Enum.TryParse<DpapiScope>(value, ignoreCase: true, out var scope))
-        {
-            return scope;
-        }
+    internal static DpapiScope? ParseDpapiScope(string? value) =>
+        ParseEnumOption<DpapiScope>(value, "dpapi-scope", "Machine, User");
 
-        Console.Error.WriteLine($"Error: unknown dpapi-scope '{value}'. Valid: Machine, User");
-        return null;
-    }
+    internal static MitigationLevel? ParseMitigationLevel(string? value) =>
+        ParseEnumOption<MitigationLevel>(value, "mitigations", "Full, AllowNetworkImages, Off");
 
-    // Returns null on invalid input so a typo fails rather than silently defaulting.
-    internal static ConnectionMethod? ParseMethod(string? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        if (Enum.TryParse<ConnectionMethod>(value, ignoreCase: true, out var method))
-        {
-            return method;
-        }
-
-        Console.Error.WriteLine($"Error: unknown method '{value}'. Valid: Auto, WebSocket, Https");
-        return null;
-    }
+    internal static ConnectionMethod? ParseMethod(string? value) =>
+        ParseEnumOption<ConnectionMethod>(value, "method", "Auto, WebSocket, Https");
 
     // Maps checkbox-style values to bool. An empty string (unchecked MSI checkbox) is false.
     // Unrecognised values return null so the caller leaves the field unchanged.

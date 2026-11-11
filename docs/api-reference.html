@@ -312,7 +312,7 @@ void Kill();                          // whole process tree; never throws</code>
           <tr>
             <td><code>ProcessMitigations</code></td>
             <td><code>Apply(warn?)</code></td>
-            <td>Sets Win32 mitigation policies on the <em>service</em> process: no remote, low-integrity or non-System32 DLL loads, and legacy extension-point injection disabled. Affects future <code>LoadLibrary</code> calls in this process only, not the Java child. Best-effort &mdash; never blocks startup.</td>
+            <td>Sets Win32 mitigation policies on the service process at the level given by <code>Hardening:ProcessMitigations</code>: no remote, low-integrity or non-System32 DLL loads, and legacy extension-point injection disabled. <strong>These policies are inherited by the Java child and everything the build spawns beneath it</strong>, which is what makes the level configurable &mdash; see <a href="configuration.html#process-mitigations">Process mitigations</a>. Best-effort &mdash; never blocks startup.</td>
           </tr>
           <tr>
             <td><code>EnvironmentSanitizer</code></td>
@@ -361,7 +361,7 @@ void Kill();                          // whole process tree; never throws</code>
       <li><strong>CLI dispatch</strong> &mdash; <code>CliCommands.TryResolve(args, out var command)</code> maps <code>args[0]</code> to a handler and exits; anything unrecognised falls through to service mode. Deliberately <em>before</em> Serilog init, since <code>Environment.Exit</code> skips the flush block. The verb table lives in <code>CliCommands</code> rather than inline so it can be tested: an unregistered verb still compiles, and its only symptom is the exe silently starting in <em>service</em> mode &mdash; which, for a verb invoked by an MSI custom action, is a failed install. <code>CliCommandsTests</code> asserts by reflection that every command type declaring a <code>Name</code> is dispatchable. The four verbs are <code>update-secret</code>, <code>purge</code>, <code>grant-data-access</code> and <code>configure-recovery</code>.</li>
       <li><strong>Boot config</strong> &mdash; a throwaway <code>ConfigurationBuilder</code> reads <code>Logging:DebugMode</code>, <code>Logging:CompactLog</code>, <code>Logging:RetainedLogs</code> and <code>Agent:DataDirectory</code> before the host exists.</li>
       <li><strong>Serilog</strong> &mdash; rolling file sink in the <em>data</em> directory (10&nbsp;MB, <code>RetainedLogs</code> kept; <code>agent.log</code> or <code>agent.clef</code>), Event Log sink at Warning+ when the source is usable, enrichers <code>ProcessId</code> / <code>MachineName</code> / <code>EnvironmentName</code>, and level overrides muting <code>Microsoft</code>, <code>System.Net.Http</code> and <code>Polly</code> below Warning.</li>
-      <li><strong><code>ProcessMitigations.Apply</code></strong> &mdash; hardens the service process itself.</li>
+      <li><strong><code>ProcessMitigations.Apply</code></strong> &mdash; hardens the service process, and by inheritance everything it launches.</li>
       <li><strong>Host</strong> &mdash; <code>BuildHost(args, basePath)</code>, split into four single-purpose steps:
         <ul>
           <li><strong>Config source</strong> &mdash; <code>AddJsonFile(Path.Combine(basePath, "appsettings.json"), reloadOnChange: true)</code>, then <code>AddWindowsService(ServiceName = "Jenkins")</code> and <code>Configure&lt;ServiceSettings&gt;</code>.</li>

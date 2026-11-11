@@ -85,7 +85,6 @@ public class UpdateSecretCommandTests : IDisposable
     [Theory]
     [InlineData("Dapi")]
     [InlineData("plaintext")]
-    [InlineData("")]
     [InlineData("DPAPI")] // exact-case variant already covered above; test a clearly wrong value
     public void ParseMode_returns_null_for_invalid_input(string input)
     {
@@ -398,5 +397,143 @@ public class UpdateSecretCommandTests : IDisposable
         var path = Path.Combine(_tempDir, "appsettings.json");
         path.Should().Match(p => File.Exists(p), "appsettings.json should have been written");
         return JsonDocument.Parse(File.ReadAllText(path));
+    }
+
+    [Theory]
+    [InlineData("Full", MitigationLevel.Full)]
+    [InlineData("allownetworkimages", MitigationLevel.AllowNetworkImages)]
+    [InlineData("OFF", MitigationLevel.Off)]
+    public void ParseMitigationLevel_accepts_every_level_case_insensitively(string value, MitigationLevel expected) =>
+        UpdateSecretCommand.ParseMitigationLevel(value).Should().Be(expected);
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("None")]
+    [InlineData("AllowNetworkImage")]
+    public void ParseMitigationLevel_rejects_an_unknown_level(string value) =>
+        UpdateSecretCommand.ParseMitigationLevel(value).Should().BeNull();
+
+    // An unset installer property reaches the custom action as "" - every [PROPERTY] expansion is quoted
+    // for exactly that reason - so empty must mean "leave it alone" and must NOT write a parse error into
+    // the MSI log of an install that did nothing wrong. Asserted for EVERY enum option, not just the newest:
+    // they share one body now, and this is the property that made sharing it worthwhile.
+    public static TheoryData<string, Func<string?, object?>> UnsetEnumOptions => new()
+    {
+        { "mode", v => UpdateSecretCommand.ParseMode(v) },
+        { "dpapi-scope", v => UpdateSecretCommand.ParseDpapiScope(v) },
+        { "method", v => UpdateSecretCommand.ParseMethod(v) },
+        { "mitigations", v => UpdateSecretCommand.ParseMitigationLevel(v) }
+    };
+
+    // Console.Error is process-wide, so every capture must restore it even when the assertion inside
+    // throws - otherwise one failing test silently swallows the stderr of every test that runs after it.
+    // Written once rather than as a set/try/finally at each site.
+    private static string CaptureStderr(Action action)
+    {
+        var stderr = new StringWriter();
+        var original = Console.Error;
+        Console.SetError(stderr);
+        try
+        {
+            action();
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
+
+        return stderr.ToString();
+    }
+
+    [Theory]
+    [MemberData(nameof(UnsetEnumOptions))]
+    public void An_unset_enum_option_is_no_change_and_is_silent(string option, Func<string?, object?> parse)
+    {
+        foreach (var unset in new[] { null, "", "   " })
+        {
+            var stderr = CaptureStderr(() => parse(unset).Should().BeNull($"--{option} '{unset}' means unset"));
+
+            stderr.Should().BeEmpty($"--{option} '{unset}' is not an error");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(UnsetEnumOptions))]
+    public void A_misspelled_enum_option_still_reports_the_valid_values(string option, Func<string?, object?> parse)
+    {
+        var stderr = CaptureStderr(() => parse("Carrier-Pigeon").Should().BeNull());
+
+        // The silent-empty rule must not have made real typos silent too.
+        stderr.Should().Contain(option).And.Contain("Valid:");
+    }
+
+    // ─── A supplied-but-unusable value is fatal ───────────────────────────────
+    //
+    // These parse paths run as MSI deferred custom actions whose Return is the default "check", so the
+    // exit code decides whether a typo fails the install or is silently ignored. It used to be ignored:
+    // `--max-retries fifty` installed a service with the default retry count and reported success. The
+    // pair of theories below pins BOTH halves of the rule, because fixing one half alone is what would
+    // break the installer - make empty fatal and every silent install dies on its first unset option.
+
+    public static TheoryData<string, string> RejectedValues => new()
+    {
+        { "--mode", "Dapi" },
+        { "--dpapi-scope", "Machyne" },
+        { "--method", "Carrier-Pigeon" },
+        { "--mitigations", "AllowNetworkImage" },
+        { "--via-file", "maybe" },
+        { "--sanitize-env", "sometimes" },
+        { "--debug", "loud" },
+        { "--compact-log", "ish" },
+        { "--retained-logs", "several" },
+        { "--max-retries", "fifty" }
+    };
+
+    [Theory]
+    [MemberData(nameof(RejectedValues))]
+    public void A_supplied_value_that_cannot_be_used_fails_the_command(string option, string value)
+    {
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", option, value], _tempDir);
+
+        code.Should().Be(1, $"{option} {value} is not usable");
+        File.Exists(Path.Combine(_tempDir, "appsettings.json"))
+            .Should().BeFalse("a rejected command must not half-write a config");
+    }
+
+    [Theory]
+    [MemberData(nameof(RejectedValues))]
+    public void An_empty_value_for_the_same_option_is_accepted_and_changes_nothing(string option, string _)
+    {
+        // The counterpart to the theory above: an untouched installer property arrives as "", and every
+        // one of these options must tolerate that. Run them all in one command, exactly as WriteAdvanced
+        // does, so the merge path is exercised the way the MSI actually calls it.
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", option, ""], _tempDir);
+
+        code.Should().Be(0, $"{option} \"\" means unset, not invalid");
+    }
+
+    [Fact]
+    public void An_option_with_no_value_at_all_fails_the_command()
+    {
+        // --method consumes the next token; at the end of the argument list there is none. This reported
+        // the problem and then exited 0 anyway.
+        var code = UpdateSecretCommand.Run(["update-secret", "--silent", "--merge", "--method"], _tempDir);
+
+        code.Should().Be(1);
+    }
+
+    [Fact]
+    public void Every_bad_option_is_reported_before_the_command_gives_up()
+    {
+        var stderr = CaptureStderr(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", "--method", "Pigeon", "--max-retries", "lots"],
+            _tempDir).Should().Be(1));
+
+        // Parsing deliberately continues past the first rejection: an operator fixing a scripted install
+        // one message per run is the reason this is worth asserting.
+        stderr.Should().Contain("Pigeon");
+        stderr.Should().Contain("--max-retries");
     }
 }
