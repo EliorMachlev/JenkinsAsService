@@ -20,7 +20,7 @@ Thanks for your interest in contributing! This document explains how to get invo
 
 ### Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download), at the exact version in `global.json` (the lock files depend on it; a different patch fails locked restore)
 - A [supported JDK or OpenJDK](https://www.jenkins.io/doc/book/platform-information/support-policy-java/#running-jenkins-system)
 - Windows 10 / Server 2016 or later
 - [WiX v5](https://wixtoolset.org/) (only if modifying the installer — auto-restored via NuGet)

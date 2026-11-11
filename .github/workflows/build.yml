@@ -38,10 +38,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The SDK comes from global.json, exactly, never a floating 10.0.x. The lock file records the implicit
+      # Microsoft.NET.ILLink.Tasks reference (PublishSingleFile + RuntimeIdentifiers), whose version is the
+      # SDK's bundled runtime - so a floating SDK broke locked restore on every .NET patch Tuesday, on every
+      # branch at once, whatever the change was. Bumping global.json now means regenerating the lock files.
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore -p:RestoreLockedMode=true
@@ -127,7 +131,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json  # exact SDK; see the build job
 
       # Same flags as the shipped artifact: this job installs and runs the binary, so it must exercise the
       # one users actually get, not a cheaper approximation of it.
