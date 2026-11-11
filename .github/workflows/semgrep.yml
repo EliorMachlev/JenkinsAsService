@@ -7,37 +7,65 @@ on:
     branches: [ "main" ]
   schedule:
     - cron: '38 4 * * 0'
+  workflow_dispatch:
+
+# A newer push to the same PR supersedes a run still going; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
-  security-events: write
+
+env:
+  # A PR's results go on its head commit, not GitHub's test merge with main, which GitHub can rebuild after
+  # the run starts - the alerts would then belong to a commit the PR no longer shows. Empty off a PR, where
+  # the upload action falls back to the pushed ref and commit.
+  SARIF_REF: ${{ github.event.pull_request && format('refs/pull/{0}/head', github.event.pull_request.number) || '' }}
+  SARIF_SHA: ${{ github.event.pull_request.head.sha || '' }}
 
 jobs:
   semgrep:
     runs-on: ubuntu-latest
-    # semgrep/semgrep-action is ARCHIVED (its v1 tag dates from 2020) and its bundled engine could no longer
-    # parse the registry rules: every run logged `ValueError: invalid rule severity value: MEDIUM` and exited
-    # 0, so the job was green while scanning nothing. Semgrep's maintained path is its own image running
-    # `semgrep scan`. Pinned by digest like the action SHAs; Dependabot does not track workflow container
-    # images, so bump the tag and digest by hand (docker buildx imagetools inspect semgrep/semgrep:<tag>).
-    container:
-      image: semgrep/semgrep:1.185.0@sha256:67518c174185a2043fdbed16c70631b79209499b3671178e7194379b48295a0d
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
-      # Same rulesets as before. Findings go to code scanning like Trivy and PSScriptAnalyzer rather than
-      # failing the job; only a crash of the scanner itself fails it now.
+      # Semgrep and every package it needs, each pinned by hash (.github/semgrep/requirements.txt, compiled
+      # from requirements.in on this Python version), so Dependabot's pip updater keeps it current. This
+      # replaced the semgrep/semgrep container digest, which no Dependabot ecosystem tracks and had to be
+      # bumped by hand. (Before that, the archived semgrep/semgrep-action had silently stopped scanning:
+      # its bundled engine could not parse the registry rules and exited 0.)
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Install Semgrep
+        run: python -m pip install --quiet --require-hashes -r .github/semgrep/requirements.txt
+
+      # Every finding is printed here and uploaded to code scanning below, and any blocking finding fails
+      # the job (--error). No rule is excluded and no path is left out.
       - name: Run Semgrep
         run: >-
           semgrep scan
-          --config p/default
-          --config p/csharp
-          --config p/secrets
-          --sarif --output semgrep.sarif
+          --config=p/default
+          --config=p/csharp
+          --config=p/secrets
+          --config=p/github-actions
+          --error
+          --sarif-output=semgrep.sarif
 
-      - name: Upload SARIF results
-        if: always() && hashFiles('semgrep.sarif') != ''
+      - name: Upload SARIF to code scanning
+        if: always()
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: semgrep.sarif
           category: semgrep
+          ref: ${{ env.SARIF_REF }}
+          sha: ${{ env.SARIF_SHA }}
