@@ -36,14 +36,14 @@ jobs:
     name: Build & Test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The SDK comes from global.json, exactly, never a floating 10.0.x. The lock file records the implicit
       # Microsoft.NET.ILLink.Tasks reference (PublishSingleFile + RuntimeIdentifiers), whose version is the
       # SDK's bundled runtime - so a floating SDK broke locked restore on every .NET patch Tuesday, on every
       # branch at once, whatever the change was. Bumping global.json now means regenerating the lock files.
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
 
@@ -59,7 +59,7 @@ jobs:
           dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output sbom --output-format Json --filename bom.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-cyclonedx
           path: sbom/bom.json
@@ -126,10 +126,10 @@ jobs:
     name: MSI Install / Upgrade / Uninstall / Arch Migration
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json  # exact SDK; see the build job
 
@@ -274,7 +274,7 @@ jobs:
 
       - name: Upload MSI logs on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: msi-logs
           path: msi-logs/
@@ -285,7 +285,7 @@ jobs:
       # purpose: an ARM64 runner cross-compiling its own x64 payload would be a second, unverified build.
       - name: Upload packages for the ARM64 job
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: arm64-suite-packages
           path: |
@@ -310,12 +310,12 @@ jobs:
     runs-on: windows-11-arm
     needs: msi-lifecycle
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # No setup-dotnet: nothing here compiles. The suites drive msiexec and the bundle .exe and read the
       # results out of the registry, the filesystem and SCM - all of which Windows PowerShell provides.
       - name: Download packages built on the x64 job
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: arm64-suite-packages
           path: pkg/
@@ -351,7 +351,7 @@ jobs:
 
       - name: Upload MSI logs on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: msi-logs-arm64
           path: msi-logs/
