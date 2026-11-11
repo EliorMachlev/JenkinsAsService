@@ -121,6 +121,8 @@ All checks must pass before merge.
 
 Changing a workflow or a composite action under `.github/actions`: never write a `${{ }}` expression inside a `run:` script. Pass the value through `env:` and read the variable instead (`$env:NAME` in pwsh) — an expression is pasted into the script before the shell parses it, so a crafted input or tag would run as code, and Semgrep fails the build on it. Scanner pins: Semgrep is hash-pinned in `.github/semgrep/requirements.txt` and updated by Dependabot; the trivy and gitleaks binaries are bumped by hand (see `docs/ci-cd.html`).
 
+No suppressions without an entry in [EXCEPTIONS.md](EXCEPTIONS.md): a `nosemgrep`, `SuppressMessage`, `NOSONAR`, ignore-file or allow-list entry, Dependabot `ignore` or alert dismissal that is not listed there is not allowed. Fix the finding, or leave it visible and say so in the PR.
+
 ## Documentation Changes
 
 The published site lives in `docs/*.html` (plain HTML, no build step). `docs/configuration.html` is the authoritative settings reference — when code and docs disagree, the code wins and the doc gets fixed. If you add a page or a major section, add it to `docs/search-index.json` too, or it won't be findable from the in-page search. Docs edits must pass the HTML/CSS lint workflow.
