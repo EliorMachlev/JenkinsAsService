@@ -110,7 +110,7 @@ Every push and PR triggers:
 |---|---|
 | **Build** | Restore, build, and test on .NET 10 |
 | **CodeQL** | Static analysis for C# vulnerabilities |
-| **Semgrep** | Pattern-based SAST and secret detection |
+| **Semgrep** | Pattern-based SAST, secret detection and GitHub Actions checks; any finding fails the check |
 | **Gitleaks** | Scans git history for leaked secrets |
 | **PSScriptAnalyzer** | PowerShell script linting |
 | **Dependency Review** | Blocks PRs that introduce known CVEs |
@@ -118,6 +118,8 @@ Every push and PR triggers:
 | **HTML & CSS lint** | Runs when `docs/` changes: W3C Nu HTML validation + Stylelint |
 
 All checks must pass before merge.
+
+Changing a workflow or a composite action under `.github/actions`: never write a `${{ }}` expression inside a `run:` script. Pass the value through `env:` and read the variable instead (`$env:NAME` in pwsh) — an expression is pasted into the script before the shell parses it, so a crafted input or tag would run as code, and Semgrep fails the build on it. Scanner pins: Semgrep is hash-pinned in `.github/semgrep/requirements.txt` and updated by Dependabot; the trivy and gitleaks binaries are bumped by hand (see `docs/ci-cd.html`).
 
 ## Documentation Changes
 
