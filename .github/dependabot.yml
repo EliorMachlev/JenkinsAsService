@@ -12,6 +12,10 @@ updates:
       - /src/JenkinsAsService.Bundle
     schedule:
       interval: weekly
+    # Every ecosystem waits a week after a release before proposing it: a compromised or broken release is
+    # usually yanked within days, and none of these updates is urgent enough to take on its first day.
+    cooldown:
+      default-days: 7
     ignore:
       # WiX v6 and v7 binaries are distributed under the Open Source Maintenance Fee EULA (v7 also asks
       # for the acceptance at build time). Moving past v5 is the owner's licensing decision, made
@@ -49,20 +53,38 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   # Workflows plus the local composite actions under .github/actions, which Dependabot only scans when
-  # their directories are listed. Not covered by any ecosystem, so bumped by hand: the semgrep container
-  # digest (semgrep.yml), the trivy binary (trivy-reusable.yml) and the gitleaks binary (gitleaks.yml).
+  # their directories are listed. Not covered by any ecosystem, so bumped by hand: the trivy binary
+  # (trivy-reusable.yml) and the gitleaks binary (gitleaks.yml). Semgrep is the pip entry below.
   - package-ecosystem: github-actions
     directories:
       - /
       - /.github/actions/*
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
+        patterns:
+          - "*"
+
+  # Semgrep for semgrep.yml and every package it needs, pinned by hash in .github/semgrep/requirements.txt
+  # (compiled from requirements.in with pip-compile --generate-hashes on Python 3.14, which Dependabot reruns).
+  # One grouped PR: Semgrep's ~60 pinned packages would otherwise each get their own.
+  - package-ecosystem: pip
+    directory: /.github/semgrep
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      semgrep:
         patterns:
           - "*"
