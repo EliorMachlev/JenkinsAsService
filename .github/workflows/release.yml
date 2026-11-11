@@ -154,8 +154,8 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         run: |
           $v = "${{ steps.version.outputs.VERSION }}"
-          dotnet tool install --global CycloneDX --version 6.2.0
-          dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output . --output-format Json --filename "JenkinsAsService_${v}_sbom.json" --set-version $v
+          dotnet tool restore  # CycloneDX version lives in .config/dotnet-tools.json
+          dotnet tool run dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output . --output-format Json --filename "JenkinsAsService_${v}_sbom.json" --set-version $v
 
       # 7z only. RAR was dropped deliberately: WinRAR is proprietary trialware with no redistributable
       # command-line licence for unattended public CI, so producing release archives with it in this repo was

@@ -27,6 +27,11 @@ jobs:
       - name: Run Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          # The action's own default binary is v0.70.0; pin the scanner itself to the latest release rather
+          # than "latest", which resolves at run time and so is exactly the unpinned download the SHA pins
+          # exist to avoid. Not tracked by Dependabot: re-check on each trivy-action bump, and drop this line
+          # once the action's default catches up.
+          version: v0.76.2
           scan-type: ${{ inputs.scan-type }}
           scan-ref: ${{ inputs.scan-ref }}
           format: sarif

@@ -57,7 +57,7 @@
     <ul>
       <li><strong>Purpose:</strong> Full end-to-end build validation on every push/PR to <code>main</code></li>
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
-      <li><strong>Steps:</strong> Setup .NET 10 &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet test</code> &rarr; CycloneDX SBOM (uploaded as artifact) &rarr; optimized publish (win-x64 + win-x86 + win-arm64, all cross-compiled from the x64 runner) &rarr; WiX v5 MSI build (all three architectures, <code>Version=0.0.0</code>)</li>
+      <li><strong>Steps:</strong> Setup .NET (the exact SDK pinned in <code>global.json</code> &mdash; the lock files depend on it, see <a href="#sdk-pin">SDK pin</a>) &rarr; <code>dotnet restore -p:RestoreLockedMode=true</code> &rarr; <code>dotnet test</code> &rarr; CycloneDX SBOM (uploaded as artifact) &rarr; optimized publish (win-x64 + win-x86 + win-arm64, all cross-compiled from the x64 runner) &rarr; WiX v5 MSI build (all three architectures, <code>Version=0.0.0</code>)</li>
       <li><strong>Package checks</strong> (<code>Test-MsiPlatform.ps1</code>, no installing): each package's Summary Information <code>Template</code> really names the architecture it claims; no two packages are byte-identical (a released x86 MSI was once a copy of the x64 one, because MSBuild's up-to-date check ignores property changes); the <code>GrantDataAccess</code> and <code>ConfigureRecovery</code> actions are sequenced strictly between <code>InstallServices</code> and <code>StartServices</code>; and every <code>[PROPERTY]</code> in a custom-action command line is quoted, since an empty one otherwise lets its flag swallow the next flag as a value.</li>
       <li><strong>Tests:</strong> the full xUnit suite (xUnit + NSubstitute + FluentAssertions) &mdash; a failure blocks the publish and MSI steps</li>
       <li><strong>Note:</strong> Mirrors every compile and package step in the release workflow so failures surface on PRs, not at release time &mdash; see <a href="#publish-action">the shared publish action</a> for how that mirroring is enforced rather than merely intended.</li>
@@ -118,7 +118,7 @@
       <li><strong>Runner:</strong> <code>windows-latest</code></li>
       <li><strong>Steps:</strong>
         <ol>
-          <li>Setup .NET 10 &rarr; <code>dotnet test</code></li>
+          <li>Setup .NET (SDK from <code>global.json</code>) &rarr; <code>dotnet test</code></li>
           <li>Resolve version (from tag, explicit input, or auto-bump via <code>gh api</code>)</li>
           <li>Optimized publish for <strong>win-x64</strong> and <strong>win-x86</strong> via the <a href="#publish-action">shared publish action</a> (R2R, compression, embedded PDB, deterministic, speed-optimized, locked restore)</li>
           <li>Build MSI installers for all three architectures via <strong>WiX v5</strong>, and the Burn bundle that embeds them</li>
@@ -157,10 +157,11 @@
     <h3 id="semgrep">Semgrep (<code>.github/workflows/semgrep.yml</code>)</h3>
     <ul>
       <li><strong>Purpose:</strong> Pattern-based SAST &mdash; vulnerable code patterns, deprecated APIs, common weaknesses</li>
-      <li><strong>Tool:</strong> <a href="https://github.com/semgrep/semgrep-action">semgrep/semgrep-action@v1</a></li>
+      <li><strong>Tool:</strong> <code>semgrep scan</code> in the official <code>semgrep/semgrep</code> container image, pinned by tag <em>and</em> digest. It replaced <code>semgrep/semgrep-action@v1</code>, which is archived: its bundled engine could no longer parse the registry rules (<code>invalid rule severity value: MEDIUM</code>) and exited 0, so the job stayed green while scanning nothing.</li>
       <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 04:38 UTC</li>
       <li><strong>Rules:</strong> <code>p/default</code> + <code>p/csharp</code> + <code>p/secrets</code> (community rulesets, no token required)</li>
-      <li><strong>Output:</strong> SARIF uploaded to GitHub Security tab</li>
+      <li><strong>Output:</strong> SARIF uploaded to GitHub Security &rarr; Code scanning (category: <code>semgrep</code>); findings do not fail the job, a scanner crash does</li>
+      <li><strong>Updates:</strong> Dependabot does not track workflow container images &mdash; bump the tag and digest by hand</li>
     </ul>
 
     <h3 id="gitleaks">Gitleaks (<code>.github/workflows/gitleaks.yml</code>)</h3>
@@ -169,6 +170,7 @@
       <li><strong>Tool:</strong> <a href="https://github.com/gitleaks/gitleaks-action">gitleaks/gitleaks-action@v3.0.0</a></li>
       <li><strong>Trigger:</strong> Push/PR to <code>main</code>, Sundays at 05:00 UTC</li>
       <li><strong>Coverage:</strong> <code>fetch-depth: 0</code> &mdash; scans all commits</li>
+      <li><strong>Scanner version:</strong> pinned with <code>GITLEAKS_VERSION</code> (the action&rsquo;s built-in default lags the gitleaks releases); bumped by hand</li>
     </ul>
 
     <h3 id="dependency-review">Dependency Review (<code>.github/workflows/dependency-review.yml</code>)</h3>
@@ -194,6 +196,7 @@
     <ul>
       <li><strong>Trigger:</strong> <code>workflow_call</code> with inputs <code>scan-type</code> (default: <code>fs</code>) and <code>scan-ref</code> (default: <code>.</code>)</li>
       <li><strong>Steps:</strong> checkout &rarr; trivy &rarr; upload-sarif (<code>if: always()</code>)</li>
+      <li><strong>Scanner version:</strong> the trivy binary is pinned with the action&rsquo;s <code>version</code> input rather than left at the action&rsquo;s older default; bumped by hand</li>
       <li><strong>Versioning:</strong> all actions SHA-pinned (see <a href="#action-versioning-policy">Action Versioning Policy</a> below)</li>
     </ul>
 
@@ -218,18 +221,29 @@
     <p>Weekly automated PRs using <strong>grouped updates</strong> to reduce noise:</p>
 
     <h3 id="dependabot-nuget">NuGet (<code>nuget</code>)</h3>
+    <p>Covers <code>Directory.Packages.props</code> (app + tests), the <code>.config/dotnet-tools.json</code> tool manifest (CycloneDX) and both WiX projects (<code>/src/JenkinsAsService.Installer</code>, <code>/src/JenkinsAsService.Bundle</code>), which pin their extensions outside central package management.</p>
     <ul>
       <li><code>serilog</code> &mdash; all <code>Serilog.*</code> packages in one PR</li>
-      <li><code>microsoft-extensions</code> &mdash; all <code>Microsoft.Extensions.*</code> packages in one PR</li>
+      <li><code>microsoft-extensions</code> &mdash; all <code>Microsoft.Extensions.*</code> packages plus <code>System.Security.Cryptography.ProtectedData</code> (released with them) in one PR</li>
       <li><code>opentelemetry</code> &mdash; all <code>OpenTelemetry*</code> packages in one PR</li>
       <li><code>xunit</code> &mdash; all <code>xunit*</code> packages in one PR</li>
       <li><code>test-tooling</code> &mdash; <code>Microsoft.NET.Test.Sdk</code>, <code>coverlet.*</code>, <code>NSubstitute</code>, <code>FluentAssertions</code> in one PR</li>
+      <li><code>wix</code> &mdash; <code>WixToolset.*</code>, <strong>major versions ignored</strong>: WiX v6 and v7 binaries come under the Open Source Maintenance Fee EULA, so leaving v5 is a deliberate licensing decision, not a bot merge</li>
+    </ul>
+
+    <h3 id="dependabot-sdk">.NET SDK (<code>dotnet-sdk</code>)</h3>
+    <ul>
+      <li>Bumps <code>global.json</code> (patch and feature bands; major SDK versions are ignored and left to a deliberate change). Such a PR is <strong>not mergeable as opened</strong>: regenerate the lock files with the new SDK on its branch first &mdash; see <a href="#sdk-pin">SDK pin</a>.</li>
     </ul>
 
     <h3 id="dependabot-actions">GitHub Actions (<code>github-actions</code>)</h3>
     <ul>
-      <li>All action version bumps grouped into a single weekly PR</li>
+      <li>All action version bumps grouped into a single weekly PR, covering the workflows <em>and</em> the local composite actions under <code>.github/actions/*</code></li>
+      <li>Not covered by any ecosystem, so bumped by hand: the Semgrep container digest, the trivy binary (<code>version</code> input) and the gitleaks binary (<code>GITLEAKS_VERSION</code>)</li>
     </ul>
+
+    <h3 id="sdk-pin">SDK pin (<code>global.json</code>)</h3>
+    <p>The app&rsquo;s <code>packages.lock.json</code> records the <em>implicit</em> <code>Microsoft.NET.ILLink.Tasks</code> reference that <code>PublishSingleFile</code> plus <code>RuntimeIdentifiers</code> adds, and its version is the SDK&rsquo;s bundled runtime. While the workflows installed a floating <code>10.0.x</code>, every .NET patch release made the committed lock stale on every branch at once &mdash; in October and November 2026 that failed <em>Build &amp; Test</em> and the MSI lifecycle job on every Dependabot PR, whatever it bumped, and then on <code>main</code>. The workflows now install exactly the SDK in <code>global.json</code> (<code>setup-dotnet</code> <code>global-json-file</code>), so the SDK and the lock files change together or not at all.</p>
 
     <h2 id="security-scanning-stack-summary">Security Scanning Stack Summary</h2>
 
@@ -302,7 +316,7 @@
             <td>Dependabot updates</td>
             <td>GitHub native</td>
             <td>Weekly PRs (grouped)</td>
-            <td>NuGet + GitHub Actions version bumps, organized by package family</td>
+            <td>NuGet (incl. tool manifest and WiX projects) + .NET SDK + GitHub Actions version bumps, organized by package family</td>
           </tr>
         </tbody>
       </table>
@@ -310,14 +324,16 @@
 
     <h2 id="code-scanning-results">Code Scanning Results (Security Tab)</h2>
 
-    <p>Two workflows upload SARIF and contribute findings to GitHub Security &rarr; Code scanning:</p>
+    <p>Four workflows upload SARIF and contribute findings to GitHub Security &rarr; Code scanning:</p>
     <ul>
       <li><strong>CodeQL Advanced</strong> &mdash; two matrix jobs: <code>language: actions</code> (workflow YAML) and <code>language: csharp</code> (C# source via autobuild)</li>
-      <li><strong>PSScriptAnalyzer</strong> &mdash; static analysis of PowerShell scripts embedded in workflow <code>run:</code> steps</li>
+      <li><strong>PSScriptAnalyzer</strong> &mdash; static analysis of the repository&rsquo;s PowerShell scripts (category <code>psscriptanalyzer</code>)</li>
+      <li><strong>Semgrep</strong> &mdash; pattern SAST and secrets (category <code>semgrep</code>)</li>
+      <li><strong>Trivy</strong> &mdash; dependency vulnerabilities</li>
     </ul>
 
     <h2 id="sbom">Software Bill of Materials (SBOM)</h2>
-    <p>Both the build and release workflows generate a <strong>CycloneDX</strong> SBOM (spec 1.7, JSON) from the service project via the <code>CycloneDX</code> .NET global tool (version-pinned). The build workflow uploads it as a CI artifact (<code>sbom-cyclonedx</code>) on every push/PR; the release workflow attaches a versioned <code>JenkinsAsService_&lt;version&gt;_sbom.json</code> to the GitHub Release and includes its SHA-256 in <code>checksums.json</code>. This lets enterprise consumers enumerate every direct and transitive NuGet dependency and verify the artifact has not been tampered with in transit.</p>
+    <p>Both the build and release workflows generate a <strong>CycloneDX</strong> SBOM (spec 1.7, JSON) from the service project via the <code>CycloneDX</code> .NET tool, pinned in the local tool manifest <code>.config/dotnet-tools.json</code> (<code>dotnet tool restore</code>) so Dependabot keeps it current and the two workflows cannot drift apart. The build workflow uploads it as a CI artifact (<code>sbom-cyclonedx</code>) on every push/PR; the release workflow attaches a versioned <code>JenkinsAsService_&lt;version&gt;_sbom.json</code> to the GitHub Release and includes its SHA-256 in <code>checksums.json</code>. This lets enterprise consumers enumerate every direct and transitive NuGet dependency and verify the artifact has not been tampered with in transit.</p>
     <div class="callout callout-note">
       <div class="callout-title">Code signing (planned)</div>
       <p>Authenticode signing of the published <code>.exe</code> and MSI is on the roadmap. Since June 2023, code-signing keys must reside on FIPS-certified hardware (HSM/token), so signing runs through a cloud signing service (e.g. SignPath Foundation for OSS, or Azure Trusted Signing) wired into the release workflow and gated on a repository secret &mdash; the step stays inert until a certificate is provisioned. When wired, prefer a post-quantum-capable signing path (ML-DSA / CNSA 2.0) <em>once</em> the Authenticode and CA ecosystem supports it &mdash; as of 2026 it does not, so standard Authenticode applies. See <a href="configuration.html#post-quantum">Post-quantum cryptography</a> for why in-process PQC was deferred.</p>
@@ -333,7 +349,7 @@
 
     <pre data-lang="powershell"><code>Select-String -Path .github/workflows/*.yml -Pattern 'uses:' | ForEach-Object { $_.Line.Trim() } | Sort-Object -Unique</code></pre>
 
-    <p>The action set is small and deliberately so: <code>actions/checkout</code>, <code>actions/setup-dotnet</code>, <code>actions/upload-artifact</code>, <code>actions/dependency-review-action</code>, <code>github/codeql-action/*</code> (init / analyze / upload-sarif, always pinned to one consistent SHA), <code>semgrep/semgrep-action</code>, <code>gitleaks/gitleaks-action</code>, <code>aquasecurity/trivy-action</code> and <code>softprops/action-gh-release</code>. The rules for changing it:</p>
+    <p>The action set is small and deliberately so: <code>actions/checkout</code>, <code>actions/setup-dotnet</code>, <code>actions/upload-artifact</code>, <code>actions/download-artifact</code>, <code>actions/dependency-review-action</code>, <code>github/codeql-action/*</code> (init / analyze / upload-sarif, always pinned to one consistent SHA), <code>gitleaks/gitleaks-action</code>, <code>aquasecurity/trivy-action</code> and <code>softprops/action-gh-release</code>. The rules for changing it:</p>
     <ul>
       <li>Never replace a SHA pin with a floating tag, even temporarily.</li>
       <li>New tooling should run through <code>pip</code>/<code>npm</code>/<code>pwsh</code> in a <code>run:</code> step rather than adding an action, when that is practical &mdash; this is why HTML/CSS linting and PSScriptAnalyzer need no new pins.</li>
@@ -345,6 +361,7 @@
       <ul>
         <li><strong>Codacy</strong> (<code>codacy.yml</code>) &mdash; removed. The native Codacy GitHub App ("SonarSharp reported by Codacy") is separate.</li>
         <li><strong>DevSkim</strong> &mdash; removed. Docker/MCR rate-limit issues; unmaintained. Replaced by Semgrep + Gitleaks.</li>
+        <li><strong><code>semgrep/semgrep-action</code></strong> &mdash; replaced by the <code>semgrep/semgrep</code> image running <code>semgrep scan</code>. The action is archived and had silently stopped scanning (see <a href="#semgrep">Semgrep</a>).</li>
       </ul>
     </div>
 

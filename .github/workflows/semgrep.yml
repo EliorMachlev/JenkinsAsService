@@ -15,15 +15,29 @@ permissions:
 jobs:
   semgrep:
     runs-on: ubuntu-latest
+    # semgrep/semgrep-action is ARCHIVED (its v1 tag dates from 2020) and its bundled engine could no longer
+    # parse the registry rules: every run logged `ValueError: invalid rule severity value: MEDIUM` and exited
+    # 0, so the job was green while scanning nothing. Semgrep's maintained path is its own image running
+    # `semgrep scan`. Pinned by digest like the action SHAs; Dependabot does not track workflow container
+    # images, so bump the tag and digest by hand (docker buildx imagetools inspect semgrep/semgrep:<tag>).
+    container:
+      image: semgrep/semgrep:1.185.0@sha256:67518c174185a2043fdbed16c70631b79209499b3671178e7194379b48295a0d
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Same rulesets as before. Findings go to code scanning like Trivy and PSScriptAnalyzer rather than
+      # failing the job; only a crash of the scanner itself fails it now.
       - name: Run Semgrep
-        uses: semgrep/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
+        run: >-
+          semgrep scan
+          --config p/default
+          --config p/csharp
+          --config p/secrets
+          --sarif --output semgrep.sarif
+
+      - name: Upload SARIF results
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
-          config: >-
-            p/default
-            p/csharp
-            p/secrets
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+          sarif_file: semgrep.sarif
+          category: semgrep

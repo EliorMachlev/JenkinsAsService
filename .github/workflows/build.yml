@@ -53,10 +53,12 @@ jobs:
       - name: Test
         run: dotnet test -c Release --verbosity normal
 
+      # CycloneDX comes from the local tool manifest (.config/dotnet-tools.json), not an inline
+      # `--version`, so Dependabot's nuget updater keeps it current and build/release cannot disagree.
       - name: Generate SBOM (CycloneDX)
         run: |
-          dotnet tool install --global CycloneDX --version 6.2.0
-          dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output sbom --output-format Json --filename bom.json
+          dotnet tool restore
+          dotnet tool run dotnet-CycloneDX src/JenkinsAsService/JenkinsAsService.csproj --output sbom --output-format Json --filename bom.json
 
       - name: Upload SBOM
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
