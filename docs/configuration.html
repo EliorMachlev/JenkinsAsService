@@ -159,8 +159,8 @@
           <tr>
             <td><code>Hardening:ProcessMitigations</code></td>
             <td>No</td>
-            <td><code>Full</code></td>
-            <td>Which image-load process mitigations the service applies to itself, as three <code>0</code>/<code>1</code> digits (network-DLL block, low-integrity block, System32 preference). Default <code>111</code>; a malformed value is refused and all three are applied. <strong>These policies are inherited by the build tree</strong> &mdash; see <a href="#process-mitigations">Process mitigations</a>.</td>
+            <td><code>111</code></td>
+            <td>Which image-load process mitigations the service applies to itself, as three <code>0</code>/<code>1</code> digits (network-DLL block, low-integrity block, System32 preference). Default <code>111</code> (all three); <code>011</code> drops only the network-DLL block. A level name written by an earlier version (<code>Full</code> / <code>AllowNetworkImages</code> / <code>Off</code>) is read as <code>111</code> / <code>011</code> / <code>000</code> with a warning; any other malformed value is refused and all three are applied. <strong>These policies are inherited by the build tree</strong> &mdash; see <a href="#process-mitigations">Process mitigations</a>.</td>
           </tr>
           <tr>
             <td><code>Logging:DebugMode</code></td>
@@ -467,8 +467,9 @@
         <tr><td>3rd</td><td>Prefer <code>%WinDir%\System32</code> for known system DLLs</td><td>Rarely; only if a build relies on side-by-side system DLL copies.</td></tr>
       </tbody>
     </table>
-    <p><code>111</code> (default) applies all three, <code>101</code> keeps the network and System32 protections but drops the low-integrity block, <code>000</code> applies none. The service logs a warning at every start naming each mitigation that is off. Extension-point disable is applied unconditionally.</p>
-    <p>The setting is also offered on the installer's <strong>Advanced Options</strong> page.</p>
+    <p><code>111</code> (default) applies all three. <code>011</code> drops only the network-DLL block and keeps the other two &mdash; the build-relevant case, for a pipeline that loads tools or native DLLs from a share (it is what the earlier <code>AllowNetworkImages</code> level did). <code>101</code> keeps the network and System32 protections but drops the low-integrity block; <code>000</code> applies none. The service logs a warning at every start naming each mitigation that is off. Extension-point disable is applied unconditionally.</p>
+    <p><strong>Upgrading from the level names.</strong> A config written by the build that stored <code>Full</code>, <code>AllowNetworkImages</code> or <code>Off</code> keeps its meaning: the service reads them as <code>111</code>, <code>011</code> and <code>000</code> and logs a warning asking for the digits, and the next <code>update-secret</code> full write rewrites the value as digits. One difference: the old <code>Off</code> also skipped extension-point disable, which is now always applied. The names are <em>not</em> accepted as new input &mdash; <code>--mitigations Off</code> fails, and so does a silent install given <code>JENKINS_MITIGATIONS=Off</code> (in the full wizard a malformed value is not pre-selected, so the page shows Full and Next writes <code>111</code>).</p>
+    <p>The setting is also offered on the installer's <strong>Advanced Options</strong> page as <strong>Full</strong> (all three) or <strong>Custom</strong>, where three checkboxes &mdash; ticked to start with &mdash; select the digits. A <code>JENKINS_MITIGATIONS</code> value passed on the <code>msiexec</code> command line pre-selects Custom and the matching boxes, so the wizard keeps it unless you change it; silent installs pass it straight through.</p>
 
     <h3 id="data-dir-split">Data directory split (binaries vs. runtime data)</h3>
     <p>The service keeps its <strong>read-only binary</strong> and its <strong>writable runtime data</strong> in two separate locations:</p>
@@ -516,12 +517,13 @@
   --java-path &lt;value&gt;    Java bin folder (default: JAVA_HOME)
   --service-account &lt;a&gt;  Service account granted read on the config; hardens the appsettings.json ACL
 
-  Optional settings (also collected by the installer's Advanced Options page)
+  Optional settings (also collected by the installer's Advanced Options page;
+  applied by a full write as well as by --merge)
   --via-file &lt;bool&gt;      Secret:ViaFile — pass the secret as -secret @&lt;file&gt; (default: true)
   --custom-args &lt;value&gt;  Agent:CustomArguments
   --sanitize-env &lt;bool&gt;  Hardening:SanitizeEnvironment (default: true)
   --allowed-env &lt;names&gt;  Hardening:AllowedEnvironmentVariables (; or , separated)
-  --mitigations &lt;digits&gt; Hardening:ProcessMitigations (three 0/1 digits, e.g. 111 or 101)
+  --mitigations &lt;digits&gt; Hardening:ProcessMitigations (three 0/1 digits, e.g. 111, 011 or 101)
   --debug &lt;bool&gt;         Logging:DebugMode
   --compact-log &lt;bool&gt;   Logging:CompactLog — CLEF JSON output
   --retained-logs &lt;n&gt;    Logging:RetainedLogs (default: 3)
@@ -535,7 +537,8 @@
   --set-data-dir &lt;path&gt;  Write only Agent:DataDirectory
   --upgrade              Reconcile appsettings.json to the current schema; preserve the existing secret
   --help                 Show usage</code></pre>
-    <p><strong>Short forms.</strong> Every option also accepts a short alias, the shortest unused prefix of its name: the first letter, else the first two, else the first three (<code>--m</code> is <code>--mitigations</code>, <code>--mo</code> is <code>--mode</code>). The long form is unchanged and is what the installer uses. Aliases are assigned in a fixed order, so they are stable: <code>--m</code>&nbsp;mitigations &middot; <code>--s</code>&nbsp;secret &middot; <code>--se</code>&nbsp;secret-file &middot; <code>--sec</code>&nbsp;secret-env &middot; <code>--u</code>&nbsp;url &middot; <code>--mo</code>&nbsp;mode &middot; <code>--d</code>&nbsp;dpapi-scope &middot; <code>--t</code>&nbsp;thumbprint &middot; <code>--ser</code>&nbsp;service-account &middot; <code>--set</code>&nbsp;set-data-dir &middot; <code>--a</code>&nbsp;agent-name &middot; <code>--j</code>&nbsp;java-path &middot; <code>--us</code>&nbsp;username &middot; <code>--me</code>&nbsp;method &middot; <code>--v</code>&nbsp;via-file &middot; <code>--c</code>&nbsp;custom-args &middot; <code>--sa</code>&nbsp;sanitize-env &middot; <code>--al</code>&nbsp;allowed-env &middot; <code>--de</code>&nbsp;debug &middot; <code>--co</code>&nbsp;compact-log &middot; <code>--r</code>&nbsp;retained-logs &middot; <code>--ma</code>&nbsp;max-retries &middot; <code>--si</code>&nbsp;silent &middot; <code>--i</code>&nbsp;impersonate &middot; <code>--mer</code>&nbsp;merge &middot; <code>--up</code>&nbsp;upgrade &middot; <code>--h</code>&nbsp;help. <code>configure-recovery</code> accepts <code>--s</code> (service); <code>grant-data-access</code> accepts <code>--p</code> (path) and <code>--a</code> (account).</p>
+    <p><strong>Errors name, never echo.</strong> A rejected option is reported by its name and what it accepts (<code>--mitigations: expected three characters, each 0 or 1</code>), and an unrecognised argument by its position. The offending value is never printed &mdash; it may be a secret, a secret-file path or the name of the variable holding one.</p>
+    <p><strong>Short forms.</strong> Every option except the three secret inputs also accepts a short alias, the shortest unused prefix of its name: the first letter, else the first two, else the first three (<code>--m</code> is <code>--mitigations</code>, <code>--mo</code> is <code>--mode</code>). <code>--secret</code>, <code>--secret-file</code> and <code>--secret-env</code> keep their full names only, and <code>--s</code>/<code>--se</code>/<code>--sec</code> are reserved and rejected, so a mistyped secret option fails instead of feeding the secret to another option. The long form is unchanged and is what the installer uses. Aliases are assigned in a fixed order, so they are stable: <code>--m</code>&nbsp;mitigations &middot; <code>--u</code>&nbsp;url &middot; <code>--mo</code>&nbsp;mode &middot; <code>--d</code>&nbsp;dpapi-scope &middot; <code>--t</code>&nbsp;thumbprint &middot; <code>--ser</code>&nbsp;service-account &middot; <code>--set</code>&nbsp;set-data-dir &middot; <code>--a</code>&nbsp;agent-name &middot; <code>--j</code>&nbsp;java-path &middot; <code>--us</code>&nbsp;username &middot; <code>--me</code>&nbsp;method &middot; <code>--v</code>&nbsp;via-file &middot; <code>--c</code>&nbsp;custom-args &middot; <code>--sa</code>&nbsp;sanitize-env &middot; <code>--al</code>&nbsp;allowed-env &middot; <code>--de</code>&nbsp;debug &middot; <code>--co</code>&nbsp;compact-log &middot; <code>--r</code>&nbsp;retained-logs &middot; <code>--ma</code>&nbsp;max-retries &middot; <code>--si</code>&nbsp;silent &middot; <code>--i</code>&nbsp;impersonate &middot; <code>--mer</code>&nbsp;merge &middot; <code>--up</code>&nbsp;upgrade &middot; <code>--h</code>&nbsp;help. <code>configure-recovery</code> accepts <code>--s</code> (service); <code>grant-data-access</code> accepts <code>--p</code> (path) and <code>--a</code> (account).</p>
     <p><code>--merge</code>, <code>--set-data-dir</code> and <code>--upgrade</code> exist because an MSI custom-action command line is capped at 255 characters &mdash; the installer splits the work across several calls. They are equally usable in a hand-rolled deployment script.</p>
 
     <h3 id="cli-purge">CLI: <code>purge</code></h3>

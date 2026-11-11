@@ -42,8 +42,10 @@ public static class DataDirectoryAcl
             or System.Security.SecurityException or ArgumentException or IOException)
         {
             // Reported rather than thrown, so the caller decides whether this fails the install.
+            // Names the options, not their values - supplied values are never echoed by us. The exception
+            // message is kept: this is not a secret path, and it is the diagnostic MSI logs need.
             log?.Invoke(
-                $"Error: could not grant '{serviceAccount}' access to '{directoryPath}': {ex.Message}");
+                $"Error: could not grant the --account identity access to the --path directory: {ex.Message}");
             return false;
         }
     }

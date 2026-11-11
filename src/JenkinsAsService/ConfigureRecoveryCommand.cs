@@ -51,15 +51,17 @@ internal static class ConfigureRecoveryCommand
         return ServiceRecoveryConfigurator.Configure(serviceName!, Console.WriteLine) ? 0 : 1;
     }
 
-    /// <summary>Parses <c>--service</c>, defaulting to the name the installer registers.</summary>
+    /// <summary>Short aliases for this command's options (<c>--s</c> for <c>--service</c>).</summary>
     internal static readonly CliAliases Aliases = new(["--service"]);
 
+    /// <summary>Parses <c>--service</c>, defaulting to the name the installer registers.</summary>
     internal static (string? ServiceName, string? Error) ParseArguments(string[] args)
     {
         var serviceName = DefaultServiceName;
 
         for (var i = 0; i < args.Length; i++)
         {
+            // Errors name the option or the argument position, never the argument itself.
             switch (Aliases.Resolve(args[i]))
             {
                 case Name:
@@ -68,9 +70,9 @@ internal static class ConfigureRecoveryCommand
                     serviceName = CliCommands.TrimQuoted(args[++i]);
                     break;
                 case "--service":
-                    return (null, $"Error: {args[i]} requires a value.");
+                    return (null, "Error: --service requires a value.");
                 default:
-                    return (null, $"Error: unknown argument '{args[i]}'.");
+                    return (null, $"Error: argument {i} is not a recognised option.");
             }
         }
 

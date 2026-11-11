@@ -69,11 +69,23 @@ internal static class ProcessMitigations
             return mask;
         }
 
+        // A level name written by the previous build (Full / AllowNetworkImages / Off) keeps the meaning it
+        // was written with. Warned, so the operator re-saves it as digits, but honoured: resetting it to all
+        // three would break the very build the operator lowered it for, at the first service restart.
+        if (MitigationMask.TryFromLegacyName(configured, out var legacy))
+        {
+            warn?.Invoke(
+                $"{ConfigKeys.Hardening.ProcessMitigationsPath} uses a level name from an earlier version; "
+                + "applying its three-digit equivalent. Rewrite the setting as three 0/1 digits.");
+            return legacy;
+        }
+
         // Fail towards the most protective set, never the least: a value this build cannot read is a
-        // mistake, and guessing "they meant to turn things off" would silently weaken every agent whose
-        // config was written by a version that spelled this setting differently.
+        // mistake, and guessing "they meant to turn things off" would silently weaken the agent. The value
+        // itself is deliberately not echoed - messages about invalid input name the setting, never its value.
         warn?.Invoke(
-            $"Process mitigations value '{configured}' is not three 0/1 digits; applying all of them.");
+            $"{ConfigKeys.Hardening.ProcessMitigationsPath}: expected three characters, each 0 or 1; "
+            + "applying all mitigations.");
         return MitigationMask.All;
     }
 

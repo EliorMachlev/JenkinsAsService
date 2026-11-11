@@ -124,12 +124,16 @@ public sealed class HardeningSettings
     /// <summary>
     /// Which image-load process mitigations the service applies to itself, as three digits:
     /// <c>NoRemoteImages</c>, <c>NoLowLabelImages</c>, <c>PreferSystem32Images</c>. <c>"111"</c> (default)
-    /// applies all three; <c>"101"</c> drops the low-integrity block; <c>"000"</c> applies none.
+    /// applies all three; <c>"011"</c> drops only the network-DLL block, the one a build loading tooling or
+    /// a native DLL from a share trips over (what the old <c>AllowNetworkImages</c> level did);
+    /// <c>"101"</c> drops only the low-integrity block; <c>"000"</c> applies none.
     /// <para>
     /// These policies are <strong>inherited by child processes</strong>, so they reach <c>java.exe</c> and
     /// every compiler, test runner and script the agent spawns beneath it. Windows offers no way to undo
     /// that per-child, which is why each is a separate decision about what the <em>service</em> takes —
-    /// see <see cref="MitigationMask"/>. A malformed value is refused and all three are applied.
+    /// see <see cref="MitigationMask"/>. A level name an earlier build wrote (<c>Full</c> /
+    /// <c>AllowNetworkImages</c> / <c>Off</c>) is read as <c>111</c> / <c>011</c> / <c>000</c> with a warning;
+    /// any other malformed value is refused and all three are applied.
     /// </para>
     /// Typed as a string so the configuration binder needs no converter; parse it with
     /// <see cref="MitigationMask.TryParse"/>.

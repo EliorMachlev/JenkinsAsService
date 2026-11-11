@@ -5,6 +5,8 @@ namespace JenkinsAsService.Tests;
 
 public class CliAliasesTests
 {
+    // Asserts the allocator itself, with the secret names standing in as ordinary options. update-secret
+    // passes its --secret* family as unaliased; see Update_secret_secret_options_have_no_short_alias.
     [Fact]
     public void Uses_first_letter_then_two_then_three()
     {
@@ -80,16 +82,51 @@ public class CliAliasesTests
     }
 
     [Fact]
-    public void Update_secret_resolves_aliases_in_place_of_long_options()
+    public void Update_secret_resolves_aliases_without_rewriting_the_callers_arguments()
     {
-        var args = new[] { UpdateSecretCommand.Name, "--m", "101", "--si" };
+        var args = new[] { UpdateSecretCommand.Name, "--m", "011", "--si" };
+        var original = args.ToArray();
 
-        typeof(UpdateSecretCommand)
-            .GetMethod("ParseArgs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
-            .Invoke(null, [args]).Should().NotBeNull();
+        var parsed = UpdateSecretCommand.ParseArgs(args);
 
-        args[1].Should().Be("--mitigations");
-        args[3].Should().Be("--silent");
+        parsed.Should().NotBeNull();
+        parsed!.Mitigations.Should().Be(new MitigationMask(false, true, true));
+        parsed.Silent.Should().BeTrue();
+        args.Should().Equal(original, "the argument array belongs to the caller");
+    }
+
+    [Fact]
+    public void Unaliased_options_get_no_alias_and_reserve_every_prefix()
+    {
+        var aliases = new CliAliases(["--set-data-dir", "--silent"], unaliased: ["--secret", "--secret-env"]);
+
+        aliases.All.Keys.Should().NotContain(["--secret", "--secret-env"]);
+        aliases.All.Values.Should().NotContain(["--s", "--se", "--sec"]);
+        aliases["--set-data-dir"].Should().Be("--set");
+        aliases["--silent"].Should().Be("--si");
+        aliases.Resolve("--se").Should().Be("--se", "a reserved prefix resolves to nothing");
+    }
+
+    [Fact]
+    public void Update_secret_secret_options_have_no_short_alias()
+    {
+        foreach (var option in new[] { "--secret", "--secret-file", "--secret-env" })
+        {
+            UpdateSecretCommand.Aliases.All.Should().NotContainKey(option);
+            UpdateSecretCommand.UsageText.Should().NotContain($", {option} ", "the usage text must not advertise one");
+        }
+
+        // And no other option inherited the prefixes they used to own.
+        UpdateSecretCommand.Aliases.All.Values.Should().NotContain(["--s", "--se", "--sec"]);
+    }
+
+    [Theory]
+    [InlineData("--s")]
+    [InlineData("--se")]
+    [InlineData("--sec")]
+    public void Update_secret_rejects_the_former_secret_aliases_as_unknown(string alias)
+    {
+        UpdateSecretCommand.ParseArgs([UpdateSecretCommand.Name, alias, "value"]).Should().BeNull();
     }
 
     [Fact]

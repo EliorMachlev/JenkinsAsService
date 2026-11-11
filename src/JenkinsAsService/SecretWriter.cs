@@ -22,14 +22,19 @@ public static class SecretWriter
 
     /// <summary>
     /// Processes the secret based on mode, then writes appsettings.json.
-    /// Preserves existing fields (CustomArguments, DebugMode, CompactLog, MaxRetries) if the file exists.
+    /// Preserves existing fields (CustomArguments, DebugMode, CompactLog, MaxRetries, ProcessMitigations, ...)
+    /// if the file exists, and otherwise writes their defaults (<c>"111"</c> for ProcessMitigations).
+    /// <paramref name="optionalFields"/> then overrides any of them that were supplied - the same fields,
+    /// with the same null-means-unchanged rule, as <see cref="MergeConfig"/>, so an option given on a full
+    /// write is applied rather than parsed and dropped. Its <see cref="ConfigMergeFields.DpapiScope"/> is
+    /// ignored in favour of <paramref name="dpapiScope"/>, which the secret was actually protected with.
     /// When <paramref name="serviceAccount"/> is supplied, the written file's ACL is hardened so that
     /// only SYSTEM, Administrators and that account can read it (removes inherited Users access).
     /// </summary>
     public static void WriteConfig(string basePath, string secret, SecretMode mode,
         string server, string? agentName, string? javaPath,
         DpapiScope dpapiScope = DpapiScope.Machine, string? controllerCertThumbprint = null,
-        string? serviceAccount = null)
+        string? serviceAccount = null, ConfigMergeFields? optionalFields = null)
     {
         var configSecret = ProcessSecret(secret, mode, dpapiScope, serviceAccount);
         var configPath = Path.Combine(basePath, ConfigFileName);
@@ -38,6 +43,11 @@ public static class SecretWriter
         var existingJenkins = existingRoot?[ConfigSectionName]?.AsObject();
         var jenkins = BuildJenkinsSection(
             configSecret, mode, server, agentName, javaPath, dpapiScope, controllerCertThumbprint, existingJenkins);
+
+        if (optionalFields is not null)
+        {
+            ApplyFields(jenkins, optionalFields with { DpapiScope = null });
+        }
 
         WriteRoot(configPath, existingRoot, jenkins);
 
@@ -95,6 +105,13 @@ public static class SecretWriter
             ? (JsonObject)existingJenkins.DeepClone()
             : new JsonObject();
 
+        ApplyFields(jenkins, fields);
+        WriteRoot(configPath, existingRoot, jenkins);
+    }
+
+    // The one statement of where each optional field lives, shared by MergeConfig and WriteConfig.
+    private static void ApplyFields(JsonObject jenkins, ConfigMergeFields fields)
+    {
         if (fields.Method is { } method)
             GetOrCreate(jenkins, ConfigKeys.Connection.Name)[ConfigKeys.Connection.Method] = method.ToString();
         if (fields.DpapiScope is { } scope)
@@ -117,8 +134,6 @@ public static class SecretWriter
             GetOrCreate(jenkins, ConfigKeys.Logging.Name)[ConfigKeys.Logging.RetainedLogs] = retained;
         if (fields.MaxRetries is { } maxRetries)
             GetOrCreate(jenkins, ConfigKeys.Recovery.Name)[ConfigKeys.Recovery.MaxRetries] = maxRetries;
-
-        WriteRoot(configPath, existingRoot, jenkins);
     }
 
     /// <summary>
@@ -297,13 +312,20 @@ public static class SecretWriter
     private static JsonObject? ExistingObject(JsonObject? existing, string key) =>
         existing?[key] as JsonObject;
 
-    // Preserve an existing Hardening:ProcessMitigations, else write the all-on mask. Anything that is
-    // not three 0/1 digits is replaced rather than carried forward, so a full write repairs a value an
-    // older build wrote in a different format instead of preserving something nothing can read.
+    // Preserve an existing Hardening:ProcessMitigations, else write the all-on mask. A level name written
+    // by the previous build (Full / AllowNetworkImages / Off) is migrated to the digits with the same
+    // effect - through the same helper the service uses at startup, so the two cannot disagree - rather
+    // than reset to 111. Anything else that is not three 0/1 digits is replaced with 111, so a full write
+    // repairs a value nothing can read instead of preserving it.
     private static string ExistingMitigations(JsonObject? hardening)
     {
         var value = ExistingString(hardening, ConfigKeys.Hardening.ProcessMitigations);
-        return MitigationMask.TryParse(value, out var mask) ? mask.ToString() : MitigationMask.All.ToString();
+        if (MitigationMask.TryParse(value, out var mask) || MitigationMask.TryFromLegacyName(value, out mask))
+        {
+            return mask.ToString();
+        }
+
+        return MitigationMask.All.ToString();
     }
 
     // Preserve an existing Connection:Method, else default to Auto (so the enum binds to a valid value).

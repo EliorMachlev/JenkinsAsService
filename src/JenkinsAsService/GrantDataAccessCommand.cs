@@ -52,12 +52,13 @@ internal static class GrantDataAccessCommand
         return DataDirectoryAcl.Grant(path, account!, Console.WriteLine) ? 0 : 1;
     }
 
+    /// <summary>Short aliases for this command's options (<c>--p</c>, <c>--a</c>).</summary>
+    internal static readonly CliAliases Aliases = new(["--path", "--account"]);
+
     /// <summary>
     /// Parses <c>--path</c> and <c>--account</c>. The account has no default: falling back to a built-in
     /// name would grant the wrong identity on any install that overrode SERVICE_ACCOUNT.
     /// </summary>
-    internal static readonly CliAliases Aliases = new(["--path", "--account"]);
-
     internal static (string? Path, string? Account, string? Error) ParseArguments(string[] args)
     {
         string? path = null;
@@ -65,7 +66,9 @@ internal static class GrantDataAccessCommand
 
         for (var i = 0; i < args.Length; i++)
         {
-            switch (Aliases.Resolve(args[i]))
+            // Errors name the option or the argument position, never the argument itself.
+            var option = Aliases.Resolve(args[i]);
+            switch (option)
             {
                 case Name:
                     break;
@@ -77,9 +80,9 @@ internal static class GrantDataAccessCommand
                     break;
                 case "--path":
                 case "--account":
-                    return (null, null, $"Error: {args[i]} requires a value.");
+                    return (null, null, $"Error: {option} requires a value.");
                 default:
-                    return (null, null, $"Error: unknown argument '{args[i]}'.");
+                    return (null, null, $"Error: argument {i} is not a recognised option.");
             }
         }
 

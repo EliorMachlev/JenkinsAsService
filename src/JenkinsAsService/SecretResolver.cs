@@ -64,7 +64,9 @@ public sealed class SecretResolver : ISecretResolver
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new InvalidOperationException(
-                $"System environment variable '{variableName}' not found or empty. " +
+                // The name is not echoed: it comes from Secret:Value, where a misconfigured install may
+                // hold the secret itself rather than the name of the variable that holds it.
+                "The system environment variable named by Secret:Value was not found or is empty. " +
                 "Create it with the agent secret value, or change SecretMode.");
         }
 
@@ -77,7 +79,7 @@ public sealed class SecretResolver : ISecretResolver
         if (string.IsNullOrEmpty(credential?.Password))
         {
             throw new InvalidOperationException(
-                $"Windows Credential Manager entry '{targetName}' not found or has no password. " +
+                "The Windows Credential Manager entry named by Secret:Value was not found or has no password. " +
                 "Re-run the installer with Credential Manager mode, or add it manually via cmdkey.");
         }
 

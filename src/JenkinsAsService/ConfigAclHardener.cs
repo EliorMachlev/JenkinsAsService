@@ -34,8 +34,10 @@ public static class ConfigAclHardener
         {
             // Best-effort: an unresolvable account or insufficient rights must not fail the install /
             // config write. The file keeps its inherited ACL; the secret is still protected by mode.
+            // Names the option, not the account or path - supplied values are never echoed by us. The
+            // exception message is kept: this is not a secret path, and it is the diagnostic MSI logs need.
             Console.Error.WriteLine(
-                $"Warning: could not harden ACL on '{filePath}' for account '{serviceAccount}': {ex.Message}");
+                $"Warning: could not harden the config file ACL for the --service-account account: {ex.Message}");
         }
     }
 

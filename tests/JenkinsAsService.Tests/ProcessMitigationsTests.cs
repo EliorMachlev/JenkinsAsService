@@ -85,21 +85,68 @@ public class ProcessMitigationsTests
 
     [Theory]
     [InlineData("000", "000")]
+    [InlineData("011", "011")]
     [InlineData("101", "101")]
     public void Resolve_honours_a_valid_value(string configured, string expected) =>
         ProcessMitigations.Resolve(configured).ToString().Should().Be(expected);
 
     [Theory]
-    [InlineData("Off")]
-    [InlineData("AllowNetworkImages")]
     [InlineData("10")]
+    [InlineData("SENTINEL-7d1c")]
+    [InlineData("Minimal")]
     public void Resolve_fails_towards_all_and_warns_on_a_malformed_value(string configured)
     {
         var warnings = new List<string>();
 
-        // A stale enum name from an older build must never be read as "turn it off".
         ProcessMitigations.Resolve(configured, warnings.Add).Should().Be(MitigationMask.All);
-        warnings.Should().ContainSingle().Which.Should().Contain(configured);
+
+        // The warning names the setting and the expected form, never the value it rejected.
+        warnings.Should().ContainSingle().Which.Should()
+            .Contain(ConfigKeys.Hardening.ProcessMitigationsPath).And.NotContain(configured);
+    }
+
+    // Commit 418d8e4 wrote level names. They keep their meaning - AllowNetworkImages applied the
+    // low-integrity block and the System32 preference but not the network-DLL block - instead of being reset
+    // to all three at the first restart, which would break the build the operator lowered them for.
+    [Theory]
+    [InlineData("Full", "111")]
+    [InlineData("AllowNetworkImages", "011")]
+    [InlineData("Off", "000")]
+    [InlineData("allownetworkimages", "011")]
+    public void Resolve_migrates_a_legacy_level_name_with_a_warning(string configured, string expected)
+    {
+        var warnings = new List<string>();
+
+        ProcessMitigations.Resolve(configured, warnings.Add).ToString().Should().Be(expected);
+
+        warnings.Should().ContainSingle().Which.Should()
+            .Contain("earlier version").And.NotContain(configured);
+    }
+
+    [Fact]
+    public void AllowNetworkImages_maps_to_the_mask_that_drops_only_the_network_dll_block()
+    {
+        // Derived from the flags, not restated as a string: the old level's image-load word was
+        // NoLowLabel | PreferSystem32 (see 418d8e4 ProcessMitigations.ImageLoadFlags).
+        MitigationMask.TryFromLegacyName("AllowNetworkImages", out var mask).Should().BeTrue();
+        mask.ImageLoadFlags.Should().Be(NoLowLabel | PreferSystem32);
+        mask.NoRemoteImages.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Default_mask_is_all_three_so_an_uninitialised_value_fails_closed()
+    {
+        default(MitigationMask).Should().Be(MitigationMask.All);
+        default(MitigationMask).ToString().Should().Be("111");
+        default(MitigationMask).ImageLoadFlags.Should().Be(NoRemote | NoLowLabel | PreferSystem32);
+        new MitigationMask(true, true, true).Should().Be(default(MitigationMask));
+    }
+
+    [Fact]
+    public void TryParse_leaves_the_mask_at_all_three_when_it_fails()
+    {
+        MitigationMask.TryParse("nope", out var mask).Should().BeFalse();
+        mask.Should().Be(MitigationMask.All);
     }
 
     [Fact]

@@ -86,8 +86,10 @@ public class SecretResolverTests
 
         var act = () => _sut.Resolve(settings);
 
+        // Names the setting, never its value: Secret:Value may hold the secret itself by mistake.
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*'NONEXISTENT_VAR_12345'*not found*");
+            .WithMessage("*Secret:Value*not found*")
+            .Which.Message.Should().NotContain("NONEXISTENT_VAR_12345");
     }
 
     // ─── Credential Manager ─────────────────────────────────────────────

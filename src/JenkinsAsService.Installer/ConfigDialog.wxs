@@ -207,11 +207,15 @@
              policies are inherited by java.exe and everything the build spawns beneath it, and Windows
              offers no way to withhold one from a child that the service holds, so each is a separate
              question about what the SERVICE takes.
-             The boxes start cleared and disabled, and Full means "all three" regardless of what they show
-             - JENKINS_MITIGATIONS is composed on Next (see the Publish rows on that button), not read from
-             the boxes directly, so an operator who ticks two boxes and then goes back to Full still gets
-             111. MITIGATIONS_MODE is UI-only and never reaches a custom action; the three digits are what
-             the exe is given. -->
+             The boxes start TICKED (Custom starts from Full, so Custom then Next with nothing touched is
+             still 111, never a silent 000) and disabled until Custom is chosen. An incoming
+             JENKINS_MITIGATIONS from the msiexec command line pre-selects Custom and the matching boxes -
+             see the SeedMitigation* rows in Package.wxs - so the wizard reproduces it instead of
+             overwriting it. Full means "all three" regardless of what the boxes show: JENKINS_MITIGATIONS
+             is composed on Next (see the Publish rows on that button), not read from the boxes directly,
+             so an operator who clears two boxes and then goes back to Full still gets 111.
+             MITIGATIONS_MODE is UI-only and never reaches a custom action; the three digits are what the
+             exe is given. -->
         <Control Id="MitigationLabel" Type="Text" X="15" Y="126" Width="118" Height="13" NoPrefix="yes"
                  Text="Process Hardening:" />
         <Control Id="MitigationGroup" Type="RadioButtonGroup" X="136" Y="124" Width="219" Height="16"
@@ -282,8 +286,9 @@
                more rows here instead of doubling them. An unticked MSI checkbox leaves its property EMPTY,
                not "0", which is why the negative row is needed at all - without it the value would collapse
                from "101" to "11" and be rejected as malformed.
-               Full ignores the boxes entirely and writes 111, so ticking two boxes and then going back to
-               Full still installs the fully hardened service. -->
+               Full ignores the boxes entirely and writes 111, so clearing two boxes and then going back to
+               Full still installs the fully hardened service. InstallerMitigationAuthoringTests evaluates
+               these rows together with the seeding rows for all eight masks. -->
           <Publish Property="JAS_MIT_B1" Value="1" Order="1" Condition="JENKINS_MIT_REMOTE" />
           <Publish Property="JAS_MIT_B1" Value="0" Order="2" Condition="NOT JENKINS_MIT_REMOTE" />
           <Publish Property="JAS_MIT_B2" Value="1" Order="3" Condition="JENKINS_MIT_LOWLABEL" />
