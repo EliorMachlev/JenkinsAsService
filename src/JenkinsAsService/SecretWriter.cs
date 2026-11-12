@@ -46,7 +46,7 @@ public static class SecretWriter
 
         if (optionalFields is not null)
         {
-            ApplyFields(jenkins, optionalFields with { DpapiScope = null });
+            ApplyFields(jenkins, optionalFields with { DpapiScope = null, Url = null, AgentName = null, JavaPath = null });
         }
 
         WriteRoot(configPath, existingRoot, jenkins);
@@ -112,6 +112,12 @@ public static class SecretWriter
     // The one statement of where each optional field lives, shared by MergeConfig and WriteConfig.
     private static void ApplyFields(JsonObject jenkins, ConfigMergeFields fields)
     {
+        if (fields.Url is { } url)
+            GetOrCreate(jenkins, ConfigKeys.Connection.Name)[ConfigKeys.Connection.Url] = url;
+        if (fields.AgentName is { } agentName)
+            GetOrCreate(jenkins, ConfigKeys.Connection.Name)[ConfigKeys.Connection.AgentName] = agentName;
+        if (fields.JavaPath is { } javaPath)
+            GetOrCreate(jenkins, ConfigKeys.Agent.Name)[ConfigKeys.Agent.JavaPath] = javaPath;
         if (fields.Method is { } method)
             GetOrCreate(jenkins, ConfigKeys.Connection.Name)[ConfigKeys.Connection.Method] = method.ToString();
         if (fields.DpapiScope is { } scope)
@@ -419,6 +425,12 @@ public static class SecretWriter
 /// </summary>
 public sealed record ConfigMergeFields
 {
+    // Merge-only: a full write takes these three as its own arguments, and ignores them here (the interactive
+    // flow may have re-asked the URL or Java path after a failed verification, so the parsed value is stale).
+    public string? Url { get; init; }
+    public string? AgentName { get; init; }
+    public string? JavaPath { get; init; }
+
     public ConnectionMethod? Method { get; init; }
     public DpapiScope? DpapiScope { get; init; }
     public bool? ViaFile { get; init; }

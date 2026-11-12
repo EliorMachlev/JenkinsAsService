@@ -4,6 +4,7 @@ using FluentAssertions;
 
 namespace JenkinsAsService.Tests;
 
+[Collection(ConsoleCollection.Name)]
 public class UpdateSecretCommandTests : IDisposable
 {
     private readonly string _tempDir;
@@ -22,12 +23,19 @@ public class UpdateSecretCommandTests : IDisposable
         }
     }
 
+    // Every write now verifies the URL first, including a TCP connect. These tests are about parsing and
+    // writing, and their placeholder controller ("https://jenkins:8443") resolves nowhere, so they run with a
+    // checker that always connects: no DNS, no network, the URL format rule still applied. Verification itself
+    // is covered by UpdateSecretVerificationTests.
+    private static int RunCommand(string[] args, string basePath) =>
+        UpdateSecretCommand.Run(args, basePath, TestVerifiers.AlwaysReachable());
+
     // ─── Help ────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Help_exits_zero()
     {
-        UpdateSecretCommand.Run(["update-secret", "--help"], _tempDir).Should().Be(0);
+        RunCommand(["update-secret", "--help"], _tempDir).Should().Be(0);
     }
 
     // ─── Silent mode — required field validation ──────────────────────────────
@@ -35,7 +43,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void Silent_missing_secret_returns_1()
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--url", "https://jenkins:8443", "--mode", "Unprotected"],
             _tempDir);
         code.Should().Be(1);
@@ -44,7 +52,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void Silent_missing_url_returns_1()
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--secret", "s3cr3t", "--mode", "Unprotected"],
             _tempDir);
         code.Should().Be(1);
@@ -53,7 +61,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void Silent_missing_mode_returns_1()
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--secret", "s3cr3t", "--url", "https://jenkins:8443"],
             _tempDir);
         code.Should().Be(1);
@@ -63,7 +71,7 @@ public class UpdateSecretCommandTests : IDisposable
     public void Silent_invalid_mode_returns_1()
     {
         // C4 fix: typo in --mode must fail rather than silently default to Dpapi
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--secret", "s3cr3t", "--url", "https://jenkins:8443", "--mode", "Dapi"],
             _tempDir);
         code.Should().Be(1);
@@ -97,7 +105,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void Silent_unprotected_writes_config()
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent",
              "--secret", "my-secret",
              "--url", "https://jenkins:8443",
@@ -123,7 +131,7 @@ public class UpdateSecretCommandTests : IDisposable
         var secretFile = Path.Combine(_tempDir, "secret.tmp");
         File.WriteAllText(secretFile, "file-secret\n"); // trailing newline trimmed
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent",
              "--secret-file", secretFile,
              "--url", "https://jenkins:8443",
@@ -141,7 +149,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void SecretFile_missing_file_returns_1()
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent",
              "--secret-file", Path.Combine(_tempDir, "nonexistent.tmp"),
              "--url", "https://jenkins:8443",
@@ -160,7 +168,7 @@ public class UpdateSecretCommandTests : IDisposable
         Environment.SetEnvironmentVariable(varName, "env-secret");
         try
         {
-            var code = UpdateSecretCommand.Run(
+            var code = RunCommand(
                 ["update-secret", "--silent",
                  "--secret-env", varName,
                  "--url", "https://jenkins:8443",
@@ -184,7 +192,7 @@ public class UpdateSecretCommandTests : IDisposable
         const string varName = "JAS_TEST_SECRET_DEFINITELY_NOT_SET_XYZ";
         Environment.SetEnvironmentVariable(varName, null); // ensure not set
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent",
              "--secret-env", varName,
              "--url", "https://jenkins:8443",
@@ -199,7 +207,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void Unknown_option_returns_1()
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--not-a-real-option"],
             _tempDir);
         code.Should().Be(1);
@@ -214,7 +222,7 @@ public class UpdateSecretCommandTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
             "{\"Jenkins\":{\"Secret\":{\"Value\":\"pre-written\",\"Mode\":\"Dpapi\"}}}");
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--merge",
              "--method", "WebSocket",
              "--max-retries", "4",
@@ -239,7 +247,7 @@ public class UpdateSecretCommandTests : IDisposable
         // Mirrors an unchecked MSI checkbox: --debug "" arrives as an empty argument.
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), "{\"Jenkins\":{}}");
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--merge", "--debug", "", "--sanitize-env", "1"],
             _tempDir);
 
@@ -312,7 +320,7 @@ public class UpdateSecretCommandTests : IDisposable
     {
         // Reproduces the installer bug: the mangled 'D:\Jenkins"' must be stored as 'D:\Jenkins',
         // not 'D:\Jenkins"' (which serialised as "D:\\Jenkins"").
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--set-data-dir", "D:\\Jenkins\""],
             _tempDir);
 
@@ -330,7 +338,7 @@ public class UpdateSecretCommandTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
             "{\"Jenkins\":{\"Secret\":{\"Value\":\"live-secret\",\"Mode\":\"Tpm\",\"LegacyFlag\":true}}}");
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--upgrade",
              "--secret", "", "--url", "", "--mode", "Dpapi"],
             _tempDir);
@@ -349,7 +357,7 @@ public class UpdateSecretCommandTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
             "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\"}}}");
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--upgrade",
              "--secret", "repaired", "--url", "https://new:8443", "--mode", "Unprotected"],
             _tempDir);
@@ -366,7 +374,7 @@ public class UpdateSecretCommandTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
             "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\"}}}");
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--upgrade", "--secret", "", "--url", "", "--mode", "Dpapi"],
             _tempDir);
 
@@ -382,7 +390,7 @@ public class UpdateSecretCommandTests : IDisposable
         var configPath = Path.Combine(_tempDir, "appsettings.json");
         File.WriteAllText(configPath, corrupt);
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--upgrade", "--secret", "repaired", "--url", "https://new:8443", "--mode", "Unprotected"],
             _tempDir);
 
@@ -496,7 +504,7 @@ public class UpdateSecretCommandTests : IDisposable
     [MemberData(nameof(RejectedValues))]
     public void A_supplied_value_that_cannot_be_used_fails_the_command(string option, string value)
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--merge", option, value], _tempDir);
 
         code.Should().Be(1, $"{option} {value} is not usable");
@@ -511,7 +519,7 @@ public class UpdateSecretCommandTests : IDisposable
         // The counterpart to the theory above: an untouched installer property arrives as "", and every
         // one of these options must tolerate that. Run them all in one command, exactly as WriteAdvanced
         // does, so the merge path is exercised the way the MSI actually calls it.
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--merge", option, ""], _tempDir);
 
         code.Should().Be(0, $"{option} \"\" means unset, not invalid");
@@ -522,7 +530,7 @@ public class UpdateSecretCommandTests : IDisposable
     {
         // --method consumes the next token; at the end of the argument list there is none. This reported
         // the problem and then exited 0 anyway.
-        var code = UpdateSecretCommand.Run(["update-secret", "--silent", "--merge", "--method"], _tempDir);
+        var code = RunCommand(["update-secret", "--silent", "--merge", "--method"], _tempDir);
 
         code.Should().Be(1);
     }
@@ -530,7 +538,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void Every_bad_option_is_reported_before_the_command_gives_up()
     {
-        var stderr = CaptureStderr(() => UpdateSecretCommand.Run(
+        var stderr = CaptureStderr(() => RunCommand(
             ["update-secret", "--silent", "--merge", "--method", "Pigeon", "--max-retries", "lots"],
             _tempDir).Should().Be(1));
 
@@ -574,7 +582,7 @@ public class UpdateSecretCommandTests : IDisposable
         Environment.SetEnvironmentVariable(Sentinel, null);
 
         var (code, stdout, stderr) = CaptureBoth(() =>
-            UpdateSecretCommand.Run([UpdateSecretCommand.Name, .. options], _tempDir));
+            RunCommand([UpdateSecretCommand.Name, .. options], _tempDir));
 
         code.Should().Be(1);
         stderr.Should().NotBeEmpty("the failure must still be reported");
@@ -587,7 +595,7 @@ public class UpdateSecretCommandTests : IDisposable
     {
         Environment.SetEnvironmentVariable(Sentinel, null);
 
-        var (_, _, stderr) = CaptureBoth(() => UpdateSecretCommand.Run(
+        var (_, _, stderr) = CaptureBoth(() => RunCommand(
             [UpdateSecretCommand.Name, "--silent", "--secret-env", Sentinel,
              "--url", "https://jenkins:8443", "--mode", "Unprotected"], _tempDir));
 
@@ -613,7 +621,7 @@ public class UpdateSecretCommandTests : IDisposable
     {
         // Migrated when READ from a stored config; a new command line (or msiexec JENKINS_MITIGATIONS) must
         // state the digits. Rejection fails the custom action instead of installing a guess.
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--merge", "--mitigations", value], _tempDir);
 
         code.Should().Be(1);
@@ -626,7 +634,7 @@ public class UpdateSecretCommandTests : IDisposable
     public void Silent_full_write_applies_mitigations()
     {
         // Used to be parsed and then silently dropped outside --merge.
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--secret", "s", "--url", "https://jenkins:8443",
              "--mode", "Unprotected", "--mitigations", "011"],
             _tempDir);
@@ -639,7 +647,7 @@ public class UpdateSecretCommandTests : IDisposable
     [Fact]
     public void Silent_full_write_applies_the_other_optional_fields_too()
     {
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--secret", "s", "--url", "https://jenkins:8443",
              "--mode", "Unprotected", "--method", "WebSocket", "--max-retries", "4", "--debug", "1"],
             _tempDir);
@@ -657,7 +665,7 @@ public class UpdateSecretCommandTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
             "{\"Jenkins\":{\"Hardening\":{\"ProcessMitigations\":\"101\"}}}");
 
-        var code = UpdateSecretCommand.Run(
+        var code = RunCommand(
             ["update-secret", "--silent", "--secret", "s", "--url", "https://jenkins:8443", "--mode", "Unprotected"],
             _tempDir);
 
@@ -674,7 +682,7 @@ public class UpdateSecretCommandTests : IDisposable
         UpdateSecretCommand.ParseArgs(["update-secret", "--merge", "--custom-args", "--h"])!
             .CustomArgs.Should().Be("--h");
 
-        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+        var (_, stdout, _) = CaptureBoth(() => RunCommand(
             ["update-secret", "--silent", "--merge", "--custom-args", "--h"], _tempDir));
 
         stdout.Should().NotContain(UpdateSecretCommand.UsageText);
@@ -687,7 +695,7 @@ public class UpdateSecretCommandTests : IDisposable
     public void A_help_token_as_the_value_of_a_non_free_form_option_is_still_help(string option, string token)
     {
         // A URL or a mode is never "--help": writing it as the value and reporting success was the regression.
-        var (code, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+        var (code, stdout, _) = CaptureBoth(() => RunCommand(
             ["update-secret", "--silent", option, token], _tempDir));
 
         code.Should().Be(0);
@@ -699,7 +707,7 @@ public class UpdateSecretCommandTests : IDisposable
     {
         UpdateSecretCommand.ParseArgs(["update-secret", "--secret", "--h"])!.SecretArg.Should().Be("--h");
 
-        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+        var (_, stdout, _) = CaptureBoth(() => RunCommand(
             ["update-secret", "--silent", "--merge", "--secret", "--h"], _tempDir));
 
         stdout.Should().NotContain(UpdateSecretCommand.UsageText);
@@ -711,7 +719,7 @@ public class UpdateSecretCommandTests : IDisposable
         // --cu is the alias of --custom-args, resolved the same way the parser resolves it.
         var alias = UpdateSecretCommand.Aliases["--custom-args"];
 
-        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+        var (_, stdout, _) = CaptureBoth(() => RunCommand(
             ["update-secret", "--silent", "--merge", alias, "--h"], _tempDir));
 
         stdout.Should().NotContain(UpdateSecretCommand.UsageText);
