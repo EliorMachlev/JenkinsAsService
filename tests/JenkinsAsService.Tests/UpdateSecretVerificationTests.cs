@@ -451,8 +451,39 @@ public sealed class UpdateSecretVerificationTests : IDisposable
         var result = InteractiveConfigPrompts.VerifyWithRetry(TestVerifiers.AlwaysReachable(), "https://ctl:8443",
             Path.Combine(_tempDir, "nope"), new StringReader("r\n-\n"), new StringWriter(), new StringWriter());
 
-        result.Should().Be(new InteractiveConfigPrompts.VerifiedValues(true, "https://ctl:8443", null),
+        result.Should().Be(new InteractiveConfigPrompts.VerifiedValues(true, "https://ctl:8443", ""),
             "a cleared Java path is resolved from JAVA_HOME at runtime, so there is nothing left to check");
+    }
+
+    [Fact]
+    public void Clearing_a_failing_java_path_really_clears_the_stored_one()
+    {
+        // The interactive flow offers the stored path as the default; clearing it after a failure must write
+        // an empty Agent:JavaPath, not fall back to the stored (failing) one.
+        var stale = Path.Combine(_tempDir, "old-jdk");
+        File.WriteAllText(ConfigPath,
+            "{\"Jenkins\":{\"Agent\":{\"JavaPath\":" + JsonSerializer.Serialize(stale) + "}}}");
+        var secretFile = Path.Combine(_tempDir, "secret.tmp");
+        File.WriteAllText(secretFile, "file-secret");
+
+        // No --java-path, so the prompt for it reads the console: give it Enter (keep the stored value) via the
+        // console, then "r" and "-" via the injected reader once the stored path fails verification.
+        var originalIn = Console.In;
+        Console.SetIn(new StringReader("\n"));
+        try
+        {
+            var (code, _, _) = Run(
+                ["--url", _reachableUrl, "--mode", "Unprotected", "--agent-name", "n", "--secret-file", secretFile],
+                TestVerifiers.RealTcp(), new StringReader("r\n-\n"));
+
+            code.Should().Be(0);
+        }
+        finally
+        {
+            Console.SetIn(originalIn);
+        }
+
+        Jenkins().GetProperty("Agent").GetProperty("JavaPath").GetString().Should().BeEmpty();
     }
 
     [Fact]
