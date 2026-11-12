@@ -133,7 +133,9 @@ internal static class InteractiveConfigPrompts
                 case VerificationChoice.Retry:
                     output.Write($"Java path [{javaPath}] (Enter keeps it, - clears it to use JAVA_HOME): ");
                     var answer = input.ReadLine()?.Trim();
-                    javaPath = answer == "-" ? null : KeepIfBlank(answer, javaPath!);
+                    // Cleared is "", not null: the full write keeps an existing Agent:JavaPath when given null,
+                    // which would quietly put back the very path that just failed.
+                    javaPath = answer == "-" ? "" : KeepIfBlank(answer, javaPath!);
                     break;
                 case VerificationChoice.Skip:
                     output.WriteLine($"Verification of {OptionName(failure.Value)} skipped; it will be written unchecked.");
