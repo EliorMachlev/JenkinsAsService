@@ -75,8 +75,9 @@ public class InstallerCommandArgumentTests
     [Fact]
     public void GrantDataAccess_rejects_an_unknown_argument()
     {
+        // Reported by position, not echoed: an unrecognised argument may be a misplaced value.
         GrantDataAccessCommand.ParseArguments(["--account", "svc", "--wat"])
-            .Error.Should().Contain("--wat");
+            .Error.Should().Contain("argument 2").And.NotContain("--wat");
     }
 
     [Fact]

@@ -310,9 +310,9 @@ void Kill();                          // whole process tree; never throws</code>
         </thead>
         <tbody>
           <tr>
-            <td><code>ProcessMitigations</code></td>
-            <td><code>Apply(warn?)</code></td>
-            <td>Sets Win32 mitigation policies on the service process at the level given by <code>Hardening:ProcessMitigations</code>: no remote, low-integrity or non-System32 DLL loads, and legacy extension-point injection disabled. <strong>These policies are inherited by the Java child and everything the build spawns beneath it</strong>, which is what makes the level configurable &mdash; see <a href="configuration.html#process-mitigations">Process mitigations</a>. Best-effort &mdash; never blocks startup.</td>
+            <td><code>ProcessMitigations</code> + <code>MitigationMask</code></td>
+            <td><code>Resolve(configured, warn?)</code>, <code>Apply(mask, warn?)</code></td>
+            <td><code>Resolve</code> turns <code>Hardening:ProcessMitigations</code> into a <code>MitigationMask</code> (three digits: no remote, no low-integrity, prefer System32 DLL loads; a legacy level name is migrated with a warning, anything else malformed falls back to all three). <code>Apply</code> sets the image-load bits the mask selects, plus legacy extension-point injection disabled unconditionally. <code>default(MitigationMask)</code> is all three, so an uninitialised mask fails closed. <strong>These policies are inherited by the Java child and everything the build spawns beneath it</strong>, which is what makes them configurable &mdash; see <a href="configuration.html#process-mitigations">Process mitigations</a>. Best-effort &mdash; never blocks startup.</td>
           </tr>
           <tr>
             <td><code>EnvironmentSanitizer</code></td>

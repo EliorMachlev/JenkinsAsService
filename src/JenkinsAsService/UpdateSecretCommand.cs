@@ -6,50 +6,120 @@ public static class UpdateSecretCommand
 {
     internal const string Name = "update-secret";
 
-    private const string UsageText = """
+    // One row per option: the single place a name, its value parser and its target field are stated. The
+    // aliases below are derived from these names, so an option cannot be parseable yet have no short form.
+    // Raw is null when the value was missing (already reported by Next) and empty when the installer field
+    // was untouched; ParseOrFail is the one statement of what each means.
+    private delegate void ValueHandler(ParseState state, string option, string? raw);
+
+    // mitigations is first, deliberately: allocation order decides who gets the shorter alias (see
+    // CliAliases), and this puts --m on mitigations ahead of --mode and --method.
+    private static readonly (string Name, ValueHandler Apply)[] ValueOptions =
+    [
+        ("--mitigations", (s, o, v) => s.Mitigations = ParseOrFail(s, o, v, ParseMitigations)),
+        ("--secret", (s, _, v) => s.SecretArg = v),
+        ("--secret-file", (s, _, v) => s.SecretFile = v),
+        ("--secret-env", (s, _, v) => s.SecretEnv = v),
+        ("--url", (s, _, v) => s.Url = v),
+        ("--mode", (s, o, v) => s.Mode = ParseOrFail(s, o, v, ParseMode)),
+        ("--dpapi-scope", (s, o, v) => s.DpapiScope = ParseOrFail(s, o, v, ParseDpapiScope)),
+        ("--thumbprint", (s, _, v) => s.Thumbprint = v),
+        ("--service-account", (s, _, v) => s.ServiceAccount = v),
+        ("--set-data-dir", (s, _, v) => s.SetDataDir = SanitizePathArgument(v)),
+        ("--agent-name", (s, _, v) => s.AgentName = v),
+        ("--java-path", (s, _, v) => s.JavaPath = SanitizePathArgument(v)),
+        ("--username", (s, _, v) => s.Username = v),
+        ("--method", (s, o, v) => s.Method = ParseOrFail(s, o, v, ParseMethod)),
+        ("--via-file", (s, o, v) => s.ViaFile = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--custom-args", (s, _, v) => s.CustomArgs = v),
+        ("--sanitize-env", (s, o, v) => s.SanitizeEnv = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--allowed-env", (s, _, v) => s.AllowedEnv = v),
+        ("--debug", (s, o, v) => s.DebugMode = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--compact-log", (s, o, v) => s.CompactLog = ParseOrFail(s, o, v, ParseBool, TrueOrFalse)),
+        ("--retained-logs", (s, o, v) => s.RetainedLogs = ParseOrFail(s, o, v, ParseInt, WholeNumber)),
+        ("--max-retries", (s, o, v) => s.MaxRetries = ParseOrFail(s, o, v, ParseInt, WholeNumber)),
+    ];
+
+    private static readonly (string Name, Action<ParseState> Apply)[] FlagOptions =
+    [
+        ("--silent", s => s.Silent = true),
+        ("--impersonate", s => s.Impersonate = true),
+        ("--merge", s => s.Merge = true),
+        ("--upgrade", s => s.Upgrade = true),
+    ];
+
+    // The options whose value may legitimately read like a help flag: free-form text. For every other value
+    // option a help token in the value position is not a value (a URL, a mode, a path is never "--help"), so
+    // `--url --help` still prints usage instead of writing "--help" as the URL and reporting success.
+    private static readonly HashSet<string> FreeFormValueOptions = new(["--custom-args", "--secret"], StringComparer.Ordinal);
+
+    private static readonly Dictionary<string, ValueHandler> ValueHandlers =
+        ValueOptions.ToDictionary(o => o.Name, o => o.Apply, StringComparer.Ordinal);
+
+    private static readonly Dictionary<string, Action<ParseState>> FlagHandlers =
+        FlagOptions.ToDictionary(o => o.Name, o => o.Apply, StringComparer.Ordinal);
+
+    // The secret inputs keep their full names only. Three options sharing one prefix made the short forms
+    // (--s / --se / --sec) easy to swap, and the one carrying a plaintext secret is the last place to guess.
+    private static bool IsSecretOption(string name) => name.StartsWith("--secret", StringComparison.Ordinal);
+
+    // Long option -> short alias (--m for --mitigations), allocated in table order. The --secret* options
+    // are reserved but get no alias - see CliAliases.
+    internal static readonly CliAliases Aliases = new(
+        ValueOptions.Select(o => o.Name).Concat(FlagOptions.Select(o => o.Name)).Append("--help")
+            .Where(name => !IsSecretOption(name)),
+        ValueOptions.Select(o => o.Name).Where(IsSecretOption));
+
+    internal const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
 
         Options:
-          --secret <value>        The Jenkins agent secret (plaintext)
-          --secret-file <path>    Read secret from file (file is deleted after reading)
-          --secret-env <var>      Read secret from named environment variable
-          --url <value>           Jenkins controller address (include port)
-          --mode <value>          Protection mode: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected
-                                  Tpm encrypts with a non-exportable TPM-resident key (pass --service-account
-                                  so the service can decrypt at runtime).
-          --dpapi-scope <value>   DPAPI scope when --mode Dpapi: Machine (default) or User.
-                                  User-scope requires writing as the service account (see --impersonate).
-          --thumbprint <value>    SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
-          --service-account <acct> Service account (e.g. 'NT SERVICE\Jenkins') granted read on the
-                                  written config; appsettings.json ACL is hardened to deny Users.
-          --set-data-dir <path>   Only set Jenkins:DataDirectory in appsettings.json, then exit (used
-                                  by the installer; the writable data dir, separate from the binary).
-          --agent-name <value>    Agent node label (default: hostname)
-          --java-path <value>     Java installation directory (default: JAVA_HOME)
-          --impersonate           Run Credential Manager write as a different user account.
-                                  Interactive: prompts for username and password.
-                                  Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
-          --username <value>      Windows account for impersonation (DOMAIN\account)
-          --silent                Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
-          --merge                 Merge only the optional fields below into an existing appsettings.json
-                                  (no secret written). Used by the installer's advanced custom actions.
-          --method <value>        Connection transport: Auto, WebSocket, Https
-          --via-file <bool>       Pass secret to agent via file (true/false)
-          --custom-args <value>   Extra java.exe arguments
-          --sanitize-env <bool>   Sanitize the agent child environment (true/false)
-          --allowed-env <value>   Extra env var names to pass through (semicolon/comma separated)
-          --mitigations <value>   Process mitigations applied to the service, and inherited by the build:
-                                  Full (default), AllowNetworkImages (permit DLL loads from UNC/mapped
-                                  drives), or Off
-          --upgrade               Reconcile appsettings.json to the current schema on MSI upgrade:
-                                  add new settings at their defaults, prune settings the schema no longer
-                                  defines, and preserve existing values and the secret. If no secret is
-                                  present, falls back to a full write from --secret/--url/--mode.
-          --debug <bool>          Verbose Java agent logging (true/false)
-          --compact-log <bool>    Compact JSON log format (true/false)
-          --retained-logs <int>   Number of rolled log files to keep
-          --max-retries <int>     Max auto-recovery attempts (0 = infinite)
-          --help                  Show this help
+          --secret <value>                        The Jenkins agent secret (plaintext)
+          --secret-file <path>                    Read secret from file (file is deleted after reading)
+          --secret-env <var>                      Read secret from named environment variable
+                                                  The three secret options have no short alias, deliberately.
+          --u, --url <value>                      Jenkins controller address (include port)
+          --mo, --mode <value>                    Protection mode: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected
+                                                  Tpm encrypts with a non-exportable TPM-resident key (pass --service-account
+                                                  so the service can decrypt at runtime).
+          --d, --dpapi-scope <value>              DPAPI scope when --mode Dpapi: Machine (default) or User.
+                                                  User-scope requires writing as the service account (see --impersonate).
+          --t, --thumbprint <value>               SHA-256 thumbprint of the Jenkins controller cert to pin (jar download)
+          --ser, --service-account <acct>         Service account (e.g. 'NT SERVICE\Jenkins') granted read on the
+                                                  written config; appsettings.json ACL is hardened to deny Users.
+          --set, --set-data-dir <path>            Only set Jenkins:DataDirectory in appsettings.json, then exit (used
+                                                  by the installer; the writable data dir, separate from the binary).
+          --a, --agent-name <value>               Agent node label (default: hostname)
+          --j, --java-path <value>                Java installation directory (default: JAVA_HOME)
+          --i, --impersonate                      Run Credential Manager write as a different user account.
+                                                  Interactive: prompts for username and password.
+                                                  Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
+          --us, --username <value>                Windows account for impersonation (DOMAIN\account)
+          --si, --silent                          Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
+          --mer, --merge                          Merge only the optional fields below into an existing appsettings.json
+                                                  (no secret written). Used by the installer's advanced custom actions.
+                                                  Without --merge, the optional fields below are applied by the full
+                                                  write too (silent or interactive). --set-data-dir, and --upgrade when
+                                                  it preserves an existing secret, change nothing else.
+          --me, --method <value>                  Connection transport: Auto, WebSocket, Https
+          --v, --via-file <bool>                  Pass secret to agent via file (true/false)
+          --c, --custom-args <value>              Extra java.exe arguments
+          --sa, --sanitize-env <bool>             Sanitize the agent child environment (true/false)
+          --al, --allowed-env <value>             Extra env var names to pass through (semicolon/comma separated)
+          --m, --mitigations <digits>             Image-load mitigations applied to the service, and inherited by the
+                                                  build, as three 0/1 digits: no-remote, no-low-label, prefer-System32.
+                                                  "111" (default) applies all three; "011" drops only the network-DLL
+                                                  block (a build loading tools or DLLs from a share); "101" drops only
+                                                  the low-integrity block; "000" applies none.
+          --up, --upgrade                         Reconcile appsettings.json to the current schema on MSI upgrade:
+                                                  add new settings at their defaults, prune settings the schema no longer
+                                                  defines, and preserve existing values and the secret. If no secret is
+                                                  present, falls back to a full write from --secret/--url/--mode.
+          --de, --debug <bool>                    Verbose Java agent logging (true/false)
+          --co, --compact-log <bool>              Compact JSON log format (true/false)
+          --r, --retained-logs <int>              Number of rolled log files to keep
+          --ma, --max-retries <int>               Max auto-recovery attempts (0 = infinite)
+          --h, --help                             Show this help
         """;
 
     // Env var used to pass impersonation password in silent mode (avoids command-line exposure)
@@ -66,7 +136,8 @@ public static class UpdateSecretCommand
     private const string EventLogName = EventLogSourceInstaller.DefaultLogName;
 
     // Mutable accumulator used by ParseArgs; returned directly to avoid a 10-parameter constructor.
-    private sealed class ParseState
+    // Internal so tests can assert what was parsed rather than how the argument array looks afterwards.
+    internal sealed class ParseState
     {
         public string? SecretArg;
         public string? SecretFile;
@@ -89,7 +160,7 @@ public static class UpdateSecretCommand
         public string? CustomArgs;
         public bool? SanitizeEnv;
         public string? AllowedEnv;
-        public MitigationLevel? Mitigations;
+        public MitigationMask? Mitigations;
         public bool? DebugMode;
         public bool? CompactLog;
         public int? RetainedLogs;
@@ -111,7 +182,7 @@ public static class UpdateSecretCommand
     {
         basePath ??= AppContext.BaseDirectory;
 
-        if (CliCommands.WantsHelp(args))
+        if (CliCommands.WantsHelp(args, arg => FreeFormValueOptions.Contains(Aliases.Resolve(arg))))
         {
             Console.WriteLine(UsageText);
             return 0;
@@ -135,20 +206,7 @@ public static class UpdateSecretCommand
         // Installer-only path: surgically merge optional fields into an already-written config, then exit.
         if (parsed.Merge)
         {
-            SecretWriter.MergeConfig(basePath, new ConfigMergeFields
-            {
-                Method = parsed.Method,
-                DpapiScope = parsed.DpapiScope,
-                ViaFile = parsed.ViaFile,
-                CustomArguments = parsed.CustomArgs,
-                SanitizeEnvironment = parsed.SanitizeEnv,
-                AllowedEnvironmentVariables = parsed.AllowedEnv,
-                ProcessMitigations = parsed.Mitigations,
-                DebugMode = parsed.DebugMode,
-                CompactLog = parsed.CompactLog,
-                RetainedLogs = parsed.RetainedLogs,
-                MaxRetries = parsed.MaxRetries
-            });
+            SecretWriter.MergeConfig(basePath, OptionalFields(parsed));
             Console.WriteLine("Optional configuration merged into appsettings.json.");
             return 0;
         }
@@ -165,16 +223,39 @@ public static class UpdateSecretCommand
             : RunInteractive(basePath, parsed);
     }
 
+    // The optional fields as one value, for --merge AND the full write. Built in one place so an option
+    // cannot be honoured by one path and parsed-then-dropped by the other, which is what --mitigations did.
+    private static ConfigMergeFields OptionalFields(ParseState s) => new()
+    {
+        Method = s.Method,
+        DpapiScope = s.DpapiScope,
+        ViaFile = s.ViaFile,
+        CustomArguments = s.CustomArgs,
+        SanitizeEnvironment = s.SanitizeEnv,
+        AllowedEnvironmentVariables = s.AllowedEnv,
+        ProcessMitigations = s.Mitigations,
+        DebugMode = s.DebugMode,
+        CompactLog = s.CompactLog,
+        RetainedLogs = s.RetainedLogs,
+        MaxRetries = s.MaxRetries
+    };
+
     // ─── Argument parsing ────────────────────────────────────────────────────
 
-    private static ParseState? ParseArgs(string[] args)
+    internal static ParseState? ParseArgs(string[] args)
     {
         var state = new ParseState();
         for (int i = 1; i < args.Length; i++)
         {
-            if (!TryApplyValueArg(args, ref i, state) && !TryApplyFlagArg(args[i], state))
+            // Resolved here, at an option position only: a value that happens to read "--m" is
+            // consumed by Next() and never reaches this line. Resolved into a local, never written back:
+            // the array belongs to the caller.
+            var option = Aliases.Resolve(args[i]);
+            if (!TryApplyValueArg(option, args, ref i, state) && !TryApplyFlagArg(option, state))
             {
-                Console.Error.WriteLine($"Unknown option: {args[i]}");
+                // The token is not echoed: an unrecognised argument is as likely to be a misplaced value
+                // (a secret passed without its option) as a misspelled option.
+                Console.Error.WriteLine($"Error: argument {i} is not a recognised option.");
                 Console.Error.WriteLine(UsageText);
                 return null;
             }
@@ -187,105 +268,28 @@ public static class UpdateSecretCommand
         return state.Failed ? null : state;
     }
 
-    private static bool TryApplyValueArg(string[] args, ref int i, ParseState state)
+    private static bool TryApplyValueArg(string option, string[] args, ref int i, ParseState state)
     {
-        // Read ONCE, and reused for both the switch and the error message. Writing the literal twice per
-        // case is how "--debug" ends up reporting itself as "--method": it compiles, and the only symptom
-        // is an operator editing the wrong line of their install script. Next() advances i, which is why
-        // this is captured before the switch rather than read again inside it.
-        var option = args[i];
-        switch (option)
+        // The resolved name is passed in, read ONCE before Next() advances i: it is what the error message
+        // must report, and re-reading it per message is how "--debug" ends up reporting itself as "--method".
+        if (!ValueHandlers.TryGetValue(option, out var apply))
         {
-            case "--secret":
-                state.SecretArg = Next(args, ref i, state);
-                return true;
-            case "--secret-file":
-                state.SecretFile = Next(args, ref i, state);
-                return true;
-            case "--secret-env":
-                state.SecretEnv = Next(args, ref i, state);
-                return true;
-            case "--url":
-                state.Url = Next(args, ref i, state);
-                return true;
-            case "--mode":
-                state.Mode = ParseOrFail(state, option, Next(args, ref i, state), ParseMode);
-                return true;
-            case "--dpapi-scope":
-                state.DpapiScope = ParseOrFail(state, option, Next(args, ref i, state), ParseDpapiScope);
-                return true;
-            case "--thumbprint":
-                state.Thumbprint = Next(args, ref i, state);
-                return true;
-            case "--service-account":
-                state.ServiceAccount = Next(args, ref i, state);
-                return true;
-            case "--set-data-dir":
-                state.SetDataDir = SanitizePathArgument(Next(args, ref i, state));
-                return true;
-            case "--agent-name":
-                state.AgentName = Next(args, ref i, state);
-                return true;
-            case "--java-path":
-                state.JavaPath = SanitizePathArgument(Next(args, ref i, state));
-                return true;
-            case "--username":
-                state.Username = Next(args, ref i, state);
-                return true;
-            case "--method":
-                state.Method = ParseOrFail(state, option, Next(args, ref i, state), ParseMethod);
-                return true;
-            case "--via-file":
-                state.ViaFile = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--custom-args":
-                state.CustomArgs = Next(args, ref i, state);
-                return true;
-            case "--sanitize-env":
-                state.SanitizeEnv = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--allowed-env":
-                state.AllowedEnv = Next(args, ref i, state);
-                return true;
-            case "--mitigations":
-                state.Mitigations = ParseOrFail(state, option, Next(args, ref i, state), ParseMitigationLevel);
-                return true;
-            case "--debug":
-                state.DebugMode = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--compact-log":
-                state.CompactLog = ParseOrFail(state, option, Next(args, ref i, state), ParseBool, TrueOrFalse);
-                return true;
-            case "--retained-logs":
-                state.RetainedLogs = ParseOrFail(state, option, Next(args, ref i, state), ParseInt, WholeNumber);
-                return true;
-            case "--max-retries":
-                state.MaxRetries = ParseOrFail(state, option, Next(args, ref i, state), ParseInt, WholeNumber);
-                return true;
-            default:
-                return false;
+            return false;
         }
+
+        apply(state, option, Next(option, args, ref i, state));
+        return true;
     }
 
     private static bool TryApplyFlagArg(string arg, ParseState state)
     {
-        switch (arg)
+        if (!FlagHandlers.TryGetValue(arg, out var apply))
         {
-            case "--silent":
-                state.Silent = true;
-                return true;
-            case "--impersonate":
-                state.Impersonate = true;
-                return true;
-            case "--merge":
-                state.Merge = true;
-                return true;
-            case "--upgrade":
-                state.Upgrade = true;
-                return true;
-            default:
-                return false;
+            return false;
         }
+
+        apply(state);
+        return true;
     }
 
     // ─── Silent mode ─────────────────────────────────────────────────────────
@@ -322,7 +326,7 @@ public static class UpdateSecretCommand
         }
 
         SecretWriter.WriteConfig(basePath, secret, args.Mode.Value, args.Url, args.AgentName, args.JavaPath,
-            args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
+            args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount, OptionalFields(args));
         return ReportConfigWritten(basePath, args.Mode.Value);
     }
 
@@ -345,7 +349,7 @@ public static class UpdateSecretCommand
         {
             ImpersonationRunner.Run(args.Username, password, () =>
                 SecretWriter.WriteConfig(basePath, secret, args.Mode!.Value, args.Url!, args.AgentName, args.JavaPath,
-                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
+                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount, OptionalFields(args)));
         }
         catch (InvalidOperationException ex)
         {
@@ -484,12 +488,12 @@ public static class UpdateSecretCommand
 
                 ImpersonationRunner.Run(credentials.Value.Username, credentials.Value.Password, () =>
                     SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
-                        args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount));
+                        args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount, OptionalFields(args)));
             }
             else
             {
                 SecretWriter.WriteConfig(basePath, secret, selectedMode, server, agentName, javaPath,
-                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount);
+                    args.DpapiScope ?? DpapiScope.Machine, args.Thumbprint, args.ServiceAccount, OptionalFields(args));
             }
         }
         catch (InvalidOperationException ex)
@@ -559,15 +563,28 @@ public static class UpdateSecretCommand
             return secretArg;
         }
 
+        // None of the messages below names the file or the variable. The rule for invalid input is to say
+        // which option failed and why, never to echo what was given - and here what was given is a pointer
+        // to the secret. ex.Message is left out for the same reason: IO exceptions embed the path.
         if (secretFile is not null)
         {
             if (!File.Exists(secretFile))
             {
-                Console.Error.WriteLine($"Error: secret file not found: {secretFile}");
+                Console.Error.WriteLine("Error: --secret-file: the file does not exist.");
                 return null;
             }
 
-            var secret = File.ReadAllText(secretFile, System.Text.Encoding.UTF8).Trim();
+            string secret;
+            try
+            {
+                secret = File.ReadAllText(secretFile, System.Text.Encoding.UTF8).Trim();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine($"Error: --secret-file: the file could not be read ({ex.GetType().Name}).");
+                return null;
+            }
+
             try
             {
                 File.Delete(secretFile);
@@ -577,7 +594,8 @@ public static class UpdateSecretCommand
                 // Best-effort delete — the operation continues, but a plaintext secret is now left on disk,
                 // so surface it: the caller should remove the file manually.
                 Console.Error.WriteLine(
-                    $"Warning: could not delete secret file '{secretFile}' ({ex.Message}). Delete it manually.");
+                    $"Warning: --secret-file: the file was read but could not be deleted ({ex.GetType().Name}). "
+                    + "Delete it manually.");
             }
 
             return secret;
@@ -588,7 +606,7 @@ public static class UpdateSecretCommand
             var secret = Environment.GetEnvironmentVariable(secretEnv);
             if (string.IsNullOrWhiteSpace(secret))
             {
-                Console.Error.WriteLine($"Error: environment variable '{secretEnv}' is not set or empty.");
+                Console.Error.WriteLine("Error: --secret-env: the named environment variable is not set or empty.");
                 return null;
             }
 
@@ -598,14 +616,14 @@ public static class UpdateSecretCommand
         return null;
     }
 
-    private static string? Next(string[] args, ref int i, ParseState state)
+    private static string? Next(string option, string[] args, ref int i, ParseState state)
     {
         if (++i < args.Length)
         {
             return args[i];
         }
 
-        Console.Error.WriteLine($"Error: {args[i - 1]} requires a value.");
+        Console.Error.WriteLine($"Error: {option} requires a value.");
         state.Failed = true;
         return null;
     }
@@ -639,7 +657,8 @@ public static class UpdateSecretCommand
 
         if (expected is not null)
         {
-            Console.Error.WriteLine($"Error: {option} expects {expected}, got '{raw}'.");
+            // The rejected value is not echoed: name the option and what it accepts, nothing more.
+            Console.Error.WriteLine($"Error: {option} expects {expected}.");
         }
 
         state.Failed = true;
@@ -666,7 +685,7 @@ public static class UpdateSecretCommand
             return parsed;
         }
 
-        Console.Error.WriteLine($"Error: unknown {option} '{value}'. Valid: {valid}");
+        Console.Error.WriteLine($"Error: --{option}: unrecognised value. Valid: {valid}");
         return null;
     }
 
@@ -677,8 +696,29 @@ public static class UpdateSecretCommand
     internal static DpapiScope? ParseDpapiScope(string? value) =>
         ParseEnumOption<DpapiScope>(value, "dpapi-scope", "Machine, User");
 
-    internal static MitigationLevel? ParseMitigationLevel(string? value) =>
-        ParseEnumOption<MitigationLevel>(value, "mitigations", "Full, AllowNetworkImages, Off");
+    /// <summary>
+    /// The three-digit mitigation mask. Empty is "unset" and silent, per <see cref="ParseOrFail"/>; a
+    /// non-empty value that is not three 0/1 digits names the format rather than being ignored.
+    /// </summary>
+    internal static MitigationMask? ParseMitigations(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (MitigationMask.TryParse(value, out var mask))
+        {
+            return mask;
+        }
+
+        // Level names from the previous build (Full / AllowNetworkImages / Off) are deliberately NOT accepted
+        // here: they are migrated when found in a stored config, but a new command line states digits.
+        Console.Error.WriteLine(
+            "Error: --mitigations: expected three characters, each 0 or 1. Valid: digits in the order "
+            + "no-remote, no-low-label, prefer-System32, e.g. 111, 011 or 101.");
+        return null;
+    }
 
     internal static ConnectionMethod? ParseMethod(string? value) =>
         ParseEnumOption<ConnectionMethod>(value, "method", "Auto, WebSocket, Https");

@@ -400,18 +400,21 @@ public class UpdateSecretCommandTests : IDisposable
     }
 
     [Theory]
-    [InlineData("Full", MitigationLevel.Full)]
-    [InlineData("allownetworkimages", MitigationLevel.AllowNetworkImages)]
-    [InlineData("OFF", MitigationLevel.Off)]
-    public void ParseMitigationLevel_accepts_every_level_case_insensitively(string value, MitigationLevel expected) =>
-        UpdateSecretCommand.ParseMitigationLevel(value).Should().Be(expected);
+    [InlineData("111")]
+    [InlineData("011")]
+    [InlineData("101")]
+    [InlineData("000")]
+    public void ParseMitigations_accepts_three_binary_digits(string value) =>
+        UpdateSecretCommand.ParseMitigations(value)?.ToString().Should().Be(value);
 
     [Theory]
     [InlineData("true")]
-    [InlineData("None")]
-    [InlineData("AllowNetworkImage")]
-    public void ParseMitigationLevel_rejects_an_unknown_level(string value) =>
-        UpdateSecretCommand.ParseMitigationLevel(value).Should().BeNull();
+    [InlineData("Full")]
+    [InlineData("11")]
+    [InlineData("1112")]
+    public void ParseMitigations_rejects_a_malformed_value(string value) =>
+        CaptureStderr(() => UpdateSecretCommand.ParseMitigations(value).Should().BeNull())
+            .Should().Contain("--mitigations").And.Contain("each 0 or 1").And.NotContain($"'{value}'");
 
     // An unset installer property reaches the custom action as "" - every [PROPERTY] expansion is quoted
     // for exactly that reason - so empty must mean "leave it alone" and must NOT write a parse error into
@@ -422,7 +425,7 @@ public class UpdateSecretCommandTests : IDisposable
         { "mode", v => UpdateSecretCommand.ParseMode(v) },
         { "dpapi-scope", v => UpdateSecretCommand.ParseDpapiScope(v) },
         { "method", v => UpdateSecretCommand.ParseMethod(v) },
-        { "mitigations", v => UpdateSecretCommand.ParseMitigationLevel(v) }
+        { "mitigations", v => UpdateSecretCommand.ParseMitigations(v) }
     };
 
     // Console.Error is process-wide, so every capture must restore it even when the assertion inside
@@ -532,8 +535,205 @@ public class UpdateSecretCommandTests : IDisposable
             _tempDir).Should().Be(1));
 
         // Parsing deliberately continues past the first rejection: an operator fixing a scripted install
-        // one message per run is the reason this is worth asserting.
-        stderr.Should().Contain("Pigeon");
+        // one message per run is the reason this is worth asserting. Each is reported by option name; the
+        // rejected values themselves are never echoed.
+        stderr.Should().Contain("--method");
         stderr.Should().Contain("--max-retries");
+        stderr.Should().NotContain("Pigeon").And.NotContain("lots");
+    }
+
+    // ─── Invalid input is named, never echoed ─────────────────────────────────
+    //
+    // Requirement: an error or warning about an invalid value says which option failed and why, and never
+    // prints the value. Asserted with a sentinel on every path that rejects a user-supplied value, across
+    // stdout AND stderr, because a value that is only ever printed to the "other" stream still leaks.
+
+    private const string Sentinel = "SENTINEL-9f3a7c";
+
+    public static TheoryData<string[]> SentinelFailures => new()
+    {
+        // Rejected parser values (the shared ParseOrFail / ParseEnumOption / ParseMitigations messages).
+        new[] { "--silent", "--merge", "--mode", Sentinel },
+        new[] { "--silent", "--merge", "--dpapi-scope", Sentinel },
+        new[] { "--silent", "--merge", "--method", Sentinel },
+        new[] { "--silent", "--merge", "--mitigations", Sentinel },
+        new[] { "--silent", "--merge", "--via-file", Sentinel },
+        new[] { "--silent", "--merge", "--max-retries", Sentinel },
+        // An unrecognised argument may be a misplaced value - a secret given without its option.
+        new[] { "--silent", Sentinel },
+        // Secret-source pointers: neither the variable name nor the file path is echoed.
+        new[] { "--silent", "--secret-env", Sentinel, "--url", "https://jenkins:8443", "--mode", "Unprotected" },
+        new[] { "--silent", "--secret-file", Path.Combine(Path.GetTempPath(), Sentinel + ".tmp"),
+                "--url", "https://jenkins:8443", "--mode", "Unprotected" },
+    };
+
+    [Theory]
+    [MemberData(nameof(SentinelFailures))]
+    public void A_rejected_value_is_never_echoed(string[] options)
+    {
+        Environment.SetEnvironmentVariable(Sentinel, null);
+
+        var (code, stdout, stderr) = CaptureBoth(() =>
+            UpdateSecretCommand.Run([UpdateSecretCommand.Name, .. options], _tempDir));
+
+        code.Should().Be(1);
+        stderr.Should().NotBeEmpty("the failure must still be reported");
+        stderr.Should().NotContain(Sentinel);
+        stdout.Should().NotContain(Sentinel);
+    }
+
+    [Fact]
+    public void The_secret_env_message_names_the_option_and_the_reason()
+    {
+        Environment.SetEnvironmentVariable(Sentinel, null);
+
+        var (_, _, stderr) = CaptureBoth(() => UpdateSecretCommand.Run(
+            [UpdateSecretCommand.Name, "--silent", "--secret-env", Sentinel,
+             "--url", "https://jenkins:8443", "--mode", "Unprotected"], _tempDir));
+
+        stderr.Should().Contain("--secret-env").And.Contain("not set or empty");
+    }
+
+    [Fact]
+    public void Other_commands_do_not_echo_a_rejected_argument()
+    {
+        ConfigureRecoveryCommand.ParseArguments([ConfigureRecoveryCommand.Name, Sentinel]).Error
+            .Should().NotBeNull().And.NotContain(Sentinel);
+        GrantDataAccessCommand.ParseArguments([GrantDataAccessCommand.Name, "--account", "svc", Sentinel]).Error
+            .Should().NotBeNull().And.NotContain(Sentinel);
+    }
+
+    // ─── Legacy level names are a hard failure on the command line ────────────
+
+    [Theory]
+    [InlineData("Full")]
+    [InlineData("AllowNetworkImages")]
+    [InlineData("Off")]
+    public void A_legacy_level_name_on_the_command_line_is_rejected(string value)
+    {
+        // Migrated when READ from a stored config; a new command line (or msiexec JENKINS_MITIGATIONS) must
+        // state the digits. Rejection fails the custom action instead of installing a guess.
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", "--mitigations", value], _tempDir);
+
+        code.Should().Be(1);
+        File.Exists(Path.Combine(_tempDir, "appsettings.json")).Should().BeFalse();
+    }
+
+    // ─── --mitigations (and the other optional fields) on a full write ─────────
+
+    [Fact]
+    public void Silent_full_write_applies_mitigations()
+    {
+        // Used to be parsed and then silently dropped outside --merge.
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--secret", "s", "--url", "https://jenkins:8443",
+             "--mode", "Unprotected", "--mitigations", "011"],
+            _tempDir);
+
+        code.Should().Be(0);
+        ReadConfig().RootElement.GetProperty("Jenkins").GetProperty("Hardening")
+            .GetProperty("ProcessMitigations").GetString().Should().Be("011");
+    }
+
+    [Fact]
+    public void Silent_full_write_applies_the_other_optional_fields_too()
+    {
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--secret", "s", "--url", "https://jenkins:8443",
+             "--mode", "Unprotected", "--method", "WebSocket", "--max-retries", "4", "--debug", "1"],
+            _tempDir);
+
+        code.Should().Be(0);
+        var j = ReadConfig().RootElement.GetProperty("Jenkins");
+        j.GetProperty("Connection").GetProperty("Method").GetString().Should().Be("WebSocket");
+        j.GetProperty("Recovery").GetProperty("MaxRetries").GetInt32().Should().Be(4);
+        j.GetProperty("Logging").GetProperty("DebugMode").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public void Silent_full_write_without_mitigations_keeps_the_existing_value()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
+            "{\"Jenkins\":{\"Hardening\":{\"ProcessMitigations\":\"101\"}}}");
+
+        var code = UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--secret", "s", "--url", "https://jenkins:8443", "--mode", "Unprotected"],
+            _tempDir);
+
+        code.Should().Be(0);
+        ReadConfig().RootElement.GetProperty("Jenkins").GetProperty("Hardening")
+            .GetProperty("ProcessMitigations").GetString().Should().Be("101");
+    }
+
+    [Fact]
+    public void A_value_that_reads_dash_dash_h_is_not_a_help_request()
+    {
+        // --custom-args consumes "--h": it is the value, not a request for usage. Before, WantsHelp scanned
+        // every argument, so this printed usage and exited 0 without updating anything.
+        UpdateSecretCommand.ParseArgs(["update-secret", "--merge", "--custom-args", "--h"])!
+            .CustomArgs.Should().Be("--h");
+
+        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", "--custom-args", "--h"], _tempDir));
+
+        stdout.Should().NotContain(UpdateSecretCommand.UsageText);
+    }
+
+    [Theory]
+    [InlineData("--url", "--help")]
+    [InlineData("--url", "-h")]
+    [InlineData("--mode", "--h")]
+    public void A_help_token_as_the_value_of_a_non_free_form_option_is_still_help(string option, string token)
+    {
+        // A URL or a mode is never "--help": writing it as the value and reporting success was the regression.
+        var (code, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", option, token], _tempDir));
+
+        code.Should().Be(0);
+        stdout.Should().Contain(UpdateSecretCommand.UsageText);
+    }
+
+    [Fact]
+    public void A_help_token_as_a_secret_is_a_value_not_help()
+    {
+        UpdateSecretCommand.ParseArgs(["update-secret", "--secret", "--h"])!.SecretArg.Should().Be("--h");
+
+        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", "--secret", "--h"], _tempDir));
+
+        stdout.Should().NotContain(UpdateSecretCommand.UsageText);
+    }
+
+    [Fact]
+    public void An_alias_option_consumes_its_value_for_help_detection_too()
+    {
+        // --cu is the alias of --custom-args, resolved the same way the parser resolves it.
+        var alias = UpdateSecretCommand.Aliases["--custom-args"];
+
+        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", alias, "--h"], _tempDir));
+
+        stdout.Should().NotContain(UpdateSecretCommand.UsageText);
+    }
+
+    private static (int Code, string Stdout, string Stderr) CaptureBoth(Func<int> action)
+    {
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+        Console.SetOut(stdout);
+        Console.SetError(stderr);
+        try
+        {
+            var code = action();
+            return (code, stdout.ToString(), stderr.ToString());
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.SetError(originalError);
+        }
     }
 }

@@ -71,7 +71,26 @@ public class ValidateSettingsTests
         var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*not a valid absolute URL*");
+            .WithMessage("*not a valid absolute URL*")
+            .Which.Message.Should().NotContain("not-a-url", "invalid input is named, never echoed");
+    }
+
+    [Fact]
+    public void URL_errors_do_not_echo_the_configured_value()
+    {
+        // A URL can carry user-info credentials; the validator names the setting, not its value.
+        const string sentinel = "https://SENTINEL-c4f1e2@jenkins.example.com";
+        var settings = new ServiceSettings
+        {
+            Connection = new() { Url = sentinel },
+            Secret = new() { Value = "secret" }
+        };
+
+        var act = () => ServiceSettingsValidator.Validate(settings);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*explicit port*")
+            .Which.Message.Should().NotContain("SENTINEL-c4f1e2");
     }
 
     [Fact]

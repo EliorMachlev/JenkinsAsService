@@ -23,7 +23,7 @@
     <?define JasDefaultDpapiScope = "Machine" ?>
     <?define JasDefaultRetainedLogs = "3" ?>
     <?define JasDefaultMaxRetries = "0" ?>
-    <?define JasDefaultMitigations = "Full" ?>
+    <?define JasDefaultMitigations = "111" ?>
     <?define JasDefaultServiceAccount = "NT SERVICE\Jenkins" ?>
 
     <Icon Id="Logo.ico" SourceFile="$(var.ProjectDir)..\..\Resources\Logo.ico" />
@@ -50,7 +50,21 @@
     <Property Id="JENKINS_CUSTOM_ARGS" Secure="yes" />
     <Property Id="JENKINS_ALLOWED_ENV" Secure="yes" />
     <Property Id="JENKINS_SANITIZE_ENV" Value="1" Secure="yes" />
+    <!-- Three 0/1 digits: no-remote, no-low-label, prefer-System32. Secure, because the wizard composes
+         it in the UI sequence and it has to survive the handoff to the elevated execute sequence. -->
     <Property Id="JENKINS_MITIGATIONS" Value="$(var.JasDefaultMitigations)" Secure="yes" />
+
+    <!-- UI-only, and deliberately NOT Secure: none of these reaches a custom action. MITIGATIONS_MODE is
+         the Full/Custom radio (ICE34 requires a RadioButtonGroup's property to have a Property row), the
+         JENKINS_MIT_* trio are the per-flag checkboxes, and the JAS_MIT_B* are the scratch digits the Next
+         button concatenates. The checkboxes have no Property row: they are seeded by the SeedMitigation*
+         SetProperty rows below, which tick all three unless an incoming JENKINS_MITIGATIONS clears a digit -
+         so Custom starts from Full rather than from 000, and an operator who picks Custom and presses Next
+         without touching a box still installs 111. Full does not consult the boxes at all. -->
+    <Property Id="JENKINS_MITIGATIONS_MODE" Value="Full" />
+    <Property Id="JAS_MIT_B1" Value="1" />
+    <Property Id="JAS_MIT_B2" Value="1" />
+    <Property Id="JAS_MIT_B3" Value="1" />
     <Property Id="JENKINS_DEBUG" Secure="yes" />
     <Property Id="JENKINS_COMPACT_LOG" Secure="yes" />
     <Property Id="JENKINS_RETAINED_LOGS" Value="$(var.JasDefaultRetainedLogs)" Secure="yes" />
@@ -96,6 +110,34 @@
                  Sequence="both" Condition="NOT JENKINS_MITIGATIONS" />
     <SetProperty Id="SERVICE_ACCOUNT" Value="$(var.JasDefaultServiceAccount)" Before="CostFinalize"
                  Sequence="both" Condition="NOT SERVICE_ACCOUNT" />
+
+    <!-- ─── Seed the Advanced Options mitigation controls from an incoming JENKINS_MITIGATIONS ───
+         A full-UI install with JENKINS_MITIGATIONS=011 on the msiexec command line used to install 111: the
+         Next button on AdvancedOptionsDlg recomposes the property from the radio (default Full) and the three
+         checkboxes, so the command-line value never survived the wizard. These rows make the controls SHOW
+         the incoming value instead, so pressing Next reproduces it - and the operator can see and change it.
+         UI sequence only: /qn and /passive never draw the dialog, never press Next, and pass the property
+         straight through to WriteAdvanced3 exactly as before. An upgrade never shows the page either.
+         Each condition enumerates the valid digit strings explicitly rather than using << / >> substring
+         tests, so a malformed value (a level name, "11") matches nothing: the boxes stay ticked and the
+         mode stays Full. In the wizard that installs 111; a silent install still hands the malformed value
+         to update-secret, which rejects it.
+         A box is ticked ("1") unless its digit is 0 in a valid incoming mask, in which case it is simply left
+         unset (no Property row), which is how an MSI checkbox renders cleared. Order relative
+         to the empty-value restore above does not matter: empty matches no listed value, which yields Full
+         and three ticked boxes - the same as the restored 111. -->
+    <SetProperty Id="JENKINS_MITIGATIONS_MODE" Action="SeedMitigationMode" Value="Custom" Before="CostFinalize"
+                 Sequence="ui"
+                 Condition="JENKINS_MITIGATIONS = &quot;000&quot; OR JENKINS_MITIGATIONS = &quot;001&quot; OR JENKINS_MITIGATIONS = &quot;010&quot; OR JENKINS_MITIGATIONS = &quot;011&quot; OR JENKINS_MITIGATIONS = &quot;100&quot; OR JENKINS_MITIGATIONS = &quot;101&quot; OR JENKINS_MITIGATIONS = &quot;110&quot;" />
+    <SetProperty Id="JENKINS_MIT_REMOTE" Action="SeedMitigationRemote" Value="1" Before="CostFinalize"
+                 Sequence="ui"
+                 Condition="NOT (JENKINS_MITIGATIONS = &quot;000&quot; OR JENKINS_MITIGATIONS = &quot;001&quot; OR JENKINS_MITIGATIONS = &quot;010&quot; OR JENKINS_MITIGATIONS = &quot;011&quot;)" />
+    <SetProperty Id="JENKINS_MIT_LOWLABEL" Action="SeedMitigationLowLabel" Value="1" Before="CostFinalize"
+                 Sequence="ui"
+                 Condition="NOT (JENKINS_MITIGATIONS = &quot;000&quot; OR JENKINS_MITIGATIONS = &quot;001&quot; OR JENKINS_MITIGATIONS = &quot;100&quot; OR JENKINS_MITIGATIONS = &quot;101&quot;)" />
+    <SetProperty Id="JENKINS_MIT_SYS32" Action="SeedMitigationSys32" Value="1" Before="CostFinalize"
+                 Sequence="ui"
+                 Condition="NOT (JENKINS_MITIGATIONS = &quot;000&quot; OR JENKINS_MITIGATIONS = &quot;010&quot; OR JENKINS_MITIGATIONS = &quot;100&quot; OR JENKINS_MITIGATIONS = &quot;110&quot;)" />
 
     <!-- Prefill the Java Path field from JAVA_HOME so the wizard shows the detected JDK and how it was found.
          UI sequence only and gated on an empty value, so a silent install that sets no explicit java path

@@ -48,7 +48,7 @@ public static class ServiceRecoveryConfigurator
         }
         catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
-            log?.Invoke($"Error: could not configure recovery actions for '{serviceName}': {ex.Message}");
+            log?.Invoke($"Error: could not configure recovery actions for the --service service: {ex.Message}");
             return false;
         }
     }
@@ -68,7 +68,7 @@ public static class ServiceRecoveryConfigurator
             manager, serviceName, NativeMethods.ServiceChangeConfig | NativeMethods.ServiceStart);
         if (service.IsInvalid)
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"OpenService failed for '{serviceName}'.");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenService failed for the --service name.");
         }
 
         // SERVICE_FAILURE_ACTIONS holds a raw pointer to the SC_ACTION array, so it cannot be a managed

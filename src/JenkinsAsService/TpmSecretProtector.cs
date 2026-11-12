@@ -194,7 +194,7 @@ internal static class TpmSecretProtector
         catch (IdentityNotMappedException ex)
         {
             throw new InvalidOperationException(
-                $"Could not resolve service account '{account}' to grant TPM key access.", ex);
+                "Could not resolve the service account (--service-account) to grant TPM key access.", ex);
         }
     }
 

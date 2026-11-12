@@ -38,7 +38,7 @@ public class SecretWriterMergeTests : IDisposable
             CustomArguments = "-noCertificateCheck",
             SanitizeEnvironment = false,
             AllowedEnvironmentVariables = "MAVEN_OPTS;GRADLE_USER_HOME",
-            ProcessMitigations = MitigationLevel.Off,
+            ProcessMitigations = new MitigationMask(false, false, false),
             DebugMode = true,
             CompactLog = true,
             RetainedLogs = 7,
@@ -52,9 +52,9 @@ public class SecretWriterMergeTests : IDisposable
         j.GetProperty("Agent").GetProperty("CustomArguments").GetString().Should().Be("-noCertificateCheck");
         j.GetProperty("Hardening").GetProperty("SanitizeEnvironment").GetBoolean().Should().BeFalse();
         j.GetProperty("Hardening").GetProperty("AllowedEnvironmentVariables").GetString().Should().Be("MAVEN_OPTS;GRADLE_USER_HOME");
-        // Written as the enum NAME, not its ordinal - the config binder parses "Off", and a 2 would bind
-        // to Off today and to something else the moment a level is inserted above it.
-        j.GetProperty("Hardening").GetProperty("ProcessMitigations").GetString().Should().Be("Off");
+        // Written as the three-digit string (no-remote, no-low-label, prefer-System32), which is exactly
+        // what MitigationMask.TryParse reads back - not a level name, and not a number the binder would coerce.
+        j.GetProperty("Hardening").GetProperty("ProcessMitigations").GetString().Should().Be("000");
         j.GetProperty("Logging").GetProperty("DebugMode").GetBoolean().Should().BeTrue();
         j.GetProperty("Logging").GetProperty("CompactLog").GetBoolean().Should().BeTrue();
         j.GetProperty("Logging").GetProperty("RetainedLogs").GetInt32().Should().Be(7);
@@ -91,6 +91,46 @@ public class SecretWriterMergeTests : IDisposable
         SecretWriter.MergeConfig(_tempDir, new ConfigMergeFields { Method = ConnectionMethod.Https });
 
         Jenkins().GetProperty("Connection").GetProperty("Method").GetString().Should().Be("Https");
+    }
+
+    // A full write over a config from the build that stored level names migrates the name to the digits
+    // with the same effect - through the same helper the service uses at startup - instead of resetting it.
+    [Theory]
+    [InlineData("Full", "111")]
+    [InlineData("AllowNetworkImages", "011")]
+    [InlineData("Off", "000")]
+    [InlineData("101", "101")]
+    [InlineData("garbage", "111")]
+    public void WriteConfig_migrates_a_legacy_mitigation_level(string stored, string expected)
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
+            $"{{\"Jenkins\":{{\"Hardening\":{{\"ProcessMitigations\":\"{stored}\"}}}}}}");
+
+        SecretWriter.WriteConfig(_tempDir, "s", SecretMode.Unprotected, "https://j:8443", null, null);
+
+        Jenkins().GetProperty("Hardening").GetProperty("ProcessMitigations").GetString().Should().Be(expected);
+        ProcessMitigations.Resolve(stored).ToString().Should().Be(expected, "runtime and writer must agree");
+    }
+
+    [Fact]
+    public void WriteConfig_applies_a_supplied_mitigation_mask_over_the_stored_one()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"),
+            "{\"Jenkins\":{\"Hardening\":{\"ProcessMitigations\":\"111\"}}}");
+
+        SecretWriter.WriteConfig(_tempDir, "s", SecretMode.Unprotected, "https://j:8443", null, null,
+            optionalFields: new ConfigMergeFields { ProcessMitigations = new MitigationMask(false, true, true) });
+
+        Jenkins().GetProperty("Hardening").GetProperty("ProcessMitigations").GetString().Should().Be("011");
+    }
+
+    [Fact]
+    public void WriteConfig_ignores_the_optional_dpapi_scope_in_favour_of_the_one_it_protected_with()
+    {
+        SecretWriter.WriteConfig(_tempDir, "s", SecretMode.Unprotected, "https://j:8443", null, null,
+            DpapiScope.Machine, optionalFields: new ConfigMergeFields { DpapiScope = DpapiScope.User });
+
+        Jenkins().GetProperty("Secret").GetProperty("DpapiScope").GetString().Should().Be("Machine");
     }
 
     [Fact]

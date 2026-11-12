@@ -37,7 +37,7 @@ internal static class ImpersonationRunner
         {
             var err = Marshal.GetLastWin32Error();
             throw new InvalidOperationException(
-                $"LogonUser failed for '{username}' (Win32 error {err}). " +
+                $"LogonUser failed for the impersonation account (--username) (Win32 error {err}). " +
                 "Verify the credentials and that the account has 'Log on locally' rights.");
         }
 

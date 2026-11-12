@@ -189,46 +189,68 @@
         <Control Id="DataEdit" Type="Edit" X="150" Y="58" Width="205" Height="16" Property="DATAFOLDER" />
 
         <!-- Custom java args -->
-        <Control Id="ArgsLabel" Type="Text" X="15" Y="84" Width="130" Height="13" NoPrefix="yes"
+        <Control Id="ArgsLabel" Type="Text" X="15" Y="82" Width="130" Height="13" NoPrefix="yes"
                  Text="Custom Java Args:" />
-        <Control Id="ArgsEdit" Type="Edit" X="150" Y="82" Width="205" Height="16" Property="JENKINS_CUSTOM_ARGS" />
+        <Control Id="ArgsEdit" Type="Edit" X="150" Y="80" Width="205" Height="16" Property="JENKINS_CUSTOM_ARGS" />
 
         <!-- Allowed env vars: only meaningful when the child environment is being sanitized, so grey it out
              whenever the Sanitize checkbox below is cleared. The Disable/Enable conditions re-evaluate as the
              JENKINS_SANITIZE_ENV property toggles. Sanitize defaults on, so the field starts enabled. -->
-        <Control Id="EnvLabel" Type="Text" X="15" Y="108" Width="130" Height="13" NoPrefix="yes"
+        <Control Id="EnvLabel" Type="Text" X="15" Y="104" Width="130" Height="13" NoPrefix="yes"
                  Text="Allowed Env Vars:"
                  DisableCondition="NOT JENKINS_SANITIZE_ENV" EnableCondition="JENKINS_SANITIZE_ENV" />
-        <Control Id="EnvEdit" Type="Edit" X="150" Y="106" Width="205" Height="16" Property="JENKINS_ALLOWED_ENV"
+        <Control Id="EnvEdit" Type="Edit" X="150" Y="102" Width="205" Height="16" Property="JENKINS_ALLOWED_ENV"
                  DisableCondition="NOT JENKINS_SANITIZE_ENV" EnableCondition="JENKINS_SANITIZE_ENV" />
 
-        <!-- Process mitigations. THREE levels, not a checkbox, and laid out horizontally so all three are
-             visible without opening anything: the middle one is the setting an operator whose build just
-             broke should reach for, and behind a drop-down they would never learn it exists and would turn
-             hardening off wholesale instead. The policies are inherited by java.exe and everything the build
-             spawns, and Windows offers no way to drop one for a child that the service holds - so this is a
-             dial on the service itself, and every level below Full really does lower its own protection.
-             Ordered strongest-first, matching the Security Options page. -->
-        <Control Id="MitigationLabel" Type="Text" X="15" Y="134" Width="118" Height="13" NoPrefix="yes"
+        <!-- Process hardening: Full or Custom, and when Custom the three image-load mitigations become
+             individually selectable. They are three independent decisions, not points on a dial: the
+             policies are inherited by java.exe and everything the build spawns beneath it, and Windows
+             offers no way to withhold one from a child that the service holds, so each is a separate
+             question about what the SERVICE takes.
+             The boxes start TICKED (Custom starts from Full, so Custom then Next with nothing touched is
+             still 111, never a silent 000) and disabled until Custom is chosen. An incoming
+             JENKINS_MITIGATIONS from the msiexec command line pre-selects Custom and the matching boxes -
+             see the SeedMitigation* rows in Package.wxs - so the wizard reproduces it instead of
+             overwriting it. Full means "all three" regardless of what the boxes show: JENKINS_MITIGATIONS
+             is composed on Next (see the Publish rows on that button), not read from the boxes directly,
+             so an operator who clears two boxes and then goes back to Full still gets 111.
+             MITIGATIONS_MODE is UI-only and never reaches a custom action; the three digits are what the
+             exe is given. -->
+        <Control Id="MitigationLabel" Type="Text" X="15" Y="126" Width="118" Height="13" NoPrefix="yes"
                  Text="Process Hardening:" />
-        <Control Id="MitigationGroup" Type="RadioButtonGroup" X="136" Y="132" Width="219" Height="16"
-                 Property="JENKINS_MITIGATIONS">
-          <RadioButtonGroup Property="JENKINS_MITIGATIONS">
-            <RadioButton Value="Full" X="0" Y="0" Width="40" Height="16" Text="Full" />
-            <RadioButton Value="AllowNetworkImages" X="42" Y="0" Width="135" Height="16"
-                         Text="Allow network DLLs" />
-            <RadioButton Value="Off" X="179" Y="0" Width="40" Height="16" Text="Off" />
+        <Control Id="MitigationGroup" Type="RadioButtonGroup" X="136" Y="124" Width="219" Height="16"
+                 Property="JENKINS_MITIGATIONS_MODE">
+          <RadioButtonGroup Property="JENKINS_MITIGATIONS_MODE">
+            <RadioButton Value="Full" X="0" Y="0" Width="90" Height="16" Text="Full (recommended)" />
+            <RadioButton Value="Custom" X="95" Y="0" Width="70" Height="16" Text="Custom" />
           </RadioButtonGroup>
         </Control>
 
+        <!-- One row, three boxes, in the digit order the value is written in: no-remote, no-low-label,
+             prefer-System32. Only the first has build-visible consequences (a build step that loads tooling
+             or a native DLL from a UNC path or mapped drive fails under the service), which is the reason
+             this page offers them separately at all. -->
+        <Control Id="MitRemoteCheck" Type="CheckBox" X="24" Y="142" Width="108" Height="16"
+                 Property="JENKINS_MIT_REMOTE" CheckBoxValue="1" Text="Block network DLLs"
+                 DisableCondition="JENKINS_MITIGATIONS_MODE &lt;&gt; &quot;Custom&quot;"
+                 EnableCondition="JENKINS_MITIGATIONS_MODE = &quot;Custom&quot;" />
+        <Control Id="MitLowLabelCheck" Type="CheckBox" X="136" Y="142" Width="112" Height="16"
+                 Property="JENKINS_MIT_LOWLABEL" CheckBoxValue="1" Text="Block low-integrity"
+                 DisableCondition="JENKINS_MITIGATIONS_MODE &lt;&gt; &quot;Custom&quot;"
+                 EnableCondition="JENKINS_MITIGATIONS_MODE = &quot;Custom&quot;" />
+        <Control Id="MitSys32Check" Type="CheckBox" X="252" Y="142" Width="103" Height="16"
+                 Property="JENKINS_MIT_SYS32" CheckBoxValue="1" Text="Prefer System32"
+                 DisableCondition="JENKINS_MITIGATIONS_MODE &lt;&gt; &quot;Custom&quot;"
+                 EnableCondition="JENKINS_MITIGATIONS_MODE = &quot;Custom&quot;" />
+
         <!-- Checkboxes -->
-        <Control Id="SanitizeCheck" Type="CheckBox" X="15" Y="156" Width="340" Height="16"
+        <Control Id="SanitizeCheck" Type="CheckBox" X="15" Y="164" Width="340" Height="16"
                  Property="JENKINS_SANITIZE_ENV" CheckBoxValue="1"
                  Text="Sanitize the agent child environment (recommended)" />
-        <Control Id="DebugCheck" Type="CheckBox" X="15" Y="174" Width="340" Height="16"
+        <Control Id="DebugCheck" Type="CheckBox" X="15" Y="182" Width="340" Height="16"
                  Property="JENKINS_DEBUG" CheckBoxValue="1"
                  Text="Enable verbose (debug) Java agent logging" />
-        <Control Id="CompactCheck" Type="CheckBox" X="15" Y="192" Width="340" Height="16"
+        <Control Id="CompactCheck" Type="CheckBox" X="15" Y="200" Width="340" Height="16"
                  Property="JENKINS_COMPACT_LOG" CheckBoxValue="1"
                  Text="Use compact JSON log format" />
 
@@ -240,13 +262,13 @@
              (Property-table default plus a SetProperty restore before CostFinalize), so neither renders
              empty. It does not replace the parser check: msiexec JENKINS_MAX_RETRIES=fifty never touches
              this dialog. -->
-        <Control Id="RetainLabel" Type="Text" X="15" Y="214" Width="120" Height="13" NoPrefix="yes"
+        <Control Id="RetainLabel" Type="Text" X="15" Y="220" Width="120" Height="13" NoPrefix="yes"
                  Text="Retained log files:" />
-        <Control Id="RetainEdit" Type="Edit" X="138" Y="212" Width="40" Height="16" Integer="yes"
+        <Control Id="RetainEdit" Type="Edit" X="138" Y="218" Width="40" Height="16" Integer="yes"
                  Property="JENKINS_RETAINED_LOGS" />
-        <Control Id="RetryLabel" Type="Text" X="195" Y="214" Width="120" Height="13" NoPrefix="yes"
+        <Control Id="RetryLabel" Type="Text" X="195" Y="220" Width="120" Height="13" NoPrefix="yes"
                  Text="Max retries (0=&#x221E;):" />
-        <Control Id="RetryEdit" Type="Edit" X="315" Y="212" Width="40" Height="16" Integer="yes"
+        <Control Id="RetryEdit" Type="Edit" X="315" Y="218" Width="40" Height="16" Integer="yes"
                  Property="JENKINS_MAX_RETRIES" />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
@@ -255,7 +277,29 @@
           <Publish Event="NewDialog" Value="SecurityOptionsDlg" />
         </Control>
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
-          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+          <!-- JENKINS_MITIGATIONS is composed HERE rather than by a SetProperty custom action, because the
+               sequenced ones run before CostFinalize - long before this dialog is drawn - and would compose
+               the digits from the boxes' initial state instead of the operator's. A ControlEvent fires on
+               the click, which is the first moment the answer exists.
+               One ordered publish per bit, each writing 0 or 1, then a single concatenation. Two rows per
+               bit rather than eight rows enumerating the combinations: a fourth mitigation would add two
+               more rows here instead of doubling them. An unticked MSI checkbox leaves its property EMPTY,
+               not "0", which is why the negative row is needed at all - without it the value would collapse
+               from "101" to "11" and be rejected as malformed.
+               Full ignores the boxes entirely and writes 111, so clearing two boxes and then going back to
+               Full still installs the fully hardened service. InstallerMitigationAuthoringTests evaluates
+               these rows together with the seeding rows for all eight masks. -->
+          <Publish Property="JAS_MIT_B1" Value="1" Order="1" Condition="JENKINS_MIT_REMOTE" />
+          <Publish Property="JAS_MIT_B1" Value="0" Order="2" Condition="NOT JENKINS_MIT_REMOTE" />
+          <Publish Property="JAS_MIT_B2" Value="1" Order="3" Condition="JENKINS_MIT_LOWLABEL" />
+          <Publish Property="JAS_MIT_B2" Value="0" Order="4" Condition="NOT JENKINS_MIT_LOWLABEL" />
+          <Publish Property="JAS_MIT_B3" Value="1" Order="5" Condition="JENKINS_MIT_SYS32" />
+          <Publish Property="JAS_MIT_B3" Value="0" Order="6" Condition="NOT JENKINS_MIT_SYS32" />
+          <Publish Property="JENKINS_MITIGATIONS" Value="[JAS_MIT_B1][JAS_MIT_B2][JAS_MIT_B3]" Order="7"
+                   Condition="JENKINS_MITIGATIONS_MODE = &quot;Custom&quot;" />
+          <Publish Property="JENKINS_MITIGATIONS" Value="111" Order="8"
+                   Condition="JENKINS_MITIGATIONS_MODE &lt;&gt; &quot;Custom&quot;" />
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Order="9" />
         </Control>
         <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
           <Publish Event="SpawnDialog" Value="CancelDlg" />

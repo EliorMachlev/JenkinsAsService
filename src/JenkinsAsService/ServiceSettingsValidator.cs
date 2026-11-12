@@ -25,14 +25,14 @@ internal static class ServiceSettingsValidator
         if (!Uri.TryCreate(settings.Connection.Url, UriKind.Absolute, out _))
         {
             throw new InvalidOperationException(
-                $"Connection:Url is not a valid absolute URL: '{settings.Connection.Url}'. " +
+                "Connection:Url is not a valid absolute URL. " +
                 "Example: https://jenkins.example.com:8443");
         }
 
         if (!HasExplicitPort(settings.Connection.Url))
         {
             throw new InvalidOperationException(
-                $"Connection:Url must include an explicit port: '{settings.Connection.Url}'. " +
+                "Connection:Url must include an explicit port. " +
                 "Example: https://jenkins.example.com:8443");
         }
     }
