@@ -388,6 +388,171 @@ public sealed class UpdateSecretVerificationTests : IDisposable
         parsed.Silent.Should().BeTrue();
     }
 
+    // ─── Interactive: Retry / Skip / Cancel ───────────────────────────────────
+
+    [Theory]
+    [InlineData("r", "Retry")]
+    [InlineData("Retry", "Retry")]
+    [InlineData(" s ", "Skip")]
+    [InlineData("C", "Cancel")]
+    public void The_choice_prompt_reads_each_answer(string answer, string expected)
+    {
+        InteractiveConfigPrompts.PromptVerificationChoice(new StringReader(answer + "\n"), new StringWriter())
+            .ToString().Should().Be(expected);
+    }
+
+    [Fact]
+    public void The_choice_prompt_asks_again_until_it_understands()
+    {
+        var output = new StringWriter();
+
+        InteractiveConfigPrompts.PromptVerificationChoice(new StringReader("maybe\n\ns\n"), output)
+            .Should().Be(InteractiveConfigPrompts.VerificationChoice.Skip);
+        output.ToString().Should().Contain("Please answer R, S or C.");
+    }
+
+    [Fact]
+    public void End_of_input_is_cancel()
+    {
+        InteractiveConfigPrompts.PromptVerificationChoice(new StringReader(""), new StringWriter())
+            .Should().Be(InteractiveConfigPrompts.VerificationChoice.Cancel);
+    }
+
+    [Fact]
+    public void Retry_re_asks_the_failing_url_and_proceeds_with_the_new_one()
+    {
+        var error = new StringWriter();
+
+        var result = InteractiveConfigPrompts.VerifyWithRetry(TestVerifiers.RealTcp(), _unreachableUrl, null,
+            new StringReader($"r\n{_reachableUrl}\n"), new StringWriter(), error);
+
+        result.Should().Be(new InteractiveConfigPrompts.VerifiedValues(true, _reachableUrl, null));
+        error.ToString().Should().Contain(_unreachableUrl, "the first attempt's failure was shown");
+    }
+
+    [Fact]
+    public void Retry_with_enter_keeps_the_value_and_re_runs_the_check()
+    {
+        // The controller was down; the operator brings it up and presses Enter.
+        var checker = Substitute.For<IConnectivityChecker>();
+        checker.Check(default!, default, default, default).ReturnsForAnyArgs(
+            Task.FromException(new InvalidOperationException("down")), Task.CompletedTask);
+
+        var result = InteractiveConfigPrompts.VerifyWithRetry(new UpdateSecretVerifier(checker, 100),
+            "https://ctl:8443", null, new StringReader("r\n\n"), new StringWriter(), new StringWriter());
+
+        result.Should().Be(new InteractiveConfigPrompts.VerifiedValues(true, "https://ctl:8443", null));
+        checker.ReceivedCalls().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Retry_re_asks_the_failing_java_path_and_dash_clears_it()
+    {
+        var result = InteractiveConfigPrompts.VerifyWithRetry(TestVerifiers.AlwaysReachable(), "https://ctl:8443",
+            Path.Combine(_tempDir, "nope"), new StringReader("r\n-\n"), new StringWriter(), new StringWriter());
+
+        result.Should().Be(new InteractiveConfigPrompts.VerifiedValues(true, "https://ctl:8443", null),
+            "a cleared Java path is resolved from JAVA_HOME at runtime, so there is nothing left to check");
+    }
+
+    [Fact]
+    public void Skip_writes_the_failing_value_unchecked_but_still_checks_the_other()
+    {
+        var output = new StringWriter();
+        var missingJava = Path.Combine(_tempDir, "nope");
+
+        // URL fails -> skip; then the Java path fails -> cancel. Skipping one check is not skipping all.
+        var result = InteractiveConfigPrompts.VerifyWithRetry(TestVerifiers.RealTcp(), _unreachableUrl, missingJava,
+            new StringReader("s\nc\n"), output, new StringWriter());
+
+        output.ToString().Should().Contain("Verification of --url skipped");
+        result.Proceed.Should().BeFalse("the Java path check still ran, failed, and was cancelled");
+    }
+
+    [Fact]
+    public void Skip_proceeds_with_the_unchecked_value()
+    {
+        var result = InteractiveConfigPrompts.VerifyWithRetry(TestVerifiers.RealTcp(), _unreachableUrl, null,
+            new StringReader("s\n"), new StringWriter(), new StringWriter());
+
+        result.Should().Be(new InteractiveConfigPrompts.VerifiedValues(true, _unreachableUrl, null));
+    }
+
+    [Fact]
+    public void Cancel_proceeds_with_nothing()
+    {
+        var error = new StringWriter();
+
+        var result = InteractiveConfigPrompts.VerifyWithRetry(TestVerifiers.RealTcp(), _unreachableUrl, null,
+            new StringReader("c\n"), new StringWriter(), error);
+
+        result.Proceed.Should().BeFalse();
+        error.ToString().Should().Contain("nothing was written");
+    }
+
+    // The interactive command end to end. Every value is given on the command line, so the only console input
+    // the run reads is the Retry / Skip / Cancel answer - from the injected reader. The Java path is a real
+    // java.exe-holding folder because an empty one would fall through to the console prompt for it.
+    private string[] InteractiveArgs(string url, string secretFile)
+    {
+        var javaDir = Path.Combine(_tempDir, "jdk-bin");
+        Directory.CreateDirectory(javaDir);
+        File.WriteAllBytes(Path.Combine(javaDir, "java.exe"), []);
+        return ["--url", url, "--mode", "Unprotected", "--agent-name", "n", "--java-path", javaDir,
+                "--secret-file", secretFile];
+    }
+
+    [Fact]
+    public void Interactive_cancel_exits_non_zero_without_writing_or_consuming_the_secret()
+    {
+        var secretFile = Path.Combine(_tempDir, "secret.tmp");
+        File.WriteAllText(secretFile, "file-secret");
+
+        var (code, _, _) = Run(InteractiveArgs(_unreachableUrl, secretFile), TestVerifiers.RealTcp(), new StringReader("c\n"));
+
+        code.Should().Be(1);
+        File.Exists(ConfigPath).Should().BeFalse();
+        File.Exists(secretFile).Should().BeTrue("the secret is asked for only after verification");
+    }
+
+    [Fact]
+    public void Interactive_retry_writes_the_corrected_url()
+    {
+        var secretFile = Path.Combine(_tempDir, "secret.tmp");
+        File.WriteAllText(secretFile, "file-secret");
+
+        var (code, _, _) = Run(InteractiveArgs(_unreachableUrl, secretFile), TestVerifiers.RealTcp(),
+            new StringReader($"r\n{_reachableUrl}\n"));
+
+        code.Should().Be(0);
+        Jenkins().GetProperty("Connection").GetProperty("Url").GetString().Should().Be(_reachableUrl);
+    }
+
+    [Fact]
+    public void Interactive_skip_writes_the_unchecked_url()
+    {
+        var secretFile = Path.Combine(_tempDir, "secret.tmp");
+        File.WriteAllText(secretFile, "file-secret");
+
+        var (code, _, _) = Run(InteractiveArgs(_unreachableUrl, secretFile), TestVerifiers.RealTcp(), new StringReader("s\n"));
+
+        code.Should().Be(0);
+        Jenkins().GetProperty("Connection").GetProperty("Url").GetString().Should().Be(_unreachableUrl);
+    }
+
+    [Fact]
+    public void Interactive_with_the_skip_flag_asks_nothing()
+    {
+        var secretFile = Path.Combine(_tempDir, "secret.tmp");
+        File.WriteAllText(secretFile, "file-secret");
+
+        var (code, stdout, _) = Run([.. InteractiveArgs(_unreachableUrl, secretFile), "--svs"], TestVerifiers.RealTcp(),
+            new StringReader(""));
+
+        code.Should().Be(0, "end of input would have been Cancel, so no prompt was shown");
+        stdout.Should().Contain("Verification skipped");
+    }
+
     private JsonElement Jenkins() =>
         JsonDocument.Parse(File.ReadAllText(ConfigPath)).RootElement.GetProperty("Jenkins");
 }
