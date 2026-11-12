@@ -84,9 +84,13 @@ public sealed class UpdateSecretVerificationTests : IDisposable
     [InlineData("https://user:pa55@jenkins:8443/x", "https://jenkins:8443/x")]
     [InlineData("https://user@jenkins:8443", "https://jenkins:8443")]
     [InlineData("https://a:b@c@jenkins:8443", "https://jenkins:8443")]
-    [InlineData("https://jenkins:8443/path@thing", "https://jenkins:8443/path@thing")] // '@' outside the authority
     [InlineData("https://jenkins:8443", "https://jenkins:8443")]
     [InlineData("user:pass@jenkins", "jenkins")]                                         // unparseable, still stripped
+    // An '@' outside the authority may be credentials typed where no parser finds them: cut, and the cut marked.
+    [InlineData("https://alice/pass@controller:8443", "https://***@controller:8443")]
+    [InlineData("not-a-url/user:pass@jenkins", "***@jenkins")]
+    [InlineData("user:pass@weird://jenkins:8443", "***@weird://jenkins:8443")]
+    [InlineData("https://jenkins:8443/path@thing", "https://***@thing")]              // over-redacted, by design
     public void Userinfo_is_stripped_from_a_url_before_it_is_shown(string url, string shown)
     {
         ControllerUrl.WithoutUserInfo(url).Should().Be(shown);
@@ -131,6 +135,26 @@ public sealed class UpdateSecretVerificationTests : IDisposable
 
         message.Should().NotContain(sentinel).And.NotContain("ci-user");
         message.Should().Contain("https://127.0.0.1:", "the URL itself is shown, minus its userinfo");
+    }
+
+    [Theory]
+    [InlineData("https://alice/{0}@controller:8443")]   // slash typed for a colon: "parses", host "alice"
+    [InlineData("not-a-url/alice:{0}@controller")]      // does not parse at all
+    [InlineData("alice:{0}@controller")]
+    public void Credentials_in_a_malformed_url_are_never_shown_either(string shape)
+    {
+        const string sentinel = "SENTINEL-41d9";
+        var recorded = new List<string>();
+
+        var (code, stdout, stderr) = Run(
+            ["--silent", "--secret", "s", "--url", string.Format(System.Globalization.CultureInfo.InvariantCulture, shape, sentinel),
+             "--mode", "Unprotected"],
+            TestVerifiers.AlwaysReachable(recorded));
+
+        code.Should().Be(1, "none of these is an absolute URL with an explicit port");
+        stdout.Should().NotContain(sentinel);
+        stderr.Should().NotContain(sentinel).And.Contain("--url");
+        recorded.Should().NotBeEmpty().And.NotContain(m => m.Contains(sentinel));
     }
 
     [Fact]

@@ -60,12 +60,30 @@ internal static class ControllerUrl
     /// <c>https://host:8443/</c>), for messages. A URL is not a secret and is printed; credentials embedded in
     /// one are, and are not. Textual rather than through <see cref="Uri"/>, so a URL that does not even parse
     /// - which is exactly when it gets reported - is still stripped, and is otherwise shown as typed.
+    /// <para>
+    /// Everything from the start of the authority up to the LAST <c>@</c> in the whole string is dropped, not
+    /// just userinfo inside a well-formed authority: a mistyped URL can carry credentials where no parser would
+    /// find them (<c>https://alice/pass@host:8443</c>, <c>not-a-url/user:pass@host</c>). When that <c>@</c> is
+    /// outside the authority the cut is marked <c>***@</c>, since it may have taken more than userinfo - a
+    /// legitimate <c>@</c> in a path is over-redacted, which costs only some of a diagnostic.
+    /// </para>
     /// </summary>
     internal static string WithoutUserInfo(string url)
     {
         var authority = Authority(url, out var authorityStart);
-        var at = authority.LastIndexOf('@');
-        return at < 0 ? url : string.Concat(url.AsSpan(0, authorityStart), url.AsSpan(authorityStart + at + 1));
+        var at = url.LastIndexOf('@');
+        if (at < 0)
+        {
+            return url;
+        }
+
+        if (at < authorityStart)
+        {
+            return string.Concat("***@", url.AsSpan(at + 1)); // '@' before any "://": nothing parses, hide it all
+        }
+
+        var marker = at < authorityStart + authority.Length ? "" : "***@";
+        return string.Concat(url.AsSpan(0, authorityStart), marker, url.AsSpan(at + 1));
     }
 
     // The authority of a URL as written: after "scheme://", up to the first '/', '?' or '#'.
