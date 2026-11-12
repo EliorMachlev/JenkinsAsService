@@ -17,8 +17,14 @@
         data folder - neither of the latter two is a tracked MSI file, so both depend on the purge custom
         action, which must fire on a real uninstall and never during an upgrade's removal of the old product
 
-    No Jenkins controller is involved: the URL points at a closed port, so the agent never connects. That is
-    fine - every assertion is about files, the registry and SCM, not about connectivity.
+      * the install-time VERIFICATION of the controller URL is real: an unreachable URL fails the install,
+        leaves nothing behind and records the reason in the Application event log; a reachable one (a
+        loopback TCP listener this script holds open for the install) passes without any skip property
+        (the skip property itself is exercised by Test-MsiArchMigration.ps1 and Test-Bundle.ps1)
+
+    No Jenkins controller is involved: the listener accepts TCP connections and never answers, and it is
+    closed once the install returns, so the agent never connects. That is fine - every other assertion is
+    about files, the registry and SCM, not about connectivity.
 #>
 [CmdletBinding()]
 # Write-Host is deliberate: this writes a human-readable PASS/FAIL transcript to the CI console. The
@@ -46,10 +52,12 @@ $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
 $serviceName = Get-JasServiceName
 $productName = 'Jenkins Agent Service'
-# Fresh-install properties. The upgrade deliberately supplies NONE of these - see step 2.
+# A port nothing listens on, for the install that must FAIL verification (step 1a).
+$unreachableUrl = 'https://127.0.0.1:59999'
+# Fresh-install properties, minus the URL, which differs between steps 1a and 1. The upgrade deliberately
+# supplies NONE of these - see step 2.
 $installProperties = @(
     "DATAFOLDER=$dataFolder",
-    'JENKINS_URL=https://127.0.0.1:59999',
     'JENKINS_SECRET=ci-smoke-secret',
     'JENKINS_SECRET_MODE=Unprotected'
 )
@@ -131,8 +139,52 @@ foreach ($edge in $intoConfigFlow) {
 }
 
 # --------------------------------------------------------------------------------------------------
-Write-Host "`n=== 1. Fresh install ($Platform $v1Version) ==="
-Invoke-Msi -LogName 'install-v1' -Arguments (@('/i', $V1Msi) + $installProperties + 'JENKINS_AGENT_NAME=ci-node')
+# update-secret verifies the URL it writes - absolute, explicit port, and answering a TCP connect - and that
+# runs inside WriteConfig, a deferred custom action with Return="check", so a failure fails the install. No
+# skip property here: this is the default every operator gets. The reason cannot be asserted from the MSI log -
+# an EXE custom action's console output never reaches it, the log only says WriteConfig returned 1 - which is
+# exactly why update-secret also writes it to the Application event log, and that is what is asserted.
+Write-Host "`n=== 1a. An unreachable controller URL fails the install ==="
+$verificationStart = Get-Date
+$log = Get-MsiLogPath -Name 'install-v1-unverified'
+$code = Invoke-Msiexec -LogPath $log -Arguments (@('/i', $V1Msi) + $installProperties + "JENKINS_URL=$unreachableUrl")
+
+Assert-That (-not (Test-InstallerSuccess -ExitCode $code)) `
+    "the install FAILS when the controller URL is unreachable and verification is not skipped (exit $code)"
+Assert-That ((Get-Content -Path $log -Raw) -match 'WriteConfig returned actual error code 1') `
+    "the failure is WriteConfig's exit code 1, i.e. update-secret refusing the URL (see $log)"
+Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) `
+    "nothing is left registered after the rolled-back install"
+Assert-That (-not (Test-Path $configPath)) "no appsettings.json is left behind by the rolled-back install"
+Assert-That ($null -eq (Get-InstalledVersion -DisplayName $productName)) "the product is not installed"
+
+$events = @(Get-WinEvent -FilterHashtable @{
+        LogName = 'Application'; ProviderName = $serviceName; StartTime = $verificationStart
+    } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'verification failed' })
+Assert-That ($events.Count -gt 0) "the reason is recorded in the Application event log (source $serviceName)"
+if ($events.Count -gt 0) {
+    $reason = $events[0].Message
+    Assert-That ($reason -match '--url' -and $reason -match 'not reachable' -and $reason.Contains($unreachableUrl)) `
+        "the event names the option, the reason and the URL: $reason"
+    Assert-That ($reason -notmatch 'ci-smoke-secret') "the event does not contain the agent secret"
+}
+
+# --------------------------------------------------------------------------------------------------
+# The positive half, against a real socket: a loopback listener that accepts connections (the OS completes the
+# handshake from the backlog) and never answers. Verification only needs the TCP connect; the URL then stays in
+# the config for the rest of this suite, and after the listener closes the service simply retries, exactly as
+# it did against the old closed-port URL.
+Write-Host "`n=== 1. Fresh install ($Platform $v1Version), verified against a reachable URL ==="
+$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+$listener.Start()
+$controllerUrl = "https://127.0.0.1:$(([System.Net.IPEndPoint]$listener.LocalEndpoint).Port)"
+try {
+    Invoke-Msi -LogName 'install-v1' `
+        -Arguments (@('/i', $V1Msi) + $installProperties + "JENKINS_URL=$controllerUrl" + 'JENKINS_AGENT_NAME=ci-node')
+}
+finally {
+    $listener.Stop()
+}
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 Assert-That ($null -ne $service) "service '$serviceName' is registered"
@@ -140,7 +192,7 @@ Assert-That (Test-Path $configPath) "appsettings.json written to the install fol
 Assert-That (Test-Path $dataFolder) "data folder created at $dataFolder"
 
 $cfg = Get-InstalledConfig -Path $configPath
-Assert-That ($cfg.Jenkins.Connection.Url -eq 'https://127.0.0.1:59999') "Connection:Url persisted from the property"
+Assert-That ($cfg.Jenkins.Connection.Url -eq $controllerUrl) "Connection:Url persisted from the property"
 Assert-That ($cfg.Jenkins.Connection.AgentName -eq 'ci-node') "Connection:AgentName persisted from the property"
 Assert-That ($cfg.Jenkins.Secret.Value -eq 'ci-smoke-secret') "Secret:Value persisted"
 Assert-That ($null -ne $cfg.Telemetry) "the Telemetry section is emitted on a fresh install"
@@ -226,7 +278,7 @@ $cfg = Get-InstalledConfig -Path $configPath
 Assert-That ($null -ne $cfg) "appsettings.json still exists after the upgrade"
 Assert-That ($cfg.Jenkins.Logging.RetainedLogs -eq 9) "an operator's edited value survives the upgrade"
 Assert-That ($cfg.Jenkins.Connection.AgentName -eq 'ci-node') "an unrelated value survives the upgrade"
-Assert-That ($cfg.Jenkins.Connection.Url -eq 'https://127.0.0.1:59999') `
+Assert-That ($cfg.Jenkins.Connection.Url -eq $controllerUrl) `
     "Connection:Url survives an upgrade that was never given JENKINS_URL"
 Assert-That ($cfg.Jenkins.Agent.DataDirectory -eq $dataFolder) `
     "Agent:DataDirectory survives an upgrade that was never given DATAFOLDER"

@@ -123,7 +123,11 @@ $baselineArguments = @(
     'JENKINS_URL=https://127.0.0.1:59999',
     'JENKINS_SECRET=bundle-smoke-secret',
     'JENKINS_SECRET_MODE=Unprotected',
-    'JENKINS_AGENT_NAME=bundle-node')
+    'JENKINS_AGENT_NAME=bundle-node',
+    # A closed port: without this the install's URL verification fails it, by design (Test-MsiLifecycle.ps1
+    # asserts that). The bundle run below is an upgrade over a config that already has a secret, so it writes,
+    # and therefore verifies, nothing.
+    'JENKINS_SKIP_VERIFICATION=1')
 
 # INSTALLFOLDER is passed ONLY when the caller named one, never as "the default, stated explicitly". The
 # defaults contain spaces (C:\Program Files\Jenkins, and the (x86) variant also brackets), and these
