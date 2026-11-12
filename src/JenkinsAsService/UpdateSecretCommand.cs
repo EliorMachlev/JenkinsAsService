@@ -238,6 +238,14 @@ public static class UpdateSecretCommand
         // A --url or --java-path given here is written too, so it is verified first, as on a full write.
         if (parsed.Merge)
         {
+            // A merge that verifies may fail, and a failure is recorded in the event log - so make sure the
+            // source exists first, as RunSilent does (best effort: only possible when elevated). A merge with
+            // nothing to verify, i.e. every one the installer runs, skips it.
+            if (VerifiedOptionNames(parsed.Url, parsed.JavaPath).Length > 0)
+            {
+                EventLogSourceInstaller.Ensure(EventLogSource, EventLogName);
+            }
+
             if (!VerifyBeforeWrite(parsed, verifier, parsed.Url, parsed.JavaPath))
             {
                 return 1;
