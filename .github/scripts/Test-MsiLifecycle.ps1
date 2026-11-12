@@ -158,12 +158,22 @@ Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyCont
 Assert-That (-not (Test-Path $configPath)) "no appsettings.json is left behind by the rolled-back install"
 Assert-That ($null -eq (Get-InstalledVersion -DisplayName $productName)) "the product is not installed"
 
-$events = @(Get-WinEvent -FilterHashtable @{
-        LogName = 'Application'; ProviderName = $serviceName; StartTime = $verificationStart
-    } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'verification failed' })
+# Filtered by provider in the pipeline, not in the hashtable: on the runner a ProviderName key for this
+# classic EventLog source makes Get-WinEvent throw "The parameter is incorrect". The text is read from the
+# event's insertion strings as well as its rendered Message, because the rendering needs the source's message
+# file, which a single-file self-contained exe may not register usably - the inserted string is there either way.
+$events = @(try {
+        Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $verificationStart } -ErrorAction Stop |
+            Where-Object { $_.ProviderName -eq $serviceName } |
+            ForEach-Object { (@($_.Message) + @($_.Properties | ForEach-Object { $_.Value })) -join ' ' } |
+            Where-Object { $_ -match 'verification failed' }
+    }
+    catch {
+        Write-Host "  Get-WinEvent: $($_.Exception.Message)"
+    })
 Assert-That ($events.Count -gt 0) "the reason is recorded in the Application event log (source $serviceName)"
 if ($events.Count -gt 0) {
-    $reason = $events[0].Message
+    $reason = [string]$events[0]
     Assert-That ($reason -match '--url' -and $reason -match 'not reachable' -and $reason.Contains($unreachableUrl)) `
         "the event names the option, the reason and the URL: $reason"
     Assert-That ($reason -notmatch 'ci-smoke-secret') "the event does not contain the agent secret"
