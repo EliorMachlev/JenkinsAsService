@@ -46,7 +46,14 @@ public static class UpdateSecretCommand
         ("--impersonate", s => s.Impersonate = true),
         ("--merge", s => s.Merge = true),
         ("--upgrade", s => s.Upgrade = true),
+        ("--skip-verification-steps", s => s.SkipVerification = true),
     ];
+
+    // The one option whose alias is chosen rather than allocated. The shortest free prefix would be --sk:
+    // one keystroke from the reserved --s of the --secret* family, and a flag that turns safety checks off is
+    // the last one that should be reachable by a near-miss. --svs reads as its initials instead.
+    private static readonly Dictionary<string, string> ExplicitAliases =
+        new(StringComparer.Ordinal) { ["--skip-verification-steps"] = "--svs" };
 
     // The options whose value may legitimately read like a help flag: free-form text. For every other value
     // option a help token in the value position is not a value (a URL, a mode, a path is never "--help"), so
@@ -68,7 +75,8 @@ public static class UpdateSecretCommand
     internal static readonly CliAliases Aliases = new(
         ValueOptions.Select(o => o.Name).Concat(FlagOptions.Select(o => o.Name)).Append("--help")
             .Where(name => !IsSecretOption(name)),
-        ValueOptions.Select(o => o.Name).Where(IsSecretOption));
+        ValueOptions.Select(o => o.Name).Where(IsSecretOption),
+        ExplicitAliases);
 
     internal const string UsageText = """
         Usage: JenkinsAsService update-secret [options]
@@ -78,7 +86,8 @@ public static class UpdateSecretCommand
           --secret-file <path>                    Read secret from file (file is deleted after reading)
           --secret-env <var>                      Read secret from named environment variable
                                                   The three secret options have no short alias, deliberately.
-          --u, --url <value>                      Jenkins controller address (include port)
+          --u, --url <value>                      Jenkins controller address (include port). Verified before it is
+                                                  written: absolute URL with an explicit port, and reachable by TCP.
           --mo, --mode <value>                    Protection mode: Dpapi, Tpm, EnvironmentVariable, CredentialManager, Unprotected
                                                   Tpm encrypts with a non-exportable TPM-resident key (pass --service-account
                                                   so the service can decrypt at runtime).
@@ -90,14 +99,16 @@ public static class UpdateSecretCommand
           --set, --set-data-dir <path>            Only set Jenkins:DataDirectory in appsettings.json, then exit (used
                                                   by the installer; the writable data dir, separate from the binary).
           --a, --agent-name <value>               Agent node label (default: hostname)
-          --j, --java-path <value>                Java installation directory (default: JAVA_HOME)
+          --j, --java-path <value>                Folder containing java.exe, i.e. a JDK's bin folder (default:
+                                                  JAVA_HOME at service start). Verified before it is written.
           --i, --impersonate                      Run Credential Manager write as a different user account.
                                                   Interactive: prompts for username and password.
                                                   Silent: requires --username; password from env JAS_IMPERSONATE_PASSWORD.
           --us, --username <value>                Windows account for impersonation (DOMAIN\account)
           --si, --silent                          Non-interactive; requires --secret/--secret-file/--secret-env, --url, --mode
-          --mer, --merge                          Merge only the optional fields below into an existing appsettings.json
-                                                  (no secret written). Used by the installer's advanced custom actions.
+          --mer, --merge                          Merge only the optional fields below, plus --url, --agent-name and
+                                                  --java-path when given, into an existing appsettings.json (no secret
+                                                  written). Used by the installer's advanced custom actions.
                                                   Without --merge, the optional fields below are applied by the full
                                                   write too (silent or interactive). --set-data-dir, and --upgrade when
                                                   it preserves an existing secret, change nothing else.
@@ -119,6 +130,13 @@ public static class UpdateSecretCommand
           --co, --compact-log <bool>              Compact JSON log format (true/false)
           --r, --retained-logs <int>              Number of rolled log files to keep
           --ma, --max-retries <int>               Max auto-recovery attempts (0 = infinite)
+          --svs, --skip-verification-steps        Write --url and --java-path without verifying them. By default a
+                                                  value that is being written is checked first, and any failure exits 1
+                                                  without writing: the URL must be absolute with an explicit port and
+                                                  answer a TCP connect within 5 s; an explicit --java-path must contain
+                                                  java.exe. Needed when the controller is unreachable from here - the
+                                                  check runs as SYSTEM at install time, ignores Connection:Proxy, and
+                                                  the controller may be down for maintenance.
           --h, --help                             Show this help
         """;
 
@@ -155,6 +173,7 @@ public static class UpdateSecretCommand
         public bool Impersonate;
         public bool Merge;
         public bool Upgrade;
+        public bool SkipVerification;
         public ConnectionMethod? Method;
         public bool? ViaFile;
         public string? CustomArgs;
@@ -180,6 +199,18 @@ public static class UpdateSecretCommand
 
     public static int Run(string[] args, string? basePath)
     {
+        return Run(args, basePath, UpdateSecretVerifier.CreateDefault());
+    }
+
+    /// <param name="args">The command line, verb included.</param>
+    /// <param name="basePath">The folder holding appsettings.json; the exe's own folder when null.</param>
+    /// <param name="verifier">The checks run before a URL or Java path is written. Tests inject a loopback one.</param>
+    /// <param name="input">
+    /// Where the interactive Retry / Skip / Cancel answer is read from after a failed check; the console when
+    /// null. The other interactive prompts still read the console directly.
+    /// </param>
+    internal static int Run(string[] args, string? basePath, UpdateSecretVerifier verifier, TextReader? input = null)
+    {
         basePath ??= AppContext.BaseDirectory;
 
         if (CliCommands.WantsHelp(args, arg => FreeFormValueOptions.Contains(Aliases.Resolve(arg))))
@@ -204,24 +235,96 @@ public static class UpdateSecretCommand
         }
 
         // Installer-only path: surgically merge optional fields into an already-written config, then exit.
+        // A --url or --java-path given here is written too, so it is verified first, as on a full write.
         if (parsed.Merge)
         {
-            SecretWriter.MergeConfig(basePath, OptionalFields(parsed));
+            // A merge that verifies may fail, and a failure is recorded in the event log - so make sure the
+            // source exists first, as RunSilent does (best effort: only possible when elevated). A merge with
+            // nothing to verify, i.e. every one the installer runs, skips it.
+            if (VerifiedOptionNames(parsed.Url, parsed.JavaPath).Length > 0)
+            {
+                EventLogSourceInstaller.Ensure(EventLogSource, EventLogName);
+            }
+
+            if (!VerifyBeforeWrite(parsed, verifier, parsed.Url, parsed.JavaPath))
+            {
+                return 1;
+            }
+
+            SecretWriter.MergeConfig(basePath, OptionalFields(parsed) with
+            {
+                Url = NullIfBlank(parsed.Url),
+                AgentName = NullIfBlank(parsed.AgentName),
+                JavaPath = parsed.JavaPath
+            });
             Console.WriteLine("Optional configuration merged into appsettings.json.");
             return 0;
         }
 
         // Installer-only path: reconcile the config to the current schema on MSI upgrade, then decide
-        // whether the secret must be (re)written. Runs as SYSTEM; never resolves/decrypts the secret.
+        // whether the secret must be (re)written. Runs as SYSTEM; never resolves/decrypts the secret. Nothing
+        // is verified while the existing config is kept: no new value is written then.
         if (parsed.Upgrade)
         {
-            return RunUpgrade(basePath, parsed);
+            return RunUpgrade(basePath, parsed, verifier);
         }
 
         return parsed.Silent
-            ? RunSilent(basePath, parsed)
-            : RunInteractive(basePath, parsed);
+            ? RunSilent(basePath, parsed, verifier)
+            : RunInteractive(basePath, parsed, verifier, input ?? Console.In);
     }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    // ─── Verification ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The non-interactive verification gate: true when the write may go ahead. Checks only what is being
+    /// written - a blank URL or Java path is not - and with --skip-verification-steps says what went unchecked
+    /// instead. Every failure is printed (option, reason and value; see <see cref="UpdateSecretVerifier"/>)
+    /// and also recorded through the verifier, because an EXE custom action's stderr never reaches the MSI log.
+    /// </summary>
+    private static bool VerifyBeforeWrite(ParseState args, UpdateSecretVerifier verifier, string? url, string? javaPath)
+    {
+        var options = VerifiedOptionNames(url, javaPath);
+        if (options.Length == 0)
+        {
+            return true;
+        }
+
+        if (args.SkipVerification)
+        {
+            Console.WriteLine(SkippedMessage(options));
+            return true;
+        }
+
+        var failures = verifier.Verify(url, javaPath);
+        foreach (var failure in failures)
+        {
+            Console.Error.WriteLine($"Error: {failure.Message}");
+            verifier.Record(failure);
+        }
+
+        if (failures.Count > 0)
+        {
+            Console.Error.WriteLine("Error: verification failed; nothing was written.");
+            return false;
+        }
+
+        Console.WriteLine($"Verified {options}.");
+        return true;
+    }
+
+    private static string SkippedMessage(string options) =>
+        $"Verification skipped (--skip-verification-steps): {options} written unchecked.";
+
+    // "--url and --java-path", or whichever of them is being written; empty when neither is.
+    private static string VerifiedOptionNames(string? url, string? javaPath) =>
+        string.Join(" and ", new[]
+        {
+            string.IsNullOrWhiteSpace(url) ? null : "--url",
+            string.IsNullOrWhiteSpace(javaPath) ? null : "--java-path"
+        }.OfType<string>());
 
     // The optional fields as one value, for --merge AND the full write. Built in one place so an option
     // cannot be honoured by one path and parsed-then-dropped by the other, which is what --mitigations did.
@@ -247,6 +350,16 @@ public static class UpdateSecretCommand
         var state = new ParseState();
         for (int i = 1; i < args.Length; i++)
         {
+            // An empty argument where an option is expected is neither an option nor a misplaced value: it is
+            // what a quoted, unset MSI property expands to when it stands on its own. The installer passes
+            // "[JasSkipVerificationArg]", which is "--svs" when JENKINS_SKIP_VERIFICATION=1 and "" otherwise -
+            // the 255-character custom-action limit leaves no room for a second, flag-less copy of WriteConfig.
+            // An empty VALUE never reaches this line: the option before it has already consumed it.
+            if (args[i].Length == 0)
+            {
+                continue;
+            }
+
             // Resolved here, at an option position only: a value that happens to read "--m" is
             // consumed by Next() and never reaches this line. Resolved into a local, never written back:
             // the array belongs to the caller.
@@ -294,11 +407,20 @@ public static class UpdateSecretCommand
 
     // ─── Silent mode ─────────────────────────────────────────────────────────
 
-    private static int RunSilent(string basePath, ParseState args)
+    private static int RunSilent(string basePath, ParseState args, UpdateSecretVerifier verifier)
     {
         // Installer-only path: runs elevated (SYSTEM) during install, so pre-create the event source
-        // here while we have the privilege. The low-privilege service account cannot do this later.
+        // here while we have the privilege. The low-privilege service account cannot do this later. It is
+        // also where a verification failure below is recorded, so it has to exist first.
         EventLogSourceInstaller.Ensure(EventLogSource, EventLogName);
+
+        // Before the secret is resolved: --secret-file deletes its file once read, and a run that is about to
+        // fail on a mistyped URL must not consume it. A blank URL is not checked here; it is reported as
+        // missing below, after the secret, exactly as before.
+        if (!VerifyBeforeWrite(args, verifier, args.Url, args.JavaPath))
+        {
+            return 1;
+        }
 
         var secret = ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv);
 
@@ -399,7 +521,7 @@ public static class UpdateSecretCommand
         }
     }
 
-    private static int RunUpgrade(string basePath, ParseState args)
+    private static int RunUpgrade(string basePath, ParseState args, UpdateSecretVerifier verifier)
     {
         // 1. Reconcile appsettings.json to the current schema (add new keys, prune obsolete ones).
         //    Secret-agnostic — the secret's value, being an in-schema key, is preserved untouched.
@@ -439,13 +561,13 @@ public static class UpdateSecretCommand
             default: // NoSecret (missing or parseable-empty): repair by writing from the supplied args.
                      // Fails when none were supplied, exactly as a fresh silent install with no secret fails.
                 Console.WriteLine("No existing secret found — writing configuration from supplied arguments.");
-                return RunSilent(basePath, args);
+                return RunSilent(basePath, args, verifier);
         }
     }
 
     // ─── Interactive mode ─────────────────────────────────────────────────────
 
-    private static int RunInteractive(string basePath, ParseState args)
+    private static int RunInteractive(string basePath, ParseState args, UpdateSecretVerifier verifier, TextReader input)
     {
         var configPath = Path.Combine(basePath, ConfigFileName);
         TryReadExistingConfig(basePath, configPath,
@@ -457,16 +579,39 @@ public static class UpdateSecretCommand
             return 1;
         }
 
+        var selectedMode = InteractiveConfigPrompts.PromptMode(args.Mode, existingMode);
+        var agentName = InteractiveConfigPrompts.PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
+        var javaPath = InteractiveConfigPrompts.PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
+
+        // After the prompts and before anything is written - and before the secret, which is therefore the last
+        // prompt: a run cancelled here must not have consumed a --secret-file (deleted once read), nor have had
+        // the operator type a secret for a write that is not going to happen.
+        if (args.SkipVerification)
+        {
+            var skipped = VerifiedOptionNames(server, javaPath);
+            if (skipped.Length > 0)
+            {
+                Console.WriteLine(SkippedMessage(skipped));
+            }
+        }
+        else
+        {
+            var verified = InteractiveConfigPrompts.VerifyWithRetry(
+                verifier, server, javaPath, input, Console.Out, Console.Error);
+            if (!verified.Proceed)
+            {
+                return 1;
+            }
+
+            (server, javaPath) = (verified.Url, verified.JavaPath);
+        }
+
         var secret = InteractiveConfigPrompts.PromptSecret(
             ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv));
         if (secret is null)
         {
             return 1;
         }
-
-        var selectedMode = InteractiveConfigPrompts.PromptMode(args.Mode, existingMode);
-        var agentName = InteractiveConfigPrompts.PromptText("Agent name", args.AgentName, existingAgentName, "hostname");
-        var javaPath = InteractiveConfigPrompts.PromptText("Java path", args.JavaPath, existingJavaPath, "JAVA_HOME");
 
         return WriteInteractiveConfig(basePath, secret, selectedMode, server, agentName, javaPath, args);
     }
@@ -505,7 +650,7 @@ public static class UpdateSecretCommand
         Console.WriteLine();
         Console.WriteLine($"Configuration saved to {configPath}");
         Console.WriteLine($"  Mode: {selectedMode}");
-        Console.WriteLine($"  URL:  {server}");
+        Console.WriteLine($"  URL:  {ControllerUrl.WithoutUserInfo(server)}");
         return 0;
     }
 

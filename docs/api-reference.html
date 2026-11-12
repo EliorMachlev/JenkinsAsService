@@ -121,7 +121,17 @@
           <tr>
             <td><code>ServiceSettingsValidator</code></td>
             <td><code>Validate(ServiceSettings)</code></td>
-            <td>Throws <code>InvalidOperationException</code> with an operator-facing message when <code>Connection:Url</code> or <code>Secret:Value</code> is empty, the URL is not absolute, or the URL carries no explicit port. The port check inspects the <em>authority of the original string</em> (skipping any IPv6 <code>[...]</code> literal), not <code>Uri.IsDefaultPort</code>, so an explicitly written <code>:443</code> is accepted while an omitted port is rejected. Called from the <code>Program.cs</code> pre-flight and again in the worker.</td>
+            <td>Throws <code>InvalidOperationException</code> with an operator-facing message when <code>Connection:Url</code> or <code>Secret:Value</code> is empty, the URL is not absolute, or the URL carries no explicit port. The port check inspects the <em>authority of the original string</em> (skipping any IPv6 <code>[...]</code> literal), not <code>Uri.IsDefaultPort</code>, so an explicitly written <code>:443</code> is accepted while an omitted port is rejected. Called from the <code>Program.cs</code> pre-flight and again in the worker. The URL rule itself is <code>ControllerUrl</code>, shared with <code>update-secret</code>'s verification.</td>
+          </tr>
+          <tr>
+            <td><code>ControllerUrl</code></td>
+            <td><code>Check(url)</code>, <code>Describe(problem)</code>, <code>WithoutUserInfo(url)</code></td>
+            <td>The one statement of a usable <code>Connection:Url</code> (absolute, explicitly written port), used by both <code>ServiceSettingsValidator</code> and <code>UpdateSecretVerifier</code> so the CLI cannot accept a URL the service then refuses. <code>WithoutUserInfo</code> strips <code>user:pass@</code> textually, so even an unparseable URL is shown without credentials.</td>
+          </tr>
+          <tr>
+            <td><code>UpdateSecretVerifier</code></td>
+            <td><code>Verify(url, javaPath)</code></td>
+            <td>The checks <code>update-secret</code> runs before writing: the URL rule, a TCP connect through <code>IConnectivityChecker</code> (production: <code>TcpConnectivityChecker</code>, 5&nbsp;s), and <code>java.exe</code> in an explicit Java path via <code>JavaPathResolver</code> with no <code>JAVA_HOME</code> fallback. Returns the failures (option, reason, value); the checker, timeout and failure sink are injected, and production records failures to the Application event log because an EXE custom action's console output never reaches the MSI log.</td>
           </tr>
           <tr>
             <td><code>JavaPathResolver</code></td>
@@ -198,7 +208,8 @@
 
     <p><strong>File:</strong> <code>UpdateSecretCommand.cs</code>. The <code>JenkinsAsService.exe update-secret</code> CLI, dispatched from <code>Program.cs</code> before Serilog is initialised. Arguments are parsed by hand (no <code>System.CommandLine</code> dependency); returns <code>0</code> on success, <code>1</code> on error. Flag reference: <a href="configuration.html#cli-update-secret">Configuration &rarr; CLI: update-secret</a>.</p>
     <ul>
-      <li><strong>Interactive</strong> &mdash; console prompts (server / secret / mode, with masked input) live in <code>InteractiveConfigPrompts</code>.</li>
+      <li><strong>Interactive</strong> &mdash; console prompts (server / mode / agent name / Java path, then the secret with masked input) live in <code>InteractiveConfigPrompts</code>, including <code>VerifyWithRetry</code>, the Retry / Skip / Cancel exchange after a failed verification, which takes its reader and writers as parameters.</li>
+      <li><strong>Verification</strong> &mdash; every path that writes a URL or Java path runs <code>UpdateSecretVerifier</code> first. In a non-interactive run (silent, <code>--merge</code>, the <code>--upgrade</code> repair-write) a failure exits 1 and writes nothing; in the interactive flow the operator is offered Retry (with a corrected value), Skip (that check) or Cancel, and only Cancel exits 1. <code>--skip-verification-steps</code> (<code>--svs</code>) turns it off. See <a href="configuration.html#input-verification">Input verification</a>.</li>
       <li><strong><code>--silent</code></strong> &mdash; every value from flags; the secret may come from <code>--secret</code>, <code>--secret-file</code> (deleted after reading) or <code>--secret-env</code>.</li>
       <li><strong><code>--impersonate</code></strong> &mdash; wraps the write in <code>WindowsIdentity.RunImpersonated</code> for Credential-Manager and User-scope DPAPI writes. The <code>LogonUser</code> P/Invoke is isolated in <code>ImpersonationRunner</code>.</li>
       <li><strong><code>--merge</code> / <code>--set-data-dir</code> / <code>--upgrade</code></strong> &mdash; the non-interactive installer paths, mapping to <code>MergeConfig</code>, <code>SetDataDirectory</code> and <code>NormalizeConfig</code>. <code>--upgrade</code> then preserves an existing secret or repair-writes from the supplied args; its presence check is a raw-string read of <code>Secret:Value</code> &mdash; no decryption &mdash; so it works as SYSTEM regardless of which identity the secret is bound to.</li>

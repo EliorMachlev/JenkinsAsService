@@ -247,12 +247,25 @@
         <Control Id="SanitizeCheck" Type="CheckBox" X="15" Y="164" Width="340" Height="16"
                  Property="JENKINS_SANITIZE_ENV" CheckBoxValue="1"
                  Text="Sanitize the agent child environment (recommended)" />
-        <Control Id="DebugCheck" Type="CheckBox" X="15" Y="182" Width="340" Height="16"
+        <!-- The two logging boxes share a row to make room for the verification box below. -->
+        <Control Id="DebugCheck" Type="CheckBox" X="15" Y="182" Width="165" Height="16"
                  Property="JENKINS_DEBUG" CheckBoxValue="1"
-                 Text="Enable verbose (debug) Java agent logging" />
-        <Control Id="CompactCheck" Type="CheckBox" X="15" Y="200" Width="340" Height="16"
+                 Text="Verbose (debug) agent logging" />
+        <Control Id="CompactCheck" Type="CheckBox" X="185" Y="182" Width="170" Height="16"
                  Property="JENKINS_COMPACT_LOG" CheckBoxValue="1"
-                 Text="Use compact JSON log format" />
+                 Text="Compact JSON log format" />
+
+        <!-- Verification of the URL and Java path happens when the install WRITES them (WriteConfig), not
+             here: Next cannot run the check and offer Skip or Back on failure, because the only custom actions
+             this package may use are EXE ones (no native CA DLLs, see the .wixproj), an EXE custom action can
+             neither set a property nor return anything but pass/fail, and a failing one in the UI sequence
+             ends the whole install rather than returning to this page. The exe is not even on disk yet while
+             the wizard runs. So the choice is made up front: unticked (the default), a URL that is malformed or
+             unreachable, or a Java path without java.exe, fails the install with the reason in the
+             Application event log; ticked, both are written unchecked. -->
+        <Control Id="SkipVerificationCheck" Type="CheckBox" X="15" Y="200" Width="340" Height="16"
+                 Property="JENKINS_SKIP_VERIFICATION" CheckBoxValue="1"
+                 Text="Skip verifying the URL and Java path (controller offline or proxy-only)" />
 
         <!-- Numeric fields on one row. Integer="yes" is load-bearing: these are the only free-text inputs
              parsed as a number, so they were the only way the wizard could reach update-secret's

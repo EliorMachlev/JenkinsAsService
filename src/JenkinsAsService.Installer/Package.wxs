@@ -78,6 +78,16 @@
     <Property Id="SERVICE_ACCOUNT" Value="$(var.JasDefaultServiceAccount)" Secure="yes" />
     <Property Id="SERVICE_PASSWORD" Secure="yes" Hidden="yes" />
 
+    <!-- Opt-out of update-secret's verification of the URL and Java path it writes (absolute URL with an
+         explicit port, reachable by TCP within 5 s; java.exe present in an explicit Java path). Unchecked by
+         default, so a failed check FAILS THE INSTALL; set JENKINS_SKIP_VERIFICATION=1 (or tick the box on
+         Advanced Options) when the controller is down, reachable only through a proxy, or not reachable from
+         this machine as SYSTEM at install time. Only the exact value 1 skips: a stray "0" or "true" leaves the
+         checks on, which fails loudly instead of silently. A checkbox property, so deliberately NO default and
+         no empty-value restore: empty is "unchecked". It reaches the custom actions through
+         JasSkipVerificationArg below. -->
+    <Property Id="JENKINS_SKIP_VERIFICATION" Secure="yes" />
+
     <!-- Opt-in for replacing an installed product with the OTHER architecture's package. Off by default and
          required in both the wizard and a silent install; see the gate in InstallLocation.wxs for why. -->
     <Property Id="FORCE_UPGRADE" Secure="yes" />
@@ -141,9 +151,28 @@
 
     <!-- Prefill the Java Path field from JAVA_HOME so the wizard shows the detected JDK and how it was found.
          UI sequence only and gated on an empty value, so a silent install that sets no explicit java path
-         still defers to the runtime resolver instead of pinning JAVA_HOME. The user can clear or override it. -->
-    <SetProperty Id="JENKINS_JAVA_PATH" Value="[%JAVA_HOME]" After="AppSearch" Sequence="ui"
-                 Condition="NOT JENKINS_JAVA_PATH" />
+         still defers to the runtime resolver instead of pinning JAVA_HOME. The user can clear or override it.
+         Agent:JavaPath is the folder that CONTAINS java.exe, and JAVA_HOME is the JDK root, so the prefill is
+         its bin folder. It used to be the root itself, which only ever worked because the runtime resolver
+         falls back to JAVA_HOME; now that WriteConfig verifies the path it writes, the root would fail every
+         wizard install on a machine with JAVA_HOME set. Gated on JAVA_HOME as well, or an unset one would
+         prefill a bare "\bin". -->
+    <SetProperty Id="JENKINS_JAVA_PATH" Value="[%JAVA_HOME]\bin" After="AppSearch" Sequence="ui"
+                 Condition="NOT JENKINS_JAVA_PATH AND %JAVA_HOME" />
+
+    <!-- The skip flag for the custom actions that write the URL and Java path (WriteConfig, and UpgradeConfig
+         on its repair-write path). Its value is the update-secret skip flag itself, or nothing.
+         Why a derived property and not a second copy of each custom action with the flag appended: WriteConfig
+         was already at 247 of the 255 characters ICE03 allows, so a flag-carrying twin would have been a near
+         duplicate kept in step by hand with no headroom left. Why not a value option fed the checkbox directly:
+         the option is a flag, and a flag that sometimes swallows the next argument is the corruption the
+         quoting rule below exists to prevent. So the custom actions carry "[JasSkipVerificationArg]", quoted
+         like every other expansion: unset, it arrives as an empty argument, which update-secret ignores at an
+         option position (see ParseArgs). Private (mixed case), so it is computed here, not taken from the
+         command line. Execute sequence only, before CostFinalize: that is where the deferred command lines
+         are formatted, and the UI never reads it. -->
+    <SetProperty Id="JasSkipVerificationArg" Value="--svs" Before="CostFinalize" Sequence="execute"
+                 Condition="JENKINS_SKIP_VERIFICATION = &quot;1&quot;" />
 
     <Feature Id="Main" Title="Jenkins Agent Service" Level="1">
       <ComponentGroupRef Id="PublishOutput" />
@@ -165,10 +194,16 @@
          (b) Impersonate="no" — the CA runs as SYSTEM, so the process command line is not readable by non-admin
          local users. Residual exposure is a verbose MSI log (/l*v) on the installing machine. Scripted installs
          that must avoid even that should call update-secret directly with the secret-env or secret-file input
-         options (which take the secret from an env var or a self-deleting file instead of the command line). -->
+         options (which take the secret from an env var or a self-deleting file instead of the command line).
+         This is also where the URL and Java path are VERIFIED before they are written (see update-secret):
+         a failure exits 1 and, Return being the default check, fails and rolls back the install. The reason
+         goes to stderr, which an EXE custom action loses, and to the Application event log (source
+         JenkinsAsService), which is where an operator finds it. JasSkipVerificationArg turns it off.
+         The agent name moved to WriteAdvanced3 to make room for that argument under the 255-character limit;
+         it needs no verification, and the merge writes it exactly as this command did. -->
     <CustomAction Id="WriteConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]" --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --agent-name "[JENKINS_AGENT_NAME]" --java-path "[JENKINS_JAVA_PATH]"'
+                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]" --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --java-path "[JENKINS_JAVA_PATH]" "[JasSkipVerificationArg]"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Second CA: persist the data directory. Kept separate because folding the data-dir flag into the
@@ -203,7 +238,7 @@
                   Execute="deferred" Impersonate="no" />
     <CustomAction Id="WriteAdvanced3"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --merge --custom-args "[JENKINS_CUSTOM_ARGS]" --allowed-env "[JENKINS_ALLOWED_ENV]" --mitigations "[JENKINS_MITIGATIONS]"'
+                  ExeCommand='update-secret --silent --merge --custom-args "[JENKINS_CUSTOM_ARGS]" --allowed-env "[JENKINS_ALLOWED_ENV]" --mitigations "[JENKINS_MITIGATIONS]" --agent-name "[JENKINS_AGENT_NAME]"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Upgrade-only CA: on a major upgrade the existing appsettings.json is left in place (it is CA-generated,
@@ -211,10 +246,11 @@
          prunes settings the schema no longer defines) and preserves existing values and the secret. Runs as
          SYSTEM (Impersonate="no") so it can write the read-only Program Files config regardless of the service
          identity, and inspects only the raw Secret:Value string (no decryption). Core args only, to stay under
-         the MSI 255-char CA Target limit; they are used only if no secret is present (repair path). -->
+         the MSI 255-char CA Target limit; they are used only if no secret is present (repair path), which is
+         also the only time the URL is verified here: a preserved config writes nothing new, so checks nothing. -->
     <CustomAction Id="UpgradeConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]"'
+                  ExeCommand='update-secret --silent --upgrade --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]" "[JasSkipVerificationArg]"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Replace util:PermissionEx and util:ServiceConfig, which are unusable across architectures - see

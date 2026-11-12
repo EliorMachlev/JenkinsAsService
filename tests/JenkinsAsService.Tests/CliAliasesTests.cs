@@ -141,6 +141,82 @@ public class CliAliasesTests
         account.Should().Be("NT SERVICE\\Jenkins");
     }
 
+    // ─── Explicit aliases: --svs for --skip-verification-steps ────────────────
+
+    [Fact]
+    public void Skip_verification_has_the_chosen_alias_not_the_allocated_one()
+    {
+        // The allocator would have given --sk, one keystroke from the reserved --s of the --secret* family.
+        UpdateSecretCommand.Aliases["--skip-verification-steps"].Should().Be("--svs");
+        UpdateSecretCommand.Aliases.Resolve("--svs").Should().Be("--skip-verification-steps");
+        UpdateSecretCommand.Aliases.All.Values.Should().NotContain("--sk");
+        UpdateSecretCommand.ParseArgs([UpdateSecretCommand.Name, "--sk"]).Should().BeNull("--sk is not an option");
+    }
+
+    [Fact]
+    public void Skip_verification_is_listed_in_the_usage_text()
+    {
+        UpdateSecretCommand.UsageText.Should().Contain("--svs, --skip-verification-steps");
+    }
+
+    [Fact]
+    public void Adding_the_explicit_alias_moved_no_other_alias()
+    {
+        // Every pre-existing alias, as documented in configuration.html. An explicit alias takes no prefix in
+        // the allocation, so the option could be added without renaming anything anyone has typed.
+        var expected = new Dictionary<string, string>
+        {
+            ["--mitigations"] = "--m", ["--url"] = "--u", ["--mode"] = "--mo", ["--dpapi-scope"] = "--d",
+            ["--thumbprint"] = "--t", ["--service-account"] = "--ser", ["--set-data-dir"] = "--set",
+            ["--agent-name"] = "--a", ["--java-path"] = "--j", ["--username"] = "--us", ["--method"] = "--me",
+            ["--via-file"] = "--v", ["--custom-args"] = "--c", ["--sanitize-env"] = "--sa", ["--allowed-env"] = "--al",
+            ["--debug"] = "--de", ["--compact-log"] = "--co", ["--retained-logs"] = "--r", ["--max-retries"] = "--ma",
+            ["--silent"] = "--si", ["--impersonate"] = "--i", ["--merge"] = "--mer", ["--upgrade"] = "--up",
+            ["--help"] = "--h",
+        };
+
+        foreach (var (option, alias) in expected)
+        {
+            UpdateSecretCommand.Aliases[option].Should().Be(alias, option);
+        }
+    }
+
+    [Fact]
+    public void An_explicit_alias_must_be_free()
+    {
+        // Taken by a long option, by a reserved prefix, and by another explicit alias.
+        var shadowsOption = () => new CliAliases(["--url", "--skip"], explicitAliases: new Dictionary<string, string> { ["--skip"] = "--url" });
+        var takesReserved = () => new CliAliases(["--skip"], ["--secret"], new Dictionary<string, string> { ["--skip"] = "--se" });
+        var twice = () => new CliAliases(["--a1", "--a2"],
+            explicitAliases: new Dictionary<string, string> { ["--a1"] = "--x", ["--a2"] = "--x" });
+
+        shadowsOption.Should().Throw<InvalidOperationException>();
+        takesReserved.Should().Throw<InvalidOperationException>();
+        twice.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void An_explicit_alias_must_name_a_real_option_and_look_like_one()
+    {
+        var unknown = () => new CliAliases(["--url"], explicitAliases: new Dictionary<string, string> { ["--nope"] = "--n" });
+        var malformed = () => new CliAliases(["--url"], explicitAliases: new Dictionary<string, string> { ["--url"] = "-u" });
+
+        unknown.Should().Throw<InvalidOperationException>();
+        malformed.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void An_explicit_alias_is_reserved_before_allocation()
+    {
+        // --svs-something's prefixes are --s, --sv, --svs; the first two go to earlier options, and the third is
+        // the chosen alias of an option listed AFTER it. Reserved first, so it is not handed out twice: the
+        // constructor fails instead, as for any option with no free prefix.
+        var act = () => new CliAliases(["--s1", "--sv1", "--svs-something", "--skip"],
+            explicitAliases: new Dictionary<string, string> { ["--skip"] = "--svs" });
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*--svs-something*");
+    }
+
     [Fact]
     public void Help_is_reachable_as_dash_dash_h()
     {
