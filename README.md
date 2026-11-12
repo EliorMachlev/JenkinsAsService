@@ -96,6 +96,9 @@ msiexec /i JenkinsAsService_x64.msi /qn `
 | `JENKINS_SECRET_MODE` | No | `Dpapi` | `Dpapi`, `Tpm`, `CredentialManager`, `EnvironmentVariable`, or `Unprotected` |
 | `JENKINS_AGENT_NAME` | No | Hostname | Agent node name in Jenkins |
 | `JENKINS_JAVA_PATH` | No | `JAVA_HOME` | Path to JDK `bin` folder |
+| `JENKINS_SKIP_VERIFICATION` | No | — (verify) | `1` writes the URL and Java path without verifying them |
+
+> **Breaking:** the install verifies what it writes — `JENKINS_URL` must be absolute with an explicit port **and answer a TCP connect within 5 s**, and a non-empty `JENKINS_JAVA_PATH` must contain `java.exe` — and any failure **fails the install** (silent installs included), with the reason in the Application event log (source `JenkinsAsService`). The check runs as SYSTEM, ignores `Connection:Proxy`, and the controller may be down for maintenance: add `JENKINS_SKIP_VERIFICATION=1` (wizard: *Skip verifying the URL and Java path* on Advanced Options) to install as before. `update-secret` behaves the same way and takes `--skip-verification-steps` / `--svs`. See [Input verification](https://jenkinsasservice.machlev.org/configuration.html#input-verification).
 
 ### Portable (Archive)
 

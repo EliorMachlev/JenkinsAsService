@@ -389,10 +389,21 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>JENKINS_JAVA_PATH</code></td>
             <td>No</td>
             <td><code>JAVA_HOME</code></td>
-            <td>Path to JDK <code>bin</code> folder</td>
+            <td>Path to JDK <code>bin</code> folder (the folder that contains <code>java.exe</code>). Verified at install when given</td>
+          </tr>
+          <tr>
+            <td><code>JENKINS_SKIP_VERIFICATION</code></td>
+            <td>No</td>
+            <td>&mdash; (verify)</td>
+            <td><code>1</code> writes <code>JENKINS_URL</code> and <code>JENKINS_JAVA_PATH</code> without verifying them. By default a malformed or unreachable URL, or a Java path without <code>java.exe</code>, <strong>fails the install</strong>; see <a href="configuration.html#input-verification">Input verification</a></td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="callout callout-warning">
+      <div class="callout-title">Breaking: an unreachable controller now fails the install</div>
+      <p>The install verifies the URL and Java path it writes: the URL must be absolute with an explicit port and answer a TCP connect within 5&nbsp;s, and an explicit Java path must contain <code>java.exe</code>. Any failure exits the <code>WriteConfig</code> custom action with 1, so the install rolls back, silent installs included. The reason is in the <strong>Application event log</strong> (source <code>JenkinsAsService</code>); the MSI log only records that <code>WriteConfig</code> returned 1. The check runs as SYSTEM and ignores <code>Connection:Proxy</code>, and the controller may be down for maintenance, so add <code>JENKINS_SKIP_VERIFICATION=1</code> (or tick <em>Skip verifying the URL and Java path</em> on the Advanced Options page) to install as before.</p>
     </div>
 
     <p>The Advanced Options page is equally scriptable &mdash; each field maps to a public property:</p>
