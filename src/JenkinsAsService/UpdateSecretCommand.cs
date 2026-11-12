@@ -578,9 +578,24 @@ public static class UpdateSecretCommand
         // After the prompts and before anything is written - and before the secret, which is therefore the last
         // prompt: a run cancelled here must not have consumed a --secret-file (deleted once read), nor have had
         // the operator type a secret for a write that is not going to happen.
-        if (!VerifyBeforeWrite(args, verifier, server, javaPath))
+        if (args.SkipVerification)
         {
-            return 1;
+            var skipped = VerifiedOptionNames(server, javaPath);
+            if (skipped.Length > 0)
+            {
+                Console.WriteLine(SkippedMessage(skipped));
+            }
+        }
+        else
+        {
+            var verified = InteractiveConfigPrompts.VerifyWithRetry(
+                verifier, server, javaPath, input, Console.Out, Console.Error);
+            if (!verified.Proceed)
+            {
+                return 1;
+            }
+
+            (server, javaPath) = (verified.Url, verified.JavaPath);
         }
 
         var secret = InteractiveConfigPrompts.PromptSecret(
