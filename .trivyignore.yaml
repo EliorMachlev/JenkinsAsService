@@ -1,0 +1,31 @@
+# Trivy ignore file, passed to the scan by .github/workflows/trivy-reusable.yml (trivyignores:).
+# Every entry here is an exception listed in EXCEPTIONS.md; one with no entry there is not allowed.
+# Each is narrowed to one advisory id AND one file, and expires: after expired_at Trivy stops honouring it
+# and the finding is reported again, so nothing stays hidden by default.
+vulnerabilities:
+  # EXCEPTIONS.md #1 / issue #111: Semgrep 1.185.0 pins mcp==1.29.0 and opentelemetry-api~=1.37.0.
+  - id: CVE-2026-59951 # GHSA-84m7-p3x7-pcfv, mcp server (streamable-HTTP session accumulation)
+    paths:
+      - .github/semgrep/requirements.txt
+    statement: "EXCEPTIONS.md #1, issue #111: Semgrep's own pin (mcp==1.29.0); optional localhost streamable-HTTP MCP server only, never started by semgrep scan in CI."
+    expired_at: 2027-02-09
+  - id: CVE-2026-116684 # GHSA-w4fh-qvv9-3v23, mcp server (bearer-token audience)
+    paths:
+      - .github/semgrep/requirements.txt
+    statement: "EXCEPTIONS.md #1, issue #111: Semgrep's own pin (mcp==1.29.0); optional localhost streamable-HTTP MCP server only, never started by semgrep scan in CI."
+    expired_at: 2027-02-09
+  - id: CVE-2026-116685 # GHSA-5h93-6whr-6q8j, mcp client (cross-origin redirects)
+    paths:
+      - .github/semgrep/requirements.txt
+    statement: "EXCEPTIONS.md #1, issue #111: Semgrep's own pin (mcp==1.29.0); MCP client code, and Semgrep never runs an MCP client."
+    expired_at: 2027-02-09
+  - id: CVE-2026-116686 # GHSA-rwrf-2pqf-9j8j, mcp client ($ref URLs in output schemas)
+    paths:
+      - .github/semgrep/requirements.txt
+    statement: "EXCEPTIONS.md #1, issue #111: Semgrep's own pin (mcp==1.29.0); MCP client code, and Semgrep never runs an MCP client."
+    expired_at: 2027-02-09
+  - id: CVE-2026-114603 # GHSA-xcq7-p3pf-p88h, opentelemetry-api (tracestate parsing)
+    paths:
+      - .github/semgrep/requirements.txt
+    statement: "EXCEPTIONS.md #1, issue #111: Semgrep's own pin (opentelemetry-api~=1.37.0); needs inbound tracestate headers, which Semgrep never parses."
+    expired_at: 2027-02-09

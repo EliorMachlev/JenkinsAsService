@@ -37,7 +37,7 @@ public static class SecretWriter
         string? serviceAccount = null, ConfigMergeFields? optionalFields = null)
     {
         var configSecret = ProcessSecret(secret, mode, dpapiScope, serviceAccount);
-        var configPath = Path.Combine(basePath, ConfigFileName);
+        var configPath = ConfigPath(basePath);
 
         var existingRoot = ReadExistingRoot(configPath);
         var existingJenkins = existingRoot?[ConfigSectionName]?.AsObject();
@@ -73,7 +73,7 @@ public static class SecretWriter
     /// </summary>
     public static void SetDataDirectory(string basePath, string dataDirectory)
     {
-        var configPath = Path.Combine(basePath, ConfigFileName);
+        var configPath = ConfigPath(basePath);
         var existingRoot = ReadExistingRoot(configPath);
         var existingJenkins = existingRoot?[ConfigSectionName]?.AsObject();
 
@@ -99,7 +99,7 @@ public static class SecretWriter
     /// </summary>
     public static void MergeConfig(string basePath, ConfigMergeFields fields)
     {
-        var configPath = Path.Combine(basePath, ConfigFileName);
+        var configPath = ConfigPath(basePath);
         var existingRoot = ReadExistingRoot(configPath);
         var jenkins = existingRoot?[ConfigSectionName] is JsonObject existingJenkins
             ? (JsonObject)existingJenkins.DeepClone()
@@ -146,7 +146,7 @@ public static class SecretWriter
     /// </summary>
     public static (IReadOnlyList<string> added, IReadOnlyList<string> removed) NormalizeConfig(string basePath)
     {
-        var configPath = Path.Combine(basePath, ConfigFileName);
+        var configPath = ConfigPath(basePath);
         var existingJson = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
 
         var (merged, added, removed) = ServiceSettingsNormalizer.NormalizeJson(existingJson);
@@ -187,6 +187,19 @@ public static class SecretWriter
         }
 
         return (added, removed);
+    }
+
+    /// <summary>
+    /// The config file inside <paramref name="basePath"/> (the application base directory). Path.Join, not
+    /// Path.Combine: Combine silently discards everything before a rooted later segment, Join only
+    /// concatenates, so the result can never leave the base directory whatever the segments hold. For the
+    /// inputs that occur - a directory with or without a trailing separator, or empty - both give the same
+    /// path (pinned by <c>SecretWriterConfigPathTests</c>), and null still throws as Combine did.
+    /// </summary>
+    internal static string ConfigPath(string basePath)
+    {
+        ArgumentNullException.ThrowIfNull(basePath);
+        return Path.Join(basePath, ConfigFileName);
     }
 
     private static JsonObject GetOrCreate(JsonObject parent, string key)

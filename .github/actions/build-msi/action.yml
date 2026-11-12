@@ -26,14 +26,24 @@ runs:
   steps:
     - name: Build MSI ${{ inputs.platform }} ${{ inputs.version }}
       shell: pwsh
+      # Inputs reach the script through env, never as ${{ }} expressions inside run (see the publish action:
+      # an expression is pasted into the script text, so a crafted version would run as code).
+      env:
+        MSI_PUBLISH_DIR: ${{ inputs.publish-dir }}
+        MSI_PLATFORM: ${{ inputs.platform }}
+        MSI_VERSION: ${{ inputs.version }}
+        MSI_OUTPUT: ${{ inputs.output }}
       # The intermediate directory is derived, never passed in: unique per platform+version by construction.
-      run: >-
-        dotnet build src/JenkinsAsService.Installer
-        --nologo
-        --configuration Release
-        -p:RestoreLockedMode=true
-        -p:PublishDir=${{ inputs.publish-dir }}
-        -p:InstallerPlatform=${{ inputs.platform }}
-        -p:Version=${{ inputs.version }}
-        -p:BaseIntermediateOutputPath=obj/msi-${{ inputs.platform }}-${{ inputs.version }}/
-        --output ${{ inputs.output }}
+      run: |
+        $arguments = @(
+          'build', 'src/JenkinsAsService.Installer'
+          '--nologo'
+          '--configuration', 'Release'
+          '-p:RestoreLockedMode=true'
+          "-p:PublishDir=$env:MSI_PUBLISH_DIR"
+          "-p:InstallerPlatform=$env:MSI_PLATFORM"
+          "-p:Version=$env:MSI_VERSION"
+          "-p:BaseIntermediateOutputPath=obj/msi-$env:MSI_PLATFORM-$env:MSI_VERSION/"
+          '--output', $env:MSI_OUTPUT
+        )
+        dotnet @arguments

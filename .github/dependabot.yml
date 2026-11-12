@@ -1,9 +1,27 @@
 version: 2
 updates:
+  # Directory.Packages.props (app + tests, central package management), .config/dotnet-tools.json (CycloneDX)
+  # and the two WiX projects, which sit outside CPM and pin their extensions in the .wixproj itself.
+  #
+  # Every NuGet update must regenerate the packages.lock.json files with the SDK pinned in global.json
+  # (`dotnet restore --force-evaluate`): CI restores in locked mode.
   - package-ecosystem: nuget
-    directory: /
+    directories:
+      - /
+      - /src/JenkinsAsService.Installer
+      - /src/JenkinsAsService.Bundle
     schedule:
       interval: weekly
+    # Every ecosystem waits a week after a release before proposing it: a compromised or broken release is
+    # usually yanked within days, and none of these updates is urgent enough to take on its first day.
+    cooldown:
+      default-days: 7
+    ignore:
+      # WiX v6 and v7 binaries are distributed under the Open Source Maintenance Fee EULA (v7 also asks
+      # for the acceptance at build time). Moving past v5 is the owner's licensing decision, made
+      # deliberately - the same reason RAR was dropped from releases - not something to merge from a bot PR.
+      - dependency-name: "WixToolset.*"
+        update-types: ["version-update:semver-major"]
     groups:
       serilog:
         patterns:
@@ -11,6 +29,7 @@ updates:
       microsoft-extensions:
         patterns:
           - "Microsoft.Extensions.*"
+          - "System.Security.Cryptography.ProtectedData"
       opentelemetry:
         patterns:
           - "OpenTelemetry*"
@@ -23,12 +42,49 @@ updates:
           - "coverlet*"
           - "NSubstitute"
           - "FluentAssertions"
+      wix:
+        patterns:
+          - "WixToolset.*"
 
-  - package-ecosystem: github-actions
+  # global.json. The app's lock file records Microsoft.NET.ILLink.Tasks at the SDK's bundled runtime
+  # version, so an SDK bump is not mergeable on its own: regenerate the lock files with the new SDK on the
+  # PR branch first. Major SDK versions are left to a deliberate change alongside the target framework.
+  - package-ecosystem: dotnet-sdk
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Workflows plus the local composite actions under .github/actions, which Dependabot only scans when
+  # their directories are listed. Not covered by any ecosystem, so bumped by hand: the trivy binary
+  # (trivy-reusable.yml) and the gitleaks binary (gitleaks.yml). Semgrep is the pip entry below.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
+        patterns:
+          - "*"
+
+  # Semgrep for semgrep.yml and every package it needs, pinned by hash in .github/semgrep/requirements.txt
+  # (compiled from requirements.in with pip-compile --generate-hashes on Python 3.14, which Dependabot reruns).
+  # One grouped PR: Semgrep's ~60 pinned packages would otherwise each get their own.
+  - package-ecosystem: pip
+    directory: /.github/semgrep
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      semgrep:
         patterns:
           - "*"

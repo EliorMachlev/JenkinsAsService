@@ -22,11 +22,19 @@ jobs:
   trivy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          # The action's own default binary is v0.70.0; pin the scanner itself to the latest release rather
+          # than "latest", which resolves at run time and so is exactly the unpinned download the SHA pins
+          # exist to avoid. Not tracked by Dependabot: re-check on each trivy-action bump, and drop this line
+          # once the action's default catches up.
+          version: v0.76.2
+          # Per-advisory, per-file, expiring exceptions; each one is listed in EXCEPTIONS.md. The action
+          # hands a single .yaml file to trivy as TRIVY_IGNOREFILE (YAML ignore files are not auto-loaded).
+          trivyignores: .trivyignore.yaml
           scan-type: ${{ inputs.scan-type }}
           scan-ref: ${{ inputs.scan-ref }}
           format: sarif
@@ -34,6 +42,6 @@ jobs:
 
       - name: Upload SARIF results
         if: always()
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-results.sarif
