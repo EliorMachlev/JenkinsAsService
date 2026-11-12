@@ -51,18 +51,25 @@ jobs:
 
       # Every finding is printed here and uploaded to code scanning below, and any blocking finding fails
       # the job (--error). No rule is excluded and no path is left out.
+      # Exit 0 = clean, 1 = findings (--error); anything else means Semgrep itself failed. The code is kept
+      # so the upload below can tell the two apart: a failed scan can write a SARIF with no results, and
+      # uploading that would mark every existing alert as fixed.
       - name: Run Semgrep
-        run: >-
-          semgrep scan
-          --config=p/default
-          --config=p/csharp
-          --config=p/secrets
-          --config=p/github-actions
-          --error
-          --sarif-output=semgrep.sarif
+        id: scan
+        run: |
+          code=0
+          semgrep scan \
+            --config=p/default \
+            --config=p/csharp \
+            --config=p/secrets \
+            --config=p/github-actions \
+            --error \
+            --sarif-output=semgrep.sarif || code=$?
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
 
       - name: Upload SARIF to code scanning
-        if: always()
+        if: always() && (steps.scan.outputs.exit-code == '0' || steps.scan.outputs.exit-code == '1')
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: semgrep.sarif
