@@ -115,6 +115,7 @@ Agent secrets are scrubbed from all log output (file and Event Log) before being
 - TLS 1.2+ is enforced by default (.NET 10)
 - Jenkins controller URL requires an explicit port (a URL with no port is rejected); a non-HTTPS URL is allowed but warned at startup because the agent secret would be sent unencrypted
 - TCP connectivity is verified before each agent launch
+- `update-secret` (and so the installer) verifies the URL and Java path *before* writing them and fails on a bad one. Its messages, and the Application event log entry a silent install leaves, print the URL or path checked — neither is a secret — but never the agent secret, a secret-file or secret-variable name, or a URL's userinfo (`https://user:pass@host:8443` is shown as `https://host:8443`)
 
 ### Build Integrity
 
