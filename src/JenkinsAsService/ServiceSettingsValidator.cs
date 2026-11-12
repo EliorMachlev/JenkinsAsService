@@ -21,37 +21,13 @@ internal static class ServiceSettingsValidator
         }
 
         // Validate the URL format up front with a friendly message (consistent with the other checks),
-        // rather than letting a raw UriFormatException surface later from the worker/HTTP client.
-        if (!Uri.TryCreate(settings.Connection.Url, UriKind.Absolute, out _))
+        // rather than letting a raw UriFormatException surface later from the worker/HTTP client. The rule
+        // itself lives in ControllerUrl, shared with update-secret's verification before the value is written.
+        var problem = ControllerUrl.Check(settings.Connection.Url);
+        if (problem != ControllerUrl.Problem.None)
         {
             throw new InvalidOperationException(
-                "Connection:Url is not a valid absolute URL. " +
-                "Example: https://jenkins.example.com:8443");
+                $"Connection:Url {ControllerUrl.Describe(problem)}. Example: {ControllerUrl.Example}");
         }
-
-        if (!HasExplicitPort(settings.Connection.Url))
-        {
-            throw new InvalidOperationException(
-                "Connection:Url must include an explicit port. " +
-                "Example: https://jenkins.example.com:8443");
-        }
-    }
-
-    // Uri normalizes away a scheme-default port, so uri.IsDefaultPort can't tell "https://h:443" (a valid
-    // reverse-proxied controller) from "https://h" (port omitted). Inspect the authority of the original
-    // string: a colon after the host — outside any IPv6 [...] literal — means the port was written explicitly.
-    private static bool HasExplicitPort(string url)
-    {
-        var schemeIdx = url.IndexOf("://", StringComparison.Ordinal);
-        var authorityStart = schemeIdx >= 0 ? schemeIdx + 3 : 0;
-        var authorityEnd = url.IndexOfAny(['/', '?', '#'], authorityStart);
-        var authority = authorityEnd >= 0
-            ? url[authorityStart..authorityEnd]
-            : url[authorityStart..];
-
-        var closeBracket = authority.LastIndexOf(']'); // end of an IPv6 literal, if any
-        var searchFrom = closeBracket >= 0 ? closeBracket + 1 : 0;
-        var colon = authority.IndexOf(':', searchFrom);
-        return colon >= 0 && colon < authority.Length - 1;
     }
 }
