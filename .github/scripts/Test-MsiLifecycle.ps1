@@ -51,6 +51,9 @@ $installFolder = Get-JasDefaultInstallFolder -Platform $Platform
 $dataFolder = Join-Path $env:ProgramData 'JenkinsAsServiceTest'
 $configPath = Join-Path $installFolder 'appsettings.json'
 $serviceName = Get-JasServiceName
+# The event source update-secret creates and writes to (EventLogSourceInstaller.DefaultSource). Not the service
+# name: the service is "Jenkins", the source is the product name.
+$eventSource = 'JenkinsAsService'
 $productName = 'Jenkins Agent Service'
 # A port nothing listens on, for the install that must FAIL verification (step 1a).
 $unreachableUrl = 'https://127.0.0.1:59999'
@@ -158,20 +161,21 @@ Assert-That ($null -eq (Get-Service -Name $serviceName -ErrorAction SilentlyCont
 Assert-That (-not (Test-Path $configPath)) "no appsettings.json is left behind by the rolled-back install"
 Assert-That ($null -eq (Get-InstalledVersion -DisplayName $productName)) "the product is not installed"
 
-# Filtered by provider in the pipeline, not in the hashtable: on the runner a ProviderName key for this
-# classic EventLog source makes Get-WinEvent throw "The parameter is incorrect". The text is read from the
+# Filtered by provider in the pipeline, not in the hashtable: a ProviderName key naming a provider that is not
+# registered makes Get-WinEvent throw "The parameter is incorrect" instead of returning nothing, which would end
+# the run here rather than fail this one assertion if the source were never created. The text is read from the
 # event's insertion strings as well as its rendered Message, because the rendering needs the source's message
 # file, which a single-file self-contained exe may not register usably - the inserted string is there either way.
 $events = @(try {
         Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $verificationStart } -ErrorAction Stop |
-            Where-Object { $_.ProviderName -eq $serviceName } |
+            Where-Object { $_.ProviderName -eq $eventSource } |
             ForEach-Object { (@($_.Message) + @($_.Properties | ForEach-Object { $_.Value })) -join ' ' } |
             Where-Object { $_ -match 'verification failed' }
     }
     catch {
         Write-Host "  Get-WinEvent: $($_.Exception.Message)"
     })
-Assert-That ($events.Count -gt 0) "the reason is recorded in the Application event log (source $serviceName)"
+Assert-That ($events.Count -gt 0) "the reason is recorded in the Application event log (source $eventSource)"
 if ($events.Count -gt 0) {
     $reason = [string]$events[0]
     Assert-That ($reason -match '--url' -and $reason -match 'not reachable' -and $reason.Contains($unreachableUrl)) `
