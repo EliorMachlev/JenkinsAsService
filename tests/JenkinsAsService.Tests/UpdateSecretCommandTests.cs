@@ -680,6 +680,31 @@ public class UpdateSecretCommandTests : IDisposable
         stdout.Should().NotContain(UpdateSecretCommand.UsageText);
     }
 
+    [Theory]
+    [InlineData("--url", "--help")]
+    [InlineData("--url", "-h")]
+    [InlineData("--mode", "--h")]
+    public void A_help_token_as_the_value_of_a_non_free_form_option_is_still_help(string option, string token)
+    {
+        // A URL or a mode is never "--help": writing it as the value and reporting success was the regression.
+        var (code, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", option, token], _tempDir));
+
+        code.Should().Be(0);
+        stdout.Should().Contain(UpdateSecretCommand.UsageText);
+    }
+
+    [Fact]
+    public void A_help_token_as_a_secret_is_a_value_not_help()
+    {
+        UpdateSecretCommand.ParseArgs(["update-secret", "--secret", "--h"])!.SecretArg.Should().Be("--h");
+
+        var (_, stdout, _) = CaptureBoth(() => UpdateSecretCommand.Run(
+            ["update-secret", "--silent", "--merge", "--secret", "--h"], _tempDir));
+
+        stdout.Should().NotContain(UpdateSecretCommand.UsageText);
+    }
+
     [Fact]
     public void An_alias_option_consumes_its_value_for_help_detection_too()
     {

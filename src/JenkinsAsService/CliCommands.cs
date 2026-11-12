@@ -33,15 +33,17 @@ internal static class CliCommands
     internal static string TrimQuoted(string value) => value.Trim().Trim('"').Trim();
 
     /// <summary>
-    /// True when the caller asked for usage text rather than an action. A help flag counts only at an
-    /// option position: the argument after an option that takes a value is that option's value, however it
-    /// reads, so <c>--custom-args "--h"</c> passes <c>--h</c> to the agent instead of cancelling the run
-    /// (a silent install would otherwise print usage, exit 0 and write nothing - reported as success).
+    /// True when the caller asked for usage text rather than an action. A help flag counts at any
+    /// position except as the value of an option that takes free-form text: <c>--custom-args "--h"</c>
+    /// passes <c>--h</c> to the agent instead of cancelling the run (a silent install would otherwise print
+    /// usage, exit 0 and write nothing - reported as success). A value that can never be a flag - a URL, a
+    /// mode, a path - is not skipped, so <c>--url --help</c> still asks for help.
     /// </summary>
     /// <param name="args">The command line, verb included.</param>
     /// <param name="takesValue">
-    /// Whether an argument is an option that consumes the next one. Null for a command with no value
-    /// options. Pass the same resolution the command's parser uses, aliases included.
+    /// Whether an argument is an option whose next argument is free-form, so it must not be read as a
+    /// flag. Null for a command with no such option. Pass the same resolution the command's parser uses,
+    /// aliases included.
     /// </param>
     internal static bool WantsHelp(string[] args, Func<string, bool>? takesValue = null)
     {

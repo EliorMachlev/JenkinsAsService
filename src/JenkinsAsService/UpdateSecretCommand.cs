@@ -48,6 +48,11 @@ public static class UpdateSecretCommand
         ("--upgrade", s => s.Upgrade = true),
     ];
 
+    // The options whose value may legitimately read like a help flag: free-form text. For every other value
+    // option a help token in the value position is not a value (a URL, a mode, a path is never "--help"), so
+    // `--url --help` still prints usage instead of writing "--help" as the URL and reporting success.
+    private static readonly HashSet<string> FreeFormValueOptions = new(["--custom-args", "--secret"], StringComparer.Ordinal);
+
     private static readonly Dictionary<string, ValueHandler> ValueHandlers =
         ValueOptions.ToDictionary(o => o.Name, o => o.Apply, StringComparer.Ordinal);
 
@@ -177,7 +182,7 @@ public static class UpdateSecretCommand
     {
         basePath ??= AppContext.BaseDirectory;
 
-        if (CliCommands.WantsHelp(args, arg => ValueHandlers.ContainsKey(Aliases.Resolve(arg))))
+        if (CliCommands.WantsHelp(args, arg => FreeFormValueOptions.Contains(Aliases.Resolve(arg))))
         {
             Console.WriteLine(UsageText);
             return 0;

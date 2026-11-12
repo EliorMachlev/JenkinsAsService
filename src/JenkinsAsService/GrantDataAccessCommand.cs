@@ -33,7 +33,7 @@ internal static class GrantDataAccessCommand
     /// <summary>Runs the command. Returns a process exit code.</summary>
     internal static int Run(string[] args, string? basePath = null)
     {
-        if (CliCommands.WantsHelp(args, arg => Aliases.Resolve(arg) is "--path" or "--account"))
+        if (CliCommands.WantsHelp(args))
         {
             Console.WriteLine(UsageText);
             return 0;
