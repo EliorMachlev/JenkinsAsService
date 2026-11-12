@@ -11,7 +11,18 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Exceptions, each listed in EXCEPTIONS.md; one with no entry there is not allowed.
+          # EXCEPTIONS.md #1 / issue #111 (review by 2027-02-09): mcp 1.29.0 (the four mcp GHSAs) and
+          # opentelemetry-api 1.37.0 (GHSA-xcq7-p3pf-p88h), pinned by Semgrep 1.185.0 in
+          # .github/semgrep/requirements.txt. Remove when a Semgrep release raises the pins.
+          allow-ghsas: >-
+            GHSA-84m7-p3x7-pcfv,
+            GHSA-w4fh-qvv9-3v23,
+            GHSA-5h93-6whr-6q8j,
+            GHSA-rwrf-2pqf-9j8j,
+            GHSA-xcq7-p3pf-p88h

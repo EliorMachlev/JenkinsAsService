@@ -29,14 +29,25 @@ runs:
       shell: pwsh
       # Version-scoped intermediate directory, for the reason spelled out in build-msi: MSBuild's up-to-date
       # check does not track property changes, so a shared obj/ turns a second build into a copy of the first.
-      run: >-
-        dotnet build src/JenkinsAsService.Bundle
-        --nologo
-        --configuration Release
-        -p:RestoreLockedMode=true
-        -p:X64Msi=${{ inputs.x64-msi }}
-        -p:X86Msi=${{ inputs.x86-msi }}
-        -p:Arm64Msi=${{ inputs.arm64-msi }}
-        -p:Version=${{ inputs.version }}
-        -p:BaseIntermediateOutputPath=obj/bundle-${{ inputs.version }}/
-        --output ${{ inputs.output }}
+      # Inputs reach the script through env, never as ${{ }} expressions inside run (see the publish action:
+      # an expression is pasted into the script text, so a crafted version would run as code).
+      env:
+        BUNDLE_X64_MSI: ${{ inputs.x64-msi }}
+        BUNDLE_X86_MSI: ${{ inputs.x86-msi }}
+        BUNDLE_ARM64_MSI: ${{ inputs.arm64-msi }}
+        BUNDLE_VERSION_INPUT: ${{ inputs.version }}
+        BUNDLE_OUTPUT: ${{ inputs.output }}
+      run: |
+        $arguments = @(
+          'build', 'src/JenkinsAsService.Bundle'
+          '--nologo'
+          '--configuration', 'Release'
+          '-p:RestoreLockedMode=true'
+          "-p:X64Msi=$env:BUNDLE_X64_MSI"
+          "-p:X86Msi=$env:BUNDLE_X86_MSI"
+          "-p:Arm64Msi=$env:BUNDLE_ARM64_MSI"
+          "-p:Version=$env:BUNDLE_VERSION_INPUT"
+          "-p:BaseIntermediateOutputPath=obj/bundle-$env:BUNDLE_VERSION_INPUT/"
+          '--output', $env:BUNDLE_OUTPUT
+        )
+        dotnet @arguments

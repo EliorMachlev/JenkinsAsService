@@ -1,0 +1,7 @@
+# Semgrep for the Semgrep workflow (.github/workflows/semgrep.yml), installed with --require-hashes.
+# requirements.txt is compiled from this file on Linux with Python 3.14 (what the workflow runs on):
+#   pip-compile --allow-unsafe --generate-hashes --strip-extras requirements.in
+# Dependabot (pip ecosystem, this directory) recompiles it when Semgrep or a dependency has a new release.
+# Compile on Linux, not Windows: there pip-compile also pins pywin32 (a win32-only dependency of semgrep and
+# mcp) without its marker, and the Linux runner then fails the hashed install on it.
+semgrep==1.185.0

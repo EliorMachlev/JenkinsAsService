@@ -22,23 +22,36 @@ runs:
   steps:
     - name: Publish ${{ inputs.runtime }}
       shell: pwsh
-      run: >-
-        dotnet publish src/JenkinsAsService
-        --nologo
-        --configuration Release
-        -p:RestoreLockedMode=true
-        --runtime ${{ inputs.runtime }}
-        --self-contained true
-        --output ${{ inputs.output }}
-        -p:PublishSingleFile=true
-        -p:EnableCompressionInSingleFile=true
-        -p:PublishReadyToRun=true
-        -p:OptimizationPreference=Speed
-        -p:UseSharedCompilation=true
-        -p:DebuggerSupport=false
-        -p:MetadataUpdaterSupport=false
-        -p:Deterministic=true
-        -p:DebugType=Embedded
-        -p:DebugSymbols=true
-        ${{ inputs.version != '' && format('-p:InformationalVersion={0}', inputs.version) || '' }}
-        /v:q /clp:ErrorsOnly
+      # Inputs reach the script through env, never as ${{ }} expressions inside run: an expression is pasted
+      # into the script text before the shell parses it, so a crafted value (release.yml feeds the version
+      # from a tag or a workflow_dispatch input) would run as code. As env values they are only ever data,
+      # and each is passed to dotnet as one argument.
+      env:
+        PUBLISH_RUNTIME: ${{ inputs.runtime }}
+        PUBLISH_OUTPUT: ${{ inputs.output }}
+        PUBLISH_VERSION: ${{ inputs.version }}
+      run: |
+        $arguments = @(
+          'publish', 'src/JenkinsAsService'
+          '--nologo'
+          '--configuration', 'Release'
+          '-p:RestoreLockedMode=true'
+          '--runtime', $env:PUBLISH_RUNTIME
+          '--self-contained', 'true'
+          '--output', $env:PUBLISH_OUTPUT
+          '-p:PublishSingleFile=true'
+          '-p:EnableCompressionInSingleFile=true'
+          '-p:PublishReadyToRun=true'
+          '-p:OptimizationPreference=Speed'
+          '-p:UseSharedCompilation=true'
+          '-p:DebuggerSupport=false'
+          '-p:MetadataUpdaterSupport=false'
+          '-p:Deterministic=true'
+          '-p:DebugType=Embedded'
+          '-p:DebugSymbols=true'
+        )
+        if ($env:PUBLISH_VERSION) {
+          $arguments += "-p:InformationalVersion=$env:PUBLISH_VERSION"
+        }
+        $arguments += '/v:q', '/clp:ErrorsOnly'
+        dotnet @arguments
