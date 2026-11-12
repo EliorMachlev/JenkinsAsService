@@ -120,21 +120,50 @@ foreach ($package in $packages) {
 # property (INSTALLFOLDER is recovered that way, and quoting there would put quotes IN the path), 19 is an
 # error message, 35 sets a directory, 37/38 are script bodies.
 $commandLineTypes = 2, 18, 34, 50
+# Any property name, PRIVATE ones included: JasSkipVerificationArg is mixed-case by design (so it cannot be set
+# from the command line), and an upper-case-only pattern would let an unquoted expansion of it through.
+# [regex]::Matches is case-sensitive, unlike -match, so the class has to spell lower case out.
+$propertyExpansion = '\[[A-Za-z_][A-Za-z0-9_.]*\]'
 
 foreach ($package in $packages) {
     $bare = @(
         Get-MsiCustomAction -Path $package.Path |
             Where-Object { (([int]$_.Type) -band 0x3F) -in $commandLineTypes } |
-            Where-Object { $_.Target -match '\[[A-Z_]+\]' } |
+            Where-Object { $_.Target -cmatch $propertyExpansion } |
             ForEach-Object {
                 # A property expansion counts as quoted when a double quote sits immediately either side.
-                $unquoted = [regex]::Matches($_.Target, '(?<!")\[[A-Z_]+\](?!")')
+                $unquoted = [regex]::Matches($_.Target, "(?<!`")$propertyExpansion(?!`")")
                 if ($unquoted.Count -gt 0) { '{0}: {1}' -f $_.Action, (($unquoted.Value) -join ', ') }
             }
     )
 
     Assert-That ($bare.Count -eq 0) `
         "$($package.Name): every custom-action property expansion is quoted$(if ($bare) { " (bare: $($bare -join '; '))" })"
+}
+
+# The verification escape hatch, end to end through the BUILT tables. update-secret verifies the URL and Java
+# path it writes and fails the install on a bad one, so JENKINS_SKIP_VERIFICATION=1 has to reach both custom
+# actions that can write them: WriteConfig (fresh install) and UpgradeConfig (its repair-write). It travels as
+# the private JasSkipVerificationArg, set to the flag by a type-51 row that must run in the EXECUTE sequence
+# before either is formatted - a /quiet install runs nothing else, and CI's real installs depend on it.
+foreach ($package in $packages) {
+    $actions = @{}
+    Get-MsiCustomAction -Path $package.Path | ForEach-Object { $actions[$_.Action] = $_ }
+    $sequence = @{}
+    Get-MsiExecuteSequence -Path $package.Path | ForEach-Object { $sequence[$_.Action] = $_.Sequence }
+
+    $setter = 'SetJasSkipVerificationArg'
+    Assert-That ($actions.ContainsKey($setter) -and $actions[$setter].Target -ceq '--svs') `
+        "$($package.Name): $setter sets the skip flag"
+    Assert-That ($sequence.ContainsKey($setter)) "$($package.Name): $setter is in the execute sequence"
+    foreach ($writer in 'WriteConfig', 'UpgradeConfig') {
+        Assert-That ($actions.ContainsKey($writer) -and $actions[$writer].Target.Contains('"[JasSkipVerificationArg]"')) `
+            "$($package.Name): $writer carries the quoted skip argument"
+        if ($sequence.ContainsKey($setter) -and $sequence.ContainsKey($writer)) {
+            Assert-That ($sequence[$setter] -lt $sequence[$writer]) `
+                ("$($package.Name): $setter ({0}) runs before $writer ({1}) formats its command line" -f $sequence[$setter], $sequence[$writer])
+        }
+    }
 }
 
 Complete-AssertionReport -Subject 'MSI architecture'

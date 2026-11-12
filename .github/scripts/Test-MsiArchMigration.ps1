@@ -68,7 +68,12 @@ $freshInstallProperties = @(
     'JENKINS_URL=https://127.0.0.1:59999',
     'JENKINS_SECRET=arch-smoke-secret',
     'JENKINS_SECRET_MODE=Unprotected',
-    'JENKINS_AGENT_NAME=arch-node'
+    'JENKINS_AGENT_NAME=arch-node',
+    # The URL above is a closed port, and the install verifies the URL it writes and fails on an unreachable
+    # one. Skipping is the documented escape for exactly that, and every install below must succeed with it,
+    # so this suite is also the proof that the property reaches WriteConfig (Test-MsiLifecycle.ps1 proves the
+    # opposite: without it, the same URL fails the install).
+    'JENKINS_SKIP_VERIFICATION=1'
 )
 
 # Asserts a refused install was also INERT. BlockArchMigration is sequenced with the location searches it
