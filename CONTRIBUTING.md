@@ -135,6 +135,8 @@ The MSI installer uses **WiX v5** with a custom dialog sequence. If you modify t
 - Verify the service starts, connects to Jenkins, and survives a reboot
 - Test silent install with `msiexec /qn` and all public properties
 - Verify in-place upgrades from the previous version work correctly
+- A fresh install **verifies** `JENKINS_URL` (and `JENKINS_JAVA_PATH` when set) and fails if the controller is unreachable from the box. A throwaway VM with no controller needs `JENKINS_SKIP_VERIFICATION=1`, exactly as CI's own install suites pass it (`Test-MsiLifecycle.ps1` deliberately does not, to prove the failure)
+- Keep every custom-action command line under 255 characters with every `[PROPERTY]` quoted; `Test-MsiPlatform.ps1` and `InstallerVerificationAuthoringTests` check both
 
 ## Questions?
 

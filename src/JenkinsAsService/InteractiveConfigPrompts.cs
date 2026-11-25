@@ -5,7 +5,9 @@ namespace JenkinsAsService;
 // Console prompt primitives for the interactive `update-secret` flow. Pure input I/O — no
 // config-write and no secret-source resolution (the command resolves --secret/-file/-env first
 // and passes the result to PromptSecret). Keeping these here isolates raw-console handling
-// (masked input, key interception) from the command's dispatch and write orchestration.
+// (masked input, key interception) from the command's dispatch and write orchestration. The
+// verification Retry / Skip / Cancel exchange takes its reader and writers as parameters, so it is
+// unit-tested without a console.
 internal static class InteractiveConfigPrompts
 {
     public static string? PromptServer(string? argServer, string? existingServer)
@@ -88,6 +90,104 @@ internal static class InteractiveConfigPrompts
         var input = Console.ReadLine()?.Trim();
         return string.IsNullOrWhiteSpace(input) ? existing : input;
     }
+
+    /// <summary>What the operator chose after a failed verification check.</summary>
+    internal enum VerificationChoice
+    {
+        Retry,
+        Skip,
+        Cancel
+    }
+
+    /// <summary>Outcome of <see cref="VerifyWithRetry"/>: whether to write, and the values to write.</summary>
+    internal sealed record VerifiedValues(bool Proceed, string Url, string? JavaPath);
+
+    /// <summary>
+    /// Verifies the URL and Java path the interactive flow is about to write. On a failed check it shows the
+    /// reason and offers Retry (re-ask that value - Enter keeps it, to re-run the check once the controller is
+    /// back), Skip (write that value unchecked; the other check still runs) or Cancel (write nothing). Input and
+    /// output are parameters so the whole exchange is testable without a console.
+    /// </summary>
+    internal static VerifiedValues VerifyWithRetry(UpdateSecretVerifier verifier, string url, string? javaPath,
+        TextReader input, TextWriter output, TextWriter error, bool skipChecks = false)
+    {
+        // "Skipped" covers the reachability and java.exe checks only; a URL the service would refuse at start
+        // is still checked, and offers Retry / Cancel but no Skip. skipChecks (--skip-verification-steps)
+        // starts with both already skipped.
+        var skipped = skipChecks
+            ? new HashSet<VerifiedValue> { VerifiedValue.Url, VerifiedValue.JavaPath }
+            : new HashSet<VerifiedValue>();
+        while (true)
+        {
+            var failure = verifier.Verify(url, javaPath,
+                skipReachability: skipped.Contains(VerifiedValue.Url),
+                skipJavaCheck: skipped.Contains(VerifiedValue.JavaPath)).FirstOrDefault();
+            if (failure is null)
+            {
+                return new VerifiedValues(true, url, javaPath);
+            }
+
+            error.WriteLine($"Error: {failure.Message}");
+            switch (PromptVerificationChoice(input, output, failure.Skippable))
+            {
+                case VerificationChoice.Retry when failure.Value == VerifiedValue.Url:
+                    // Shown without userinfo: the URL is not a secret, credentials embedded in it are.
+                    output.Write($"Jenkins URL (with port) [{ControllerUrl.WithoutUserInfo(url)}] (Enter keeps it): ");
+                    url = KeepIfBlank(input.ReadLine(), url);
+                    break;
+                case VerificationChoice.Retry:
+                    output.Write($"Java path [{javaPath}] (Enter keeps it, - clears it to use JAVA_HOME): ");
+                    var answer = input.ReadLine()?.Trim();
+                    // Cleared is "", not null: the full write keeps an existing Agent:JavaPath when given null,
+                    // which would quietly put back the very path that just failed.
+                    javaPath = answer == "-" ? "" : KeepIfBlank(answer, javaPath!);
+                    break;
+                case VerificationChoice.Skip:
+                    output.WriteLine($"Verification of {OptionName(failure.Value)} skipped; it will be written unchecked.");
+                    skipped.Add(failure.Value);
+                    break;
+                default:
+                    error.WriteLine("Cancelled; nothing was written.");
+                    return new VerifiedValues(false, url, javaPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Asks Retry / Skip / Cancel until it gets one. End of input is Cancel: with nobody left to answer, the
+    /// one safe outcome is to write nothing.
+    /// </summary>
+    internal static VerificationChoice PromptVerificationChoice(TextReader input, TextWriter output,
+        bool allowSkip = true)
+    {
+        while (true)
+        {
+            output.Write(allowSkip
+                ? "[R]etry, [S]kip this check, or [C]ancel without writing? "
+                : "[R]etry or [C]ancel without writing? ");
+            var answer = input.ReadLine();
+            switch (answer?.Trim().ToLowerInvariant())
+            {
+                case null:
+                    output.WriteLine();
+                    return VerificationChoice.Cancel;
+                case "r" or "retry":
+                    return VerificationChoice.Retry;
+                case "s" or "skip" when allowSkip:
+                    return VerificationChoice.Skip;
+                case "c" or "cancel":
+                    return VerificationChoice.Cancel;
+                default:
+                    output.WriteLine(allowSkip ? "Please answer R, S or C." : "Please answer R or C.");
+                    break;
+            }
+        }
+    }
+
+    private static string KeepIfBlank(string? answer, string current) =>
+        string.IsNullOrWhiteSpace(answer) ? current : answer.Trim();
+
+    private static string OptionName(VerifiedValue value) => value == VerifiedValue.Url ? "--url" : "--java-path";
 
     public static (string Username, string Password)? PromptImpersonationCredentials(string? username)
     {

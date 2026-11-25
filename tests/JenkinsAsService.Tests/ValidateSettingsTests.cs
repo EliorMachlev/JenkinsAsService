@@ -89,7 +89,7 @@ public class ValidateSettingsTests
         var act = () => ServiceSettingsValidator.Validate(settings);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*explicit port*")
+            .WithMessage("*must not contain credentials*")
             .Which.Message.Should().NotContain("SENTINEL-c4f1e2");
     }
 
