@@ -402,6 +402,20 @@ public sealed class UpdateSecretVerificationTests : IDisposable
     }
 
     [Fact]
+    public void A_failed_upgrade_repair_leaves_the_config_byte_for_byte_untouched()
+    {
+        // The config lacks most schema keys, so normalizing it would rewrite the file. "Nothing was written"
+        // must hold for the normalization too: verification runs before it.
+        const string original = "{\"Jenkins\":{\"Connection\":{\"Url\":\"https://old:8443\"}}}";
+        File.WriteAllText(ConfigPath, original);
+
+        Run(["--silent", "--upgrade", "--secret", "s", "--url", _unreachableUrl, "--mode", "Unprotected"],
+            TestVerifiers.RealTcp()).Code.Should().Be(1);
+
+        File.ReadAllText(ConfigPath).Should().Be(original);
+    }
+
+    [Fact]
     public void Set_data_dir_verifies_nothing()
     {
         var checker = Substitute.For<IConnectivityChecker>();

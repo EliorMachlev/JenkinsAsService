@@ -406,7 +406,7 @@ public static class UpdateSecretCommand
 
     // ─── Silent mode ─────────────────────────────────────────────────────────
 
-    private static int RunSilent(string basePath, ParseState args, UpdateSecretVerifier verifier)
+    private static int RunSilent(string basePath, ParseState args, UpdateSecretVerifier verifier, bool alreadyVerified = false)
     {
         // Installer-only path: runs elevated (SYSTEM) during install, so pre-create the event source
         // here while we have the privilege. The low-privilege service account cannot do this later. It is
@@ -416,7 +416,7 @@ public static class UpdateSecretCommand
         // Before the secret is resolved: --secret-file deletes its file once read, and a run that is about to
         // fail on a mistyped URL must not consume it. A blank URL is not checked here; it is reported as
         // missing below, after the secret, exactly as before.
-        if (!VerifyBeforeWrite(args, verifier, args.Url, args.JavaPath))
+        if (!alreadyVerified && !VerifyBeforeWrite(args, verifier, args.Url, args.JavaPath))
         {
             return 1;
         }
@@ -522,6 +522,20 @@ public static class UpdateSecretCommand
 
     private static int RunUpgrade(string basePath, ParseState args, UpdateSecretVerifier verifier)
     {
+        // 0. Inspect first, and when the repair-write is coming, verify before anything touches the file:
+        //    a failed verification promises "nothing was written", which normalizing first would break.
+        //    Normalization preserves the secret and never changes this state, so inspecting early is equivalent.
+        var state = InspectConfig(basePath);
+        if (state == ConfigState.NoSecret)
+        {
+            // Pre-create the event source (SYSTEM, elevated): a verification failure is recorded there.
+            EventLogSourceInstaller.Ensure(EventLogSource, EventLogName);
+            if (!VerifyBeforeWrite(args, verifier, args.Url, args.JavaPath))
+            {
+                return 1;
+            }
+        }
+
         // 1. Reconcile appsettings.json to the current schema (add new keys, prune obsolete ones).
         //    Secret-agnostic — the secret's value, being an in-schema key, is preserved untouched.
         //    Best-effort: a normalize failure must not roll back the upgrade (the service still runs on
@@ -548,7 +562,7 @@ public static class UpdateSecretCommand
         //    A present-but-undecryptable secret (User-DPAPI / TPM / Credential Manager under any identity)
         //    counts as present and is left alone. A broken/incorrect secret likewise keeps failing, as
         //    it did before the upgrade.
-        switch (InspectConfig(basePath))
+        switch (state)
         {
             case ConfigState.HasSecret:
                 Console.WriteLine("Existing secret present — configuration preserved.");
@@ -560,7 +574,7 @@ public static class UpdateSecretCommand
             default: // NoSecret (missing or parseable-empty): repair by writing from the supplied args.
                      // Fails when none were supplied, exactly as a fresh silent install with no secret fails.
                 Console.WriteLine("No existing secret found — writing configuration from supplied arguments.");
-                return RunSilent(basePath, args, verifier);
+                return RunSilent(basePath, args, verifier, alreadyVerified: true);
         }
     }
 
