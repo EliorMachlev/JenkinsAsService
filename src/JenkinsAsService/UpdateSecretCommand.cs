@@ -130,13 +130,14 @@ public static class UpdateSecretCommand
           --co, --compact-log <bool>              Compact JSON log format (true/false)
           --r, --retained-logs <int>              Number of rolled log files to keep
           --ma, --max-retries <int>               Max auto-recovery attempts (0 = infinite)
-          --svs, --skip-verification-steps        Write --url and --java-path without verifying them. By default a
-                                                  value that is being written is checked first, and any failure exits 1
-                                                  without writing: the URL must be absolute with an explicit port and
-                                                  answer a TCP connect within 5 s; an explicit --java-path must contain
-                                                  java.exe. Needed when the controller is unreachable from here - the
-                                                  check runs as SYSTEM at install time, ignores Connection:Proxy, and
-                                                  the controller may be down for maintenance.
+          --svs, --skip-verification-steps        Skip the reachability and java.exe checks. By default a value that is
+                                                  being written is checked first, and any failure exits 1 without
+                                                  writing: the URL must be absolute with an explicit port and no
+                                                  credentials, and answer a TCP connect within 5 s; an explicit
+                                                  --java-path must contain java.exe. Needed when the controller is
+                                                  unreachable from here - the check runs as SYSTEM at install time,
+                                                  ignores Connection:Proxy, and the controller may be down for
+                                                  maintenance. The URL's format is still enforced.
           --h, --help                             Show this help
         """;
 
@@ -292,13 +293,10 @@ public static class UpdateSecretCommand
             return true;
         }
 
-        if (args.SkipVerification)
-        {
-            Console.WriteLine(SkippedMessage(options));
-            return true;
-        }
-
-        var failures = verifier.Verify(url, javaPath);
+        // --skip-verification-steps drops the reachability and java.exe checks, which depend on this machine
+        // and this moment. The URL's format does not, so it is still enforced: skipping it would write a URL
+        // the service refuses at start, or credentials in clear text.
+        var failures = verifier.Verify(url, javaPath, args.SkipVerification, args.SkipVerification);
         foreach (var failure in failures)
         {
             Console.Error.WriteLine($"Error: {failure.Message}");
@@ -311,12 +309,13 @@ public static class UpdateSecretCommand
             return false;
         }
 
-        Console.WriteLine($"Verified {options}.");
+        Console.WriteLine(args.SkipVerification ? SkippedMessage(options) : $"Verified {options}.");
         return true;
     }
 
     private static string SkippedMessage(string options) =>
-        $"Verification skipped (--skip-verification-steps): {options} written unchecked.";
+        "Verification skipped (--skip-verification-steps): the reachability and java.exe checks were not run for "
+        + $"{options}; the URL's format is still enforced.";
 
     // "--url and --java-path", or whichever of them is being written; empty when neither is.
     private static string VerifiedOptionNames(string? url, string? javaPath) =>
@@ -594,17 +593,15 @@ public static class UpdateSecretCommand
                 Console.WriteLine(SkippedMessage(skipped));
             }
         }
-        else
-        {
-            var verified = InteractiveConfigPrompts.VerifyWithRetry(
-                verifier, server, javaPath, input, Console.Out, Console.Error);
-            if (!verified.Proceed)
-            {
-                return 1;
-            }
 
-            (server, javaPath) = (verified.Url, verified.JavaPath);
+        var verified = InteractiveConfigPrompts.VerifyWithRetry(
+            verifier, server, javaPath, input, Console.Out, Console.Error, args.SkipVerification);
+        if (!verified.Proceed)
+        {
+            return 1;
         }
+
+        (server, javaPath) = (verified.Url, verified.JavaPath);
 
         var secret = InteractiveConfigPrompts.PromptSecret(
             ResolveSecretInput(args.SecretArg, args.SecretFile, args.SecretEnv));

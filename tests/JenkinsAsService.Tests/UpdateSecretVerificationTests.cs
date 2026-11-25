@@ -99,6 +99,7 @@ public sealed class UpdateSecretVerificationTests : IDisposable
     [InlineData("user:pass@weird://jenkins:8443", "***@weird://jenkins:8443")]
     [InlineData("https://jenkins:8443/path@thing", "https://***@thing")]              // over-redacted, by design
     // ...but only in the path: an '@' in a query or fragment is not where credentials get typed.
+    [InlineData("not-a-url?user:pass@jenkins", "***@jenkins")]                        // unparseable: '?' hides nothing
     [InlineData("https://jenkins:8443/p?contact=a@b.example", "https://jenkins:8443/p?contact=a@b.example")]
     [InlineData("https://jenkins:8443/#frag@ment", "https://jenkins:8443/#frag@ment")]
     [InlineData("https://user:pw@jenkins:8443/p?c=a@b", "https://jenkins:8443/p?c=a@b")]
@@ -634,6 +635,66 @@ public sealed class UpdateSecretVerificationTests : IDisposable
 
         code.Should().Be(0, "end of input would have been Cancel, so no prompt was shown");
         stdout.Should().Contain("Verification skipped");
+    }
+
+    // ─── Skipping drops the network checks, never the URL format ──────────────
+
+    [Theory]
+    [InlineData("https://SENTINEL-u:SENTINEL-p@jenkins:8443", "must not contain credentials")]
+    [InlineData("https://jenkins", "explicit port")]
+    [InlineData("not-a-url", "not a valid absolute URL")]
+    [InlineData("localhost:8080", "names no host")]
+    public void The_skip_flag_does_not_excuse_a_url_the_service_would_refuse(string url, string reason)
+    {
+        var (code, _, stderr) = Run(
+            ["--silent", "--secret", "s", "--url", url, "--mode", "Unprotected", "--svs"],
+            TestVerifiers.RealTcp());
+
+        code.Should().Be(1);
+        stderr.Should().Contain(reason).And.NotContain("SENTINEL");
+        File.Exists(ConfigPath).Should().BeFalse("nothing is written - least of all credentials in clear text");
+    }
+
+    [Fact]
+    public void The_verifier_keeps_the_format_rule_when_reachability_is_skipped()
+    {
+        var verifier = new UpdateSecretVerifier(Substitute.For<IConnectivityChecker>(), 100);
+
+        var format = verifier.VerifyUrl("https://jenkins", skipReachability: true);
+        format!.Skippable.Should().BeFalse();
+
+        verifier.VerifyUrl(_unreachableUrl, skipReachability: true).Should().BeNull();
+        verifier.Verify(_unreachableUrl, Path.Combine(_tempDir, "nope"), skipReachability: true, skipJavaCheck: true)
+            .Should().BeEmpty();
+        TestVerifiers.RealTcp().VerifyUrl(_unreachableUrl)!.Skippable.Should().BeTrue("a network failure may be skipped");
+    }
+
+    [Fact]
+    public void A_format_failure_offers_retry_or_cancel_but_not_skip()
+    {
+        var output = new StringWriter();
+
+        var result = InteractiveConfigPrompts.VerifyWithRetry(TestVerifiers.AlwaysReachable(),
+            "https://user:pass@jenkins:8443", null, new StringReader("s\nc\n"), output, new StringWriter());
+
+        result.Proceed.Should().BeFalse("S was refused, then C cancelled");
+        output.ToString().Should().Contain("[R]etry or [C]ancel").And.Contain("Please answer R or C.")
+            .And.NotContain("[S]kip");
+    }
+
+    [Fact]
+    public void Interactive_with_the_skip_flag_still_refuses_a_bad_url_format()
+    {
+        var secretFile = Path.Combine(_tempDir, "secret.tmp");
+        File.WriteAllText(secretFile, "file-secret");
+
+        var (code, _, stderr) = Run([.. InteractiveArgs("https://SENTINEL-u:SENTINEL-p@jenkins:8443", secretFile), "--svs"],
+            TestVerifiers.RealTcp(), new StringReader("c\n"));
+
+        code.Should().Be(1);
+        stderr.Should().Contain("must not contain credentials").And.NotContain("SENTINEL");
+        File.Exists(ConfigPath).Should().BeFalse();
+        File.Exists(secretFile).Should().BeTrue();
     }
 
     private JsonElement Jenkins() =>

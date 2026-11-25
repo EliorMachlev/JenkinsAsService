@@ -109,21 +109,26 @@ internal static class InteractiveConfigPrompts
     /// output are parameters so the whole exchange is testable without a console.
     /// </summary>
     internal static VerifiedValues VerifyWithRetry(UpdateSecretVerifier verifier, string url, string? javaPath,
-        TextReader input, TextWriter output, TextWriter error)
+        TextReader input, TextWriter output, TextWriter error, bool skipChecks = false)
     {
-        var skipped = new HashSet<VerifiedValue>();
+        // "Skipped" covers the reachability and java.exe checks only; a URL the service would refuse at start
+        // is still checked, and offers Retry / Cancel but no Skip. skipChecks (--skip-verification-steps)
+        // starts with both already skipped.
+        var skipped = skipChecks
+            ? new HashSet<VerifiedValue> { VerifiedValue.Url, VerifiedValue.JavaPath }
+            : new HashSet<VerifiedValue>();
         while (true)
         {
-            var failure = verifier.Verify(
-                skipped.Contains(VerifiedValue.Url) ? null : url,
-                skipped.Contains(VerifiedValue.JavaPath) ? null : javaPath).FirstOrDefault();
+            var failure = verifier.Verify(url, javaPath,
+                skipReachability: skipped.Contains(VerifiedValue.Url),
+                skipJavaCheck: skipped.Contains(VerifiedValue.JavaPath)).FirstOrDefault();
             if (failure is null)
             {
                 return new VerifiedValues(true, url, javaPath);
             }
 
             error.WriteLine($"Error: {failure.Message}");
-            switch (PromptVerificationChoice(input, output))
+            switch (PromptVerificationChoice(input, output, failure.Skippable))
             {
                 case VerificationChoice.Retry when failure.Value == VerifiedValue.Url:
                     // Shown without userinfo: the URL is not a secret, credentials embedded in it are.
@@ -152,11 +157,14 @@ internal static class InteractiveConfigPrompts
     /// Asks Retry / Skip / Cancel until it gets one. End of input is Cancel: with nobody left to answer, the
     /// one safe outcome is to write nothing.
     /// </summary>
-    internal static VerificationChoice PromptVerificationChoice(TextReader input, TextWriter output)
+    internal static VerificationChoice PromptVerificationChoice(TextReader input, TextWriter output,
+        bool allowSkip = true)
     {
         while (true)
         {
-            output.Write("[R]etry, [S]kip this check, or [C]ancel without writing? ");
+            output.Write(allowSkip
+                ? "[R]etry, [S]kip this check, or [C]ancel without writing? "
+                : "[R]etry or [C]ancel without writing? ");
             var answer = input.ReadLine();
             switch (answer?.Trim().ToLowerInvariant())
             {
@@ -165,12 +173,12 @@ internal static class InteractiveConfigPrompts
                     return VerificationChoice.Cancel;
                 case "r" or "retry":
                     return VerificationChoice.Retry;
-                case "s" or "skip":
+                case "s" or "skip" when allowSkip:
                     return VerificationChoice.Skip;
                 case "c" or "cancel":
                     return VerificationChoice.Cancel;
                 default:
-                    output.WriteLine("Please answer R, S or C.");
+                    output.WriteLine(allowSkip ? "Please answer R, S or C." : "Please answer R or C.");
                     break;
             }
         }

@@ -395,7 +395,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>JENKINS_SKIP_VERIFICATION</code></td>
             <td>No</td>
             <td>&mdash; (verify)</td>
-            <td><code>1</code> writes <code>JENKINS_URL</code> and <code>JENKINS_JAVA_PATH</code> without verifying them. By default a malformed or unreachable URL, or a Java path without <code>java.exe</code>, <strong>fails the install</strong>; see <a href="configuration.html#input-verification">Input verification</a></td>
+            <td><code>1</code> skips the reachability check of <code>JENKINS_URL</code> and the <code>java.exe</code> check of <code>JENKINS_JAVA_PATH</code>; the URL's format (absolute, explicit port, no credentials) is still enforced. By default a malformed or unreachable URL, or a Java path without <code>java.exe</code>, <strong>fails the install</strong>; see <a href="configuration.html#input-verification">Input verification</a></td>
           </tr>
         </tbody>
       </table>

@@ -199,11 +199,15 @@
          a failure exits 1 and, Return being the default check, fails and rolls back the install. The reason
          goes to stderr, which an EXE custom action loses, and to the Application event log (source
          JenkinsAsService), which is where an operator finds it. JasSkipVerificationArg turns it off.
+         JasSkipVerificationArg comes right after the silent flag and the Java path option stays LAST on purpose: a Java path the
+         operator typed with a trailing backslash formats as ...\" which the command-line parser reads as a literal
+         quote, and update-secret repairs that only for the final argument. Anything after it would be swallowed
+         into the path - including the skip flag.
          The agent name moved to WriteAdvanced3 to make room for that argument under the 255-character limit;
          it needs no verification, and the merge writes it exactly as this command did. -->
     <CustomAction Id="WriteConfig"
                   FileRef="JenkinsAsService.exe"
-                  ExeCommand='update-secret --silent --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]" --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --java-path "[JENKINS_JAVA_PATH]" "[JasSkipVerificationArg]"'
+                  ExeCommand='update-secret --silent "[JasSkipVerificationArg]" --secret "[JENKINS_SECRET]" --url "[JENKINS_URL]" --mode "[JENKINS_SECRET_MODE]" --thumbprint "[JENKINS_THUMBPRINT]" --service-account "[SERVICE_ACCOUNT]" --java-path "[JENKINS_JAVA_PATH]"'
                   Execute="deferred" Impersonate="no" />
 
     <!-- Second CA: persist the data directory. Kept separate because folding the data-dir flag into the

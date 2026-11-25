@@ -101,6 +101,30 @@ public class InstallerVerificationAuthoringTests
         parsed.Url.Should().Be("https://jenkins.example.com:8443");
     }
 
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("--svs", true)]
+    public void A_java_path_typed_with_a_trailing_backslash_neither_corrupts_nor_swallows_the_skip_flag(
+        string skipArg, bool skips)
+    {
+        // ...\" is a literal quote to the command-line parser, which update-secret repairs only when the path is
+        // the LAST argument. Anything after it was swallowed into the path - skip flag included.
+        var values = new Dictionary<string, string>
+        {
+            [SkipArg] = skipArg,
+            ["JENKINS_URL"] = "https://jenkins.example.com:8443",
+            ["JENKINS_SECRET"] = "s",
+            ["JENKINS_SECRET_MODE"] = "Dpapi",
+            ["JENKINS_JAVA_PATH"] = @"C:\Program Files\Java\jdk-21\bin\",
+        };
+
+        var parsed = UpdateSecretCommand.ParseArgs(Split(Format(Command("WriteConfig"), p => values.GetValueOrDefault(p, ""))));
+
+        parsed.Should().NotBeNull();
+        parsed!.JavaPath.Should().Be(@"C:\Program Files\Java\jdk-21\bin");
+        parsed.SkipVerification.Should().Be(skips);
+    }
+
     [Fact]
     public void The_agent_name_still_reaches_the_config_on_a_fresh_install()
     {

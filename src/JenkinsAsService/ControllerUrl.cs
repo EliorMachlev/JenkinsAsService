@@ -90,7 +90,9 @@ internal static class ControllerUrl
 
         // Only the part before any query or fragment: an '@' there (a mail address in "?contact=a@b") is not
         // where credentials get typed, and cutting at it would hide most of a perfectly good URL.
-        var pathEnd = url.IndexOfAny(['?', '#'], authorityStart);
+        // Only for a URL that parses: input that does not parse may have credentials typed anywhere, after a
+        // '?' or '#' included, so it is cut at the last '@' of the whole string.
+        var pathEnd = Uri.TryCreate(url, UriKind.Absolute, out _) ? url.IndexOfAny(['?', '#'], authorityStart) : -1;
         var at = (pathEnd >= 0 ? url[..pathEnd] : url).LastIndexOf('@');
         if (at < 0)
         {

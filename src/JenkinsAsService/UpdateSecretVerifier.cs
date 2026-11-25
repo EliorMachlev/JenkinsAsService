@@ -13,7 +13,14 @@ internal enum VerifiedValue
 }
 
 /// <summary>A failed check: the value it was about and the complete message for the operator.</summary>
-internal sealed record VerificationFailure(VerifiedValue Value, string Message);
+/// <param name="Value">The value the check was about.</param>
+/// <param name="Message">The complete message for the operator.</param>
+/// <param name="Skippable">
+/// False for a failure that needs no network and that skipping must not excuse: a URL the service itself would
+/// refuse at start (not absolute, no explicit port, credentials in it, no host). Skipping those would only move
+/// the failure to the service start, or write credentials in clear text.
+/// </param>
+internal sealed record VerificationFailure(VerifiedValue Value, string Message, bool Skippable = true);
 
 /// <summary>
 /// Checks the values <c>update-secret</c> is about to write, before it writes them, so a mistyped URL or Java
@@ -79,15 +86,16 @@ internal sealed class UpdateSecretVerifier
     /// <paramref name="url"/> is non-blank, the Java path when <paramref name="javaPath"/> is. Blank means
     /// "not being written", which is not this class's concern - the required-field checks own that.
     /// </summary>
-    internal IReadOnlyList<VerificationFailure> Verify(string? url, string? javaPath)
+    internal IReadOnlyList<VerificationFailure> Verify(string? url, string? javaPath,
+        bool skipReachability = false, bool skipJavaCheck = false)
     {
         var failures = new List<VerificationFailure>(2);
-        if (!string.IsNullOrWhiteSpace(url) && VerifyUrl(url) is { } urlFailure)
+        if (!string.IsNullOrWhiteSpace(url) && VerifyUrl(url, skipReachability) is { } urlFailure)
         {
             failures.Add(urlFailure);
         }
 
-        if (!string.IsNullOrWhiteSpace(javaPath) && VerifyJavaPath(javaPath) is { } javaFailure)
+        if (!skipJavaCheck && !string.IsNullOrWhiteSpace(javaPath) && VerifyJavaPath(javaPath) is { } javaFailure)
         {
             failures.Add(javaFailure);
         }
@@ -95,22 +103,33 @@ internal sealed class UpdateSecretVerifier
         return failures;
     }
 
-    /// <summary>Checks 1 and 2: the URL obeys the startup rule, then answers a TCP connect. Null when both pass.</summary>
-    internal VerificationFailure? VerifyUrl(string url)
+    /// <summary>
+    /// Checks 1 and 2: the URL obeys the startup rule, then answers a TCP connect. Null when both pass.
+    /// <paramref name="skipReachability"/> drops only the TCP connect: the format rule needs no network and is
+    /// never skipped.
+    /// </summary>
+    internal VerificationFailure? VerifyUrl(string url, bool skipReachability = false)
     {
         var shown = ControllerUrl.WithoutUserInfo(url);
         var problem = ControllerUrl.Check(url);
         if (problem != ControllerUrl.Problem.None)
         {
             return new VerificationFailure(VerifiedValue.Url,
-                $"--url: '{shown}' {ControllerUrl.Describe(problem)}. Example: {ControllerUrl.Example}");
+                $"--url: '{shown}' {ControllerUrl.Describe(problem)}. Example: {ControllerUrl.Example}",
+                Skippable: false);
         }
 
         var uri = new Uri(url);
         if (string.IsNullOrEmpty(uri.Host))
         {
             return new VerificationFailure(VerifiedValue.Url,
-                $"--url: '{shown}' names no host to connect to. Example: {ControllerUrl.Example}");
+                $"--url: '{shown}' names no host to connect to. Example: {ControllerUrl.Example}",
+                Skippable: false);
+        }
+
+        if (skipReachability)
+        {
+            return null;
         }
 
         try
