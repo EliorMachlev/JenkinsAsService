@@ -6,7 +6,9 @@ namespace JenkinsAsService;
 /// The one statement of what a usable <c>Connection:Url</c> is: an absolute URL whose port is written out.
 /// Shared by <see cref="ServiceSettingsValidator"/> (service start) and <see cref="UpdateSecretVerifier"/>
 /// (<c>update-secret</c>, before the value is written), so the CLI cannot accept a URL the service then
-/// refuses at startup, or the other way round.
+/// refuses at startup. The verifier is deliberately a little STRICTER than this rule: it also requires a host
+/// to connect to (<c>localhost:8080</c> parses as an absolute URI with scheme "localhost" and no host), which
+/// the service does not check at startup.
 /// </summary>
 internal static class ControllerUrl
 {
@@ -17,6 +19,7 @@ internal static class ControllerUrl
     {
         None,
         NotAbsolute,
+        HasUserInfo,
         NoExplicitPort
     }
 
@@ -31,6 +34,13 @@ internal static class ControllerUrl
             return Problem.NotAbsolute;
         }
 
+        // Credentials do not belong in the URL: the agent authenticates with the secret, which is stored
+        // protected; a user:pass@ here would sit in appsettings.json in clear text and nothing reads it.
+        if (Authority(url, out _).Contains('@'))
+        {
+            return Problem.HasUserInfo;
+        }
+
         return HasExplicitPort(url) ? Problem.None : Problem.NoExplicitPort;
     }
 
@@ -38,6 +48,7 @@ internal static class ControllerUrl
     internal static string Describe(Problem problem) => problem switch
     {
         Problem.NotAbsolute => "is not a valid absolute URL",
+        Problem.HasUserInfo => "must not contain credentials (user:password@); the agent secret is configured separately",
         Problem.NoExplicitPort => "must include an explicit port",
         _ => "is valid"
     };
@@ -48,6 +59,11 @@ internal static class ControllerUrl
     internal static bool HasExplicitPort(string url)
     {
         var authority = Authority(url, out _);
+
+        // Userinfo is not the host: in "https://user:pass@host" the colon belongs to the credentials, and
+        // reading it as a port made a port-less URL pass (and connect to the scheme default). Look at what
+        // follows the last '@' only.
+        authority = authority[(authority.LastIndexOf('@') + 1)..];
 
         var closeBracket = authority.LastIndexOf(']'); // end of an IPv6 literal, if any
         var searchFrom = closeBracket >= 0 ? closeBracket + 1 : 0;
@@ -71,7 +87,11 @@ internal static class ControllerUrl
     internal static string WithoutUserInfo(string url)
     {
         var authority = Authority(url, out var authorityStart);
-        var at = url.LastIndexOf('@');
+
+        // Only the part before any query or fragment: an '@' there (a mail address in "?contact=a@b") is not
+        // where credentials get typed, and cutting at it would hide most of a perfectly good URL.
+        var pathEnd = url.IndexOfAny(['?', '#'], authorityStart);
+        var at = (pathEnd >= 0 ? url[..pathEnd] : url).LastIndexOf('@');
         if (at < 0)
         {
             return url;

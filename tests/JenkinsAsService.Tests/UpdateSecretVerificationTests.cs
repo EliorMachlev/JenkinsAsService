@@ -54,6 +54,13 @@ public sealed class UpdateSecretVerificationTests : IDisposable
     [InlineData("https://jenkins.example.com", "NoExplicitPort")]
     [InlineData("https://jenkins.example.com:/x", "NoExplicitPort")]
     [InlineData("http://[::1]/jenkins", "NoExplicitPort")]   // the colons are the literal's
+    // Credentials do not belong in the URL, whatever else is right or wrong with it.
+    [InlineData("https://user:pass@jenkins.example.com:8443", "HasUserInfo")]
+    [InlineData("https://user:pass@jenkins.example.com", "HasUserInfo")]
+    [InlineData("https://user@jenkins.example.com:8443/x", "HasUserInfo")]
+    [InlineData("https://user:p%40ss@jenkins.example.com:8443", "HasUserInfo")]
+    [InlineData("https://user@[::1]:8443", "HasUserInfo")]
+    [InlineData("https://jenkins.example.com:8443/p?c=a@b", "None")]   // an @ after the authority is not userinfo
     [InlineData("not-a-url", "NotAbsolute")]
     [InlineData("", "NotAbsolute")]
     public void The_url_rule_is_absolute_with_an_explicit_port(string url, string expected)
@@ -91,9 +98,30 @@ public sealed class UpdateSecretVerificationTests : IDisposable
     [InlineData("not-a-url/user:pass@jenkins", "***@jenkins")]
     [InlineData("user:pass@weird://jenkins:8443", "***@weird://jenkins:8443")]
     [InlineData("https://jenkins:8443/path@thing", "https://***@thing")]              // over-redacted, by design
+    // ...but only in the path: an '@' in a query or fragment is not where credentials get typed.
+    [InlineData("https://jenkins:8443/p?contact=a@b.example", "https://jenkins:8443/p?contact=a@b.example")]
+    [InlineData("https://jenkins:8443/#frag@ment", "https://jenkins:8443/#frag@ment")]
+    [InlineData("https://user:pw@jenkins:8443/p?c=a@b", "https://jenkins:8443/p?c=a@b")]
     public void Userinfo_is_stripped_from_a_url_before_it_is_shown(string url, string shown)
     {
         ControllerUrl.WithoutUserInfo(url).Should().Be(shown);
+    }
+
+    [Theory]
+    [InlineData("localhost:8080")]
+    [InlineData(@"C:\jenkins")]
+    public void The_verifier_also_requires_a_host_which_the_startup_rule_does_not(string url)
+    {
+        // Both parse as absolute URIs whose "authority" holds a colon, so the shared rule passes them; the
+        // verifier refuses them because there is nothing to connect to. Pinned so the difference documented on
+        // ControllerUrl stays true.
+        ControllerUrl.Check(url).ToString().Should().Be("None");
+        var checker = Substitute.For<IConnectivityChecker>();
+
+        var failure = new UpdateSecretVerifier(checker, 100).VerifyUrl(url);
+
+        failure!.Message.Should().Contain("names no host");
+        checker.ReceivedCalls().Should().BeEmpty();
     }
 
     // ─── The verifier ──────────────────────────────────────────────────────────

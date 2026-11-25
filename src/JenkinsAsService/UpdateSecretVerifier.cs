@@ -36,7 +36,10 @@ internal sealed record VerificationFailure(VerifiedValue Value, string Message);
 /// </summary>
 internal sealed class UpdateSecretVerifier
 {
-    /// <summary>How long the reachability check waits for the TCP connect.</summary>
+    /// <summary>
+    /// How long the reachability check waits for the TCP connect. Longer than the service's own 2 s probe on
+    /// purpose: this runs once, at install time, where a slow first connect should not fail the install.
+    /// </summary>
     internal const int DefaultReachabilityTimeoutMs = 5_000;
 
     /// <summary>The option that turns every check off, in the form the messages tell the operator to use.</summary>

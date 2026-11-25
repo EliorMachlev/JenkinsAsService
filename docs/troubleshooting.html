@@ -102,6 +102,11 @@
             <td>Write the port explicitly: <code>https://jenkins:8443</code>. A URL with no port is rejected; an explicit standard <code>:443</code> is accepted.</td>
           </tr>
           <tr>
+            <td><code>Connection:Url must not contain credentials</code></td>
+            <td>Error</td>
+            <td>Remove <code>user:password@</code> from the URL (<code>https://jenkins:8443</code>). The agent authenticates with its secret, which is configured separately; credentials in the URL are not used and would be stored in clear text.</td>
+          </tr>
+          <tr>
             <td><code>Connection:Url is not a valid absolute URL</code></td>
             <td>Error</td>
             <td>Malformed URL &mdash; fix the value.</td>

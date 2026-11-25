@@ -389,7 +389,7 @@ dotnet build src/JenkinsAsService.Installer -c Release -p:PublishDir=../../publi
             <td><code>JENKINS_JAVA_PATH</code></td>
             <td>No</td>
             <td><code>JAVA_HOME</code></td>
-            <td>Path to JDK <code>bin</code> folder (the folder that contains <code>java.exe</code>). Verified at install when given</td>
+            <td>Path to JDK <code>bin</code> folder (the folder that contains <code>java.exe</code>). Verified at install when given. The wizard pre-fills <code>%JAVA_HOME%\bin</code> when <code>JAVA_HOME</code> is set; if your JDK has no <code>bin\java.exe</code> there (a non-standard layout), correct the field or tick <em>Skip verifying</em>, or the install fails</td>
           </tr>
           <tr>
             <td><code>JENKINS_SKIP_VERIFICATION</code></td>
