@@ -46,7 +46,7 @@ public sealed class ConnectionSettings
     /// <para>
     /// This covers the .NET-side download only. The Java agent's own connection to the controller is the
     /// JVM's, and needs <c>-Dhttps.proxyHost=&#8230;</c> style flags passed through
-    /// <see cref="AgentSettings.CustomArguments"/>.
+    /// <see cref="AgentSettings.JvmArguments"/>.
     /// </para>
     /// </summary>
     public string Proxy { get; set; } = "";
@@ -90,8 +90,19 @@ public sealed class AgentSettings
     /// <summary>Path to JDK/OpenJDK bin folder. Falls back to JAVA_HOME if empty.</summary>
     public string JavaPath { get; set; } = "";
 
-    /// <summary>Extra arguments for java.exe (e.g. -noCertificateCheck).</summary>
+    /// <summary>
+    /// Extra arguments for the Jenkins remoting agent, appended <em>after</em> <c>-jar agent.jar</c>
+    /// (e.g. <c>-noCertificateCheck</c>, <c>-cert</c>, <c>-tunnel</c>). JVM options do not belong here: after
+    /// <c>-jar</c> the JVM hands them to the agent as program arguments. Use <see cref="JvmArguments"/>.
+    /// </summary>
     public string CustomArguments { get; set; } = "";
+
+    /// <summary>
+    /// Extra options for the JVM itself (e.g. <c>-Dhttps.proxyHost=proxy -Dhttps.proxyPort=8080</c>,
+    /// <c>-Xmx512m</c>), placed <em>before</em> <c>-jar</c>. Same syntax as <see cref="CustomArguments"/>:
+    /// space-separated, quoted values and escaped quotes allowed.
+    /// </summary>
+    public string JvmArguments { get; set; } = "";
 
     /// <summary>
     /// Writable data directory root for runtime artifacts the service produces — log files and the secret

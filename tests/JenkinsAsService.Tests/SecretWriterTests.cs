@@ -89,7 +89,7 @@ public class SecretWriterTests : IDisposable
             "{\"Jenkins\":{" +
             "\"Connection\":{\"Url\":\"https://old:8443\",\"AgentName\":\"\"}," +
             "\"Secret\":{\"Value\":\"old-secret\",\"Mode\":\"Unprotected\"}," +
-            "\"Agent\":{\"CustomArguments\":\"-noCertificateCheck\"}," +
+            "\"Agent\":{\"CustomArguments\":\"-noCertificateCheck\",\"JvmArguments\":\"-Xmx256m\"}," +
             "\"Logging\":{\"DebugMode\":true,\"CompactLog\":true}," +
             "\"Recovery\":{\"MaxRetries\":5}}}";
         File.WriteAllText(Path.Combine(_tempDir, "appsettings.json"), existingJson);
@@ -103,6 +103,7 @@ public class SecretWriterTests : IDisposable
         jenkins.GetProperty("Connection").GetProperty("Url").GetString().Should().Be("https://new:8443");
         jenkins.GetProperty("Secret").GetProperty("Value").GetString().Should().Be("new-secret");
         jenkins.GetProperty("Agent").GetProperty("CustomArguments").GetString().Should().Be("-noCertificateCheck");
+        jenkins.GetProperty("Agent").GetProperty("JvmArguments").GetString().Should().Be("-Xmx256m");
         jenkins.GetProperty("Logging").GetProperty("DebugMode").GetBoolean().Should().BeTrue();
         jenkins.GetProperty("Logging").GetProperty("CompactLog").GetBoolean().Should().BeTrue();
         jenkins.GetProperty("Recovery").GetProperty("MaxRetries").GetInt32().Should().Be(5);

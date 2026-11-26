@@ -53,6 +53,7 @@ internal static class ConfigKeys
         internal const string Name = "Agent";
         internal const string JavaPath = "JavaPath";
         internal const string CustomArguments = "CustomArguments";
+        internal const string JvmArguments = "JvmArguments";
         internal const string DataDirectory = "DataDirectory";
 
         internal const string JavaPathPath = Name + ":" + JavaPath;

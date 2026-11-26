@@ -136,7 +136,13 @@
             <td><code>Agent:CustomArguments</code></td>
             <td>No</td>
             <td><em>(empty)</em></td>
-            <td>Additional arguments passed to <code>java.exe</code>. Space-separated, supports quoted values and escaped quotes (<code>\"</code>). Example: <code>-noCertificateCheck</code></td>
+            <td>Additional arguments for the Jenkins remoting agent, placed <em>after</em> <code>-jar agent.jar</code>. Space-separated, supports quoted values and escaped quotes (<code>\"</code>). Example: <code>-noCertificateCheck</code>. Any remoting flag without a dedicated setting can go here (<code>-noKeepAlive</code>, <code>-cert &lt;PEM&gt;</code>, <code>-tunnel host:port</code>). <strong>JVM options (<code>-D…</code>, <code>-Xmx…</code>) do not work here</strong>: use <code>Agent:JvmArguments</code>.</td>
+          </tr>
+          <tr>
+            <td><code>Agent:JvmArguments</code></td>
+            <td>No</td>
+            <td><em>(empty)</em></td>
+            <td>Options for the JVM itself, placed <em>before</em> <code>-jar</code>. Same syntax as <code>Agent:CustomArguments</code>. Example: <code>-Dhttps.proxyHost=proxy.example.com -Dhttps.proxyPort=8080</code>. Config-file only; no installer or <code>update-secret</code> option.</td>
           </tr>
           <tr>
             <td><code>Agent:DataDirectory</code></td>
@@ -210,6 +216,7 @@
     "Agent": {
       "JavaPath": "",
       "CustomArguments": "",
+      "JvmArguments": "",
       "DataDirectory": ""
     },
     "Hardening": {
@@ -436,7 +443,7 @@
     <p><code>Connection:ProxyBypass</code> lists hosts that skip an explicit proxy &mdash; semicolon- or comma-separated, with <code>*</code> wildcards, e.g. <code>*.corp.local;jenkins.internal</code>. Local addresses always bypass. The chosen proxy is logged at startup, so a misrouted download is visible in the first few lines of <code>agent.log</code>.</p>
     <div class="callout callout-warning">
       <div class="callout-title">This covers the jar download only &mdash; not the agent's own connection</div>
-      <p>These settings apply to the .NET-side <code>agent.jar</code> download. The Java agent's long-lived connection to the controller is the <strong>JVM's</strong>, and ignores them entirely. To route that through a proxy as well, pass the JVM's own flags via <a href="#settings-reference"><code>Agent:CustomArguments</code></a>, for example <code>-Dhttps.proxyHost=proxy.example.com -Dhttps.proxyPort=8080 -Dhttp.nonProxyHosts="*.corp.local"</code>. A node whose jar downloads succeed but which never comes online is the classic symptom of configuring one and not the other.</p>
+      <p>These settings apply to the .NET-side <code>agent.jar</code> download. The Java agent's long-lived connection to the controller is the <strong>JVM's</strong>, and ignores them entirely. To route that through a proxy as well, pass the JVM's own flags via <a href="#settings-reference"><code>Agent:JvmArguments</code></a>, for example <code>-Dhttps.proxyHost=proxy.example.com -Dhttps.proxyPort=8080 -Dhttp.nonProxyHosts="*.corp.local"</code>. A node whose jar downloads succeed but which never comes online is the classic symptom of configuring one and not the other.</p>
     </div>
 
     <h3 id="live-debug">Turning debug logging on without a restart</h3>
