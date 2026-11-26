@@ -102,6 +102,13 @@ public sealed class AgentSettings
     /// <c>%ProgramData%\JenkinsAsService</c>.
     /// </summary>
     public string DataDirectory { get; set; } = "";
+
+    /// <summary>
+    /// When <c>true</c>, launches the agent with <c>-noKeepAlive</c>, which turns off TCP keep-alive on its
+    /// controller connection. Diagnostic only: without keep-alive a silently dropped connection is noticed
+    /// late. Default <c>false</c>; the service logs a warning at start when it is on.
+    /// </summary>
+    public bool NoKeepAlive { get; set; }
 }
 
 /// <summary>Process-hardening toggles for the spawned agent (<c>Jenkins:Hardening</c>).</summary>

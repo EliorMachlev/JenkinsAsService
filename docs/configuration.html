@@ -145,6 +145,12 @@
             <td>Writable directory root for runtime artifacts, kept separate from the read-only install folder. Holds logs + secret file at the root, the cached <code>agent.jar</code> under <code>agent\</code>, and the Jenkins <code>-workDir</code> under <code>work\</code>. Env vars are expanded. The MSI sets this to the chosen <code>DATAFOLDER</code>. See <a href="#data-dir-split">Data directory split</a>.</td>
           </tr>
           <tr>
+            <td><code>Agent:NoKeepAlive</code></td>
+            <td>No</td>
+            <td><code>false</code></td>
+            <td>Launches the agent with <code>-noKeepAlive</code>, which disables TCP keep-alive on its controller connection. <strong>Diagnostic only</strong>: without keep-alive a silently dropped connection is noticed late. The service logs a warning at start when it is on.</td>
+          </tr>
+          <tr>
             <td><code>Hardening:SanitizeEnvironment</code></td>
             <td>No</td>
             <td><code>true</code></td>
@@ -210,7 +216,8 @@
     "Agent": {
       "JavaPath": "",
       "CustomArguments": "",
-      "DataDirectory": ""
+      "DataDirectory": "",
+      "NoKeepAlive": false
     },
     "Hardening": {
       "SanitizeEnvironment": true,

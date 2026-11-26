@@ -189,13 +189,37 @@ public sealed class SupervisionLoopTests : IDisposable
         await StopQuietly(worker);
     }
 
-    private JenkinsAgentWorker CreateWorker(int maxRetries, ConnectionMethod method = ConnectionMethod.Auto)
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task NoKeepAlive_is_passed_to_the_agent_only_when_enabled(bool enabled)
+    {
+        var worker = CreateWorker(maxRetries: 0, noKeepAlive: enabled);
+        worker.UseFastTimingForTests(stabilityMs: 10_000, backoffBaseSec: 0, backoffMaxSec: 0);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitUntil(() => _launcher.StartCount == 1);
+
+        if (enabled)
+        {
+            _launcher.LastStartInfo!.ArgumentList.Should().Contain("-noKeepAlive");
+        }
+        else
+        {
+            _launcher.LastStartInfo!.ArgumentList.Should().NotContain("-noKeepAlive");
+        }
+
+        await StopQuietly(worker);
+    }
+
+    private JenkinsAgentWorker CreateWorker(int maxRetries, ConnectionMethod method = ConnectionMethod.Auto,
+        bool noKeepAlive = false)
     {
         var settings = new ServiceSettings
         {
             Connection = new() { Url = "https://jenkins:8443", Method = method },
             Secret = new() { Value = "cipher", Mode = SecretMode.Unprotected, ViaFile = false },
-            Agent = new() { JavaPath = _javaDir, DataDirectory = _dataDir },
+            Agent = new() { JavaPath = _javaDir, DataDirectory = _dataDir, NoKeepAlive = noKeepAlive },
             Hardening = new() { SanitizeEnvironment = false },
             Recovery = new() { MaxRetries = maxRetries }
         };

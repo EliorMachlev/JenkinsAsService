@@ -54,6 +54,7 @@ internal static class ConfigKeys
         internal const string JavaPath = "JavaPath";
         internal const string CustomArguments = "CustomArguments";
         internal const string DataDirectory = "DataDirectory";
+        internal const string NoKeepAlive = "NoKeepAlive";
 
         internal const string JavaPathPath = Name + ":" + JavaPath;
         internal const string DataDirectoryPath = Name + ":" + DataDirectory;

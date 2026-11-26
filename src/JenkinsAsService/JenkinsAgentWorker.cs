@@ -27,6 +27,7 @@ public sealed class JenkinsAgentWorker : BackgroundService
     private const string ArgWorkDir = "-workDir";
     private const string ArgWebSocket = "-webSocket";
     private const string ArgNoReconnect = "-noReconnect";
+    private const string ArgNoKeepAlive = "-noKeepAlive";
 
     // ─── Agent stdout/stderr log-level prefixes ───────────────────────────────
     private const string InfoPrefix = "INFO: ";
@@ -197,6 +198,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
             _dataDir, _agentDir, _workDir);
 
         _effectiveMethod = AgentTransport.InitialMethod(_settings.Connection.Method);
+        if (_settings.Agent.NoKeepAlive)
+        {
+            _logger.LogWarning("Agent:NoKeepAlive is on: the agent runs with -noKeepAlive (diagnostic only; a dropped connection is noticed late).");
+        }
+
         _logger.LogInformation("Connection method: {Configured} (starting transport: {Effective})",
             _settings.Connection.Method, _effectiveMethod);
     }
@@ -276,6 +282,11 @@ public sealed class JenkinsAgentWorker : BackgroundService
         if (AgentTransport.UsesWatchdogReconnect(_settings.Connection.Method))
         {
             psi.ArgumentList.Add(ArgNoReconnect);
+        }
+
+        if (_settings.Agent.NoKeepAlive)
+        {
+            psi.ArgumentList.Add(ArgNoKeepAlive);
         }
 
         foreach (var arg in AgentArgumentParser.Parse(_settings.Agent.CustomArguments))
