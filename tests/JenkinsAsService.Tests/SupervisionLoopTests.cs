@@ -189,13 +189,32 @@ public sealed class SupervisionLoopTests : IDisposable
         await StopQuietly(worker);
     }
 
-    private JenkinsAgentWorker CreateWorker(int maxRetries, ConnectionMethod method = ConnectionMethod.Auto)
+    [Fact]
+    public async Task JvmArguments_precede_jar_and_CustomArguments_follow_it()
+    {
+        var worker = CreateWorker(maxRetries: 0, jvmArgs: "-Dhttps.proxyHost=proxy -Xmx256m", customArgs: "-noKeepAlive");
+        worker.UseFastTimingForTests(stabilityMs: 10_000, backoffBaseSec: 0, backoffMaxSec: 0);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitUntil(() => _launcher.StartCount == 1);
+
+        var args = _launcher.LastStartInfo!.ArgumentList.ToList();
+        var jar = args.IndexOf("-jar");
+        args.IndexOf("-Dhttps.proxyHost=proxy").Should().BeInRange(0, jar - 1, "JVM options after -jar become agent arguments");
+        args.IndexOf("-Xmx256m").Should().BeInRange(0, jar - 1);
+        args.IndexOf("-noKeepAlive").Should().BeGreaterThan(jar);
+
+        await StopQuietly(worker);
+    }
+
+    private JenkinsAgentWorker CreateWorker(int maxRetries, ConnectionMethod method = ConnectionMethod.Auto,
+        string jvmArgs = "", string customArgs = "")
     {
         var settings = new ServiceSettings
         {
             Connection = new() { Url = "https://jenkins:8443", Method = method },
             Secret = new() { Value = "cipher", Mode = SecretMode.Unprotected, ViaFile = false },
-            Agent = new() { JavaPath = _javaDir, DataDirectory = _dataDir },
+            Agent = new() { JavaPath = _javaDir, DataDirectory = _dataDir, JvmArguments = jvmArgs, CustomArguments = customArgs },
             Hardening = new() { SanitizeEnvironment = false },
             Recovery = new() { MaxRetries = maxRetries }
         };
