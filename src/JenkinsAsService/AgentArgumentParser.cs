@@ -7,7 +7,8 @@ namespace JenkinsAsService;
 /// <summary>
 /// Splits a single command-line string into individual arguments, honouring double-quoted spans (which
 /// may contain spaces) and backslash-escaped quotes (<c>\"</c>). Used to parse the user-supplied
-/// <see cref="AgentSettings.CustomArguments"/> before they are appended to the Java agent command line.
+/// <see cref="AgentSettings.CustomArguments"/> and <see cref="AgentSettings.JvmArguments"/> before they are added to the Java agent command line.
+/// A quote may open a span anywhere in a token (<c>-Dx="a b"</c> is one argument, <c>-Dx=a b</c>).
 /// </summary>
 internal static class AgentArgumentParser
 {
@@ -21,67 +22,46 @@ internal static class AgentArgumentParser
             return result;
         }
 
-        var i = 0;
-
-        while (i < input.Length)
-        {
-            while (i < input.Length && char.IsWhiteSpace(input[i]))
-            {
-                i++;
-            }
-
-            if (i < input.Length)
-            {
-                if (input[i] == '"')
-                {
-                    i++; // skip opening quote
-                    result.Add(ParseQuotedArg(input, ref i));
-                }
-                else
-                {
-                    result.Add(ParseUnquotedArg(input, ref i));
-                }
-            }
-        }
-
-        return result;
-    }
-
-    private static string ParseQuotedArg(string input, ref int i)
-    {
         var buf = new StringBuilder();
-        while (i < input.Length && input[i] != '"')
+        var inToken = false; // true once a char or an opening quote was seen (so "" yields an empty arg)
+        var inQuotes = false;
+
+        for (var i = 0; i < input.Length; i++)
         {
-            if (input[i] == '\\' && i + 1 < input.Length && input[i + 1] == '"')
+            var c = input[i];
+            if (inQuotes && c == '\\' && i + 1 < input.Length && input[i + 1] == '"')
             {
                 buf.Append('"');
-                i += EscapedQuoteWidth;
+                i += EscapedQuoteWidth - 1;
+            }
+            else if (c == '"')
+            {
+                // A quote opens or closes a span anywhere in a token, not only at its start:
+                // -Dx="C:\Program Files\a.jks" is one argument, -Dx=C:\Program Files\a.jks.
+                inQuotes = !inQuotes;
+                inToken = true;
+            }
+            else if (!inQuotes && char.IsWhiteSpace(c))
+            {
+                if (inToken)
+                {
+                    result.Add(buf.ToString());
+                    buf.Clear();
+                    inToken = false;
+                }
             }
             else
             {
-                buf.Append(input[i]);
-                i++;
+                buf.Append(c);
+                inToken = true;
             }
         }
 
-        if (i < input.Length)
+        if (inToken)
         {
-            i++; // skip closing quote
+            result.Add(buf.ToString());
         }
 
-        return buf.ToString();
-    }
-
-    private static string ParseUnquotedArg(string input, ref int i)
-    {
-        var end = i;
-        while (end < input.Length && !char.IsWhiteSpace(input[end]))
-        {
-            end++;
-        }
-
-        var token = input[i..end];
-        i = end;
-        return token;
+        return result;
     }
 }

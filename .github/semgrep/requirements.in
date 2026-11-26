@@ -4,4 +4,4 @@
 # Dependabot (pip ecosystem, this directory) recompiles it when Semgrep or a dependency has a new release.
 # Compile on Linux, not Windows: there pip-compile also pins pywin32 (a win32-only dependency of semgrep and
 # mcp) without its marker, and the Linux runner then fails the hashed install on it.
-semgrep==1.185.0
+semgrep==1.186.0

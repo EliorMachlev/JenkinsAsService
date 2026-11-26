@@ -53,4 +53,17 @@ public class ParseArgumentsTests
             .Should().ContainSingle()
             .Which.Should().Be(@"-Dmsg=hello ""world""");
     }
+
+    [Fact]
+    public void Handles_a_quoted_span_that_starts_inside_a_token()
+    {
+        AgentArgumentParser.Parse("-Djavax.net.ssl.trustStore=\"C:\\Program Files\\Jenkins\\truststore.jks\" -Xmx256m")
+            .Should().Equal(@"-Djavax.net.ssl.trustStore=C:\Program Files\Jenkins\truststore.jks", "-Xmx256m");
+    }
+
+    [Fact]
+    public void Keeps_an_empty_quoted_argument()
+    {
+        AgentArgumentParser.Parse("-a \"\" -b").Should().Equal("-a", "", "-b");
+    }
 }

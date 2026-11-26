@@ -28,7 +28,7 @@ internal enum ProxyMode
 /// </para>
 /// <para>
 /// Only the .NET-side <c>agent.jar</c> download is affected. The Java agent's own control-channel connection
-/// is the JVM's business and needs <c>-Dhttps.proxyHost=...</c> style flags via <c>Agent:CustomArguments</c>.
+/// is the JVM's business and needs <c>-Dhttps.proxyHost=...</c> style flags via <c>Agent:JvmArguments</c>.
 /// </para>
 /// </summary>
 internal static class ProxyResolver

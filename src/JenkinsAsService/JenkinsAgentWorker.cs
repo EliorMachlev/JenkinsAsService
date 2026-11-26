@@ -252,6 +252,12 @@ public sealed class JenkinsAgentWorker : BackgroundService
 
     private void AddAgentArguments(ProcessStartInfo psi, string jarPath, string normalizedUrl)
     {
+        // JVM options must precede -jar: after it the JVM passes everything to the agent as program arguments.
+        foreach (var arg in AgentArgumentParser.Parse(_settings.Agent.JvmArguments))
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
         psi.ArgumentList.Add(ArgJar);
         psi.ArgumentList.Add(jarPath);
         psi.ArgumentList.Add(ArgUrl);

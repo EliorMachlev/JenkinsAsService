@@ -307,6 +307,7 @@ public static class SecretWriter
             {
                 [ConfigKeys.Agent.JavaPath] = javaPath ?? ExistingString(agent, ConfigKeys.Agent.JavaPath),
                 [ConfigKeys.Agent.CustomArguments] = ExistingString(agent, ConfigKeys.Agent.CustomArguments),
+                [ConfigKeys.Agent.JvmArguments] = ExistingString(agent, ConfigKeys.Agent.JvmArguments),
                 [ConfigKeys.Agent.DataDirectory] = ExistingString(agent, ConfigKeys.Agent.DataDirectory)
             },
             [ConfigKeys.Hardening.Name] = new JsonObject
