@@ -136,7 +136,7 @@
             <td><code>Agent:CustomArguments</code></td>
             <td>No</td>
             <td><em>(empty)</em></td>
-            <td>Additional arguments passed to <code>java.exe</code>. Space-separated, supports quoted values and escaped quotes (<code>\"</code>). Example: <code>-noCertificateCheck</code></td>
+            <td>Additional arguments passed to <code>java.exe</code>. Space-separated, supports quoted values and escaped quotes (<code>\"</code>). Example: <code>-noCertificateCheck</code><br>These come <em>after</em> <code>-jar agent.jar</code>, so they reach the Jenkins remoting agent, not the JVM. Any remoting flag the service has no setting for can be passed here, for example <code>-noKeepAlive</code> (diagnostics), <code>-cert &lt;PEM&gt;</code>, <code>-tunnel host:port</code>.</td>
           </tr>
           <tr>
             <td><code>Agent:DataDirectory</code></td>
