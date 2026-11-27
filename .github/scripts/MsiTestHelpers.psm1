@@ -234,6 +234,9 @@ function Invoke-InstallerProcess {
         Get-Process msiexec, JenkinsAsService* -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host "  running: $($_.ProcessName) pid $($_.Id)" }
         & taskkill.exe /PID $process.Id /T /F | Out-Null
+        # A hang must fail the suite on its own: suites that EXPECT a refusal treat any non-success code as
+        # the answer they wanted, and 1460 would otherwise satisfy them.
+        Assert-That -Condition $false -Message "$FilePath finished within $TimeoutSeconds s"
         Write-Host "  exit code $script:TimeoutExitCode (timeout)"
         return $script:TimeoutExitCode
     }
