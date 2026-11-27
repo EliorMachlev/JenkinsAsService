@@ -127,6 +127,7 @@ jobs:
   msi-lifecycle:
     name: MSI Install / Upgrade / Uninstall / Arch Migration
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -310,6 +311,7 @@ jobs:
   msi-lifecycle-arm64:
     name: ARM64 Install / Upgrade / Migration
     runs-on: windows-11-arm
+    timeout-minutes: 25
     needs: msi-lifecycle
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -47,6 +47,12 @@ $script:SuccessExitCodes = @(0, 3010)
 # was four copies of one convention, where the suite whose copy drifted would simply stop having its logs
 # collected - on the run that failed, which is the only run they exist for.
 $script:LogDirectoryName = 'msi-logs'
+
+# How long one installer process may run before it is declared hung. A healthy install here takes seconds
+# to a couple of minutes; without a bound a wedged msiexec held the runner until the job was killed
+# (~45 min) and left no log. 1460 is ERROR_TIMEOUT, so the caller sees an ordinary non-zero code.
+$script:InstallerTimeoutSeconds = 600
+$script:TimeoutExitCode = 1460
 $script:LogDirectory = $null
 
 $script:Failures = @()
@@ -210,10 +216,27 @@ function Invoke-InstallerProcess {
     [OutputType([int])]
     param(
         [Parameter(Mandatory)][string]$FilePath,
-        [Parameter(Mandatory)][string[]]$Arguments
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [string]$LogPath,
+        [int]$TimeoutSeconds = $script:InstallerTimeoutSeconds
     )
     Write-Host "$FilePath $($Arguments -join ' ')"
-    $process = Start-Process $FilePath -ArgumentList $Arguments -Wait -PassThru
+    $process = Start-Process $FilePath -ArgumentList $Arguments -PassThru
+    # Keep the handle: without it ExitCode reads null once the process has exited.
+    $null = $process.Handle
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        Write-Host "::error::$FilePath did not finish within $TimeoutSeconds s - treating it as hung"
+        if ($LogPath -and (Test-Path $LogPath)) {
+            Write-Host '  last lines of the installer log:'
+            Get-Content $LogPath -Tail 60 | ForEach-Object { Write-Host "    $_" }
+        }
+        # What is still running, to show what the installer was waiting on.
+        Get-Process msiexec, JenkinsAsService* -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "  running: $($_.ProcessName) pid $($_.Id)" }
+        & taskkill.exe /PID $process.Id /T /F | Out-Null
+        Write-Host "  exit code $script:TimeoutExitCode (timeout)"
+        return $script:TimeoutExitCode
+    }
     Write-Host "  exit code $($process.ExitCode)"
     return $process.ExitCode
 }
@@ -230,7 +253,7 @@ function Invoke-Msiexec {
         [Parameter(Mandatory)][string]$LogPath
     )
     return Invoke-InstallerProcess -FilePath 'msiexec.exe' `
-        -Arguments ($Arguments + @('/quiet', '/norestart', '/l*v', $LogPath))
+        -Arguments ($Arguments + @('/quiet', '/norestart', '/l*v', $LogPath)) -LogPath $LogPath
 }
 
 function Assert-InstallerSucceeded {
