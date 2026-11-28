@@ -619,7 +619,7 @@
           "Microsoft.Extensions.Http.Resilience": "[11.0.0, )",
           "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.21.0, )",
           "OpenTelemetry.Extensions.Hosting": "[1.21.0, )",
-          "OpenTelemetry.Instrumentation.Runtime": "[1.20.1, )",
+          "OpenTelemetry.Instrumentation.Runtime": "[1.21.0, )",
           "Serilog.Enrichers.Environment": "[3.0.1, )",
           "Serilog.Enrichers.Process": "[3.0.0, )",
           "Serilog.Extensions.Hosting": "[10.0.0, )",
@@ -692,11 +692,11 @@
       },
       "OpenTelemetry.Instrumentation.Runtime": {
         "type": "CentralTransitive",
-        "requested": "[1.20.1, )",
-        "resolved": "1.20.1",
-        "contentHash": "1ngVOV2ZYqFy38g2g+vZ50poeF66GJtinITBDB7TNRP4fmrDxYYyPfs1uGrPHkhJJRV5I7mElPFOctvlatu41w==",
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "CpkfBbVIHR6Jn8QrGwt7RtOEDyKOHL2rs9HL+5ckzvlsvQiJ5lHD/qvB7NqJuFZIvXnACSYB7AD0ycXITPQFPg==",
         "dependencies": {
-          "OpenTelemetry.Api": "[1.20.1, 2.0.0)"
+          "OpenTelemetry.Api": "[1.21.0, 2.0.0)"
         }
       },
       "Serilog.Enrichers.Environment": {
